@@ -25,6 +25,7 @@
 
 #include "cfg.h"
 #include "irc.h"
+#include "cmd.h"
 
 #define IRC_NICK_RECLAIM_INTERVAL 60
 #define IRC_CHANNEL_RETRY_INTERVAL 10
@@ -910,3 +911,23 @@ irc_refresh_config(void)
   pthread_mutex_unlock(&irc_mutex);
 
 }
+
+
+static int
+irc_say(const char *user,
+        int argc, const char **argv, int *intv,
+        void (*msg)(void *opaque, const char *fmt, ...),
+        void *opaque)
+{
+
+  irc_msg_channel(argv[0], argv[1], argv[2]);
+  return 0;
+}
+
+CMD(irc_say,
+    CMD_LITERAL("irc"),
+    CMD_LITERAL("say"),
+    CMD_VARSTR("server"),
+    CMD_VARSTR("channel"),
+    CMD_ROL("message")
+);

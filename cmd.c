@@ -29,7 +29,7 @@ cmd_exec(const char *line, const char *user,
   char *input[64];
   int inputlen = str_tokenize(str, input, 64, -1);
 
-  char *argv[64];
+  const char *argv[64];
   int intv[64];
   int argc = 0;
 
@@ -50,6 +50,11 @@ cmd_exec(const char *line, const char *user,
 
       case CMD_TOKEN_VARSTR:
         argv[argc++] = input[i];
+        goto found;
+
+      case CMD_TOKEN_ROL:
+        argv[argc++] = line + (input[i] - str);
+        i = inputlen;
         goto found;
       }
     }
@@ -104,6 +109,11 @@ cmd_complete(const char *line, const char *user,
 
       case CMD_TOKEN_VARSTR:
         token = input[i];
+        goto found;
+
+      case CMD_TOKEN_ROL:
+        token = line + (input[i] - str);
+        i = inputlen;
         goto found;
       }
     }
