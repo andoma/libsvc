@@ -20,7 +20,7 @@ int dictcmp(const char *a, const char *b);
 
 #define WRITEFILE_NO_CHANGE 1000000
 
-int writefile(const char *path, void *bug, int size);
+int writefile(const char *path, const void *buf, int size);
 
 char *readfile(const char *path, int *intptr, time_t *ts);
 

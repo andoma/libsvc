@@ -226,7 +226,7 @@ dictcmp(const char *a, const char *b)
  *
  */
 int
-writefile(const char *path, void *buf, int size)
+writefile(const char *path, const void *buf, int size)
 {
   int r, fd;
 
