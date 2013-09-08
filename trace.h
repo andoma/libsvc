@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdarg.h>
 #include <syslog.h>
 
 #define COLOR_OFF    "\017"

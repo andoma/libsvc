@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mysql.h>
+#include "queue.h"
 
 #define DB_STORE_RESULT 0x1
 
