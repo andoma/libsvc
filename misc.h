@@ -59,3 +59,8 @@ get_ts(void)
 
 int str_tokenize(char *buf, char **vec, int vecsize, int delimiter);
 
+int hexnibble(char c);
+
+int hex2bin(uint8_t *buf, size_t buflen, const char *str);
+
+void bin2hex(char *dst, size_t dstlen, const uint8_t *src, size_t srclen);

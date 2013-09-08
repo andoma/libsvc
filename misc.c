@@ -457,3 +457,61 @@ str_tokenize(char *buf, char **vec, int vecsize, int delimiter)
   }
   return n;
 }
+
+
+/**
+ *
+ */
+int
+hexnibble(char c)
+{
+  switch(c) {
+  case '0' ... '9':    return c - '0';
+  case 'a' ... 'f':    return c - 'a' + 10;
+  case 'A' ... 'F':    return c - 'A' + 10;
+  default:
+    return -1;
+  }
+}
+
+
+/**
+ *
+ */
+int
+hex2bin(uint8_t *buf, size_t buflen, const char *str)
+{
+  int hi, lo;
+  size_t bl = buflen;
+  while(*str) {
+    if(buflen == 0)
+      return -1;
+    if((hi = hexnibble(*str++)) == -1)
+      return -1;
+    if((lo = hexnibble(*str++)) == -1)
+      return -1;
+
+    *buf++ = hi << 4 | lo;
+    buflen--;
+  }
+  return bl - buflen;
+}
+
+
+/**
+ *
+ */
+void
+bin2hex(char *dst, size_t dstlen, const uint8_t *src, size_t srclen)
+{
+  while(dstlen > 2 && srclen > 0) {
+    *dst++ = "0123456789abcdef"[*src >> 4];
+    *dst++ = "0123456789abcdef"[*src & 0xf];
+    src++;
+    srclen--;
+    dstlen -= 2;
+  }
+  *dst = 0;
+}
+
+
