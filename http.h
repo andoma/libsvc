@@ -19,6 +19,7 @@
 #pragma once
 
 #include "htsbuf.h"
+#include "tcp.h"
 
 TAILQ_HEAD(http_arg_list, http_arg);
 
@@ -37,7 +38,8 @@ typedef struct http_arg {
 
 
 typedef struct http_connection {
-  int hc_fd;
+  tcp_stream_t *hc_ts;
+
   struct sockaddr_in *hc_peer;
   struct sockaddr_in *hc_self;
   char *hc_representative;

@@ -235,7 +235,7 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
   //  htsbuf_dump_raw_stderr(&hdrs);
   //  fprintf(stderr, "----------------------------\n");
 
-  return tcp_write_queue(hc->hc_fd, &hdrs);
+  return tcp_write_queue(hc->hc_ts, &hdrs);
 }
 
 
@@ -254,7 +254,7 @@ http_send_reply(http_connection_t *hc, int rc, const char *content,
   if(hc->hc_no_output)
     return 0;
 
-  return tcp_write_queue(hc->hc_fd, &hc->hc_reply);
+  return tcp_write_queue(hc->hc_ts, &hc->hc_reply);
 }
 
 
@@ -391,7 +391,7 @@ http_cmd_get(http_connection_t *hc)
  * Return non-zero if we should disconnect
  */
 static int
-http_cmd_post(http_connection_t *hc, htsbuf_queue_t *spill)
+http_cmd_post(http_connection_t *hc)
 {
   http_path_t *hp;
   char *remain, *args, *v, *argv[2];
@@ -417,7 +417,7 @@ http_cmd_post(http_connection_t *hc, htsbuf_queue_t *spill)
   hc->hc_post_data = malloc(hc->hc_post_len + 1);
   hc->hc_post_data[hc->hc_post_len] = 0;
 
-  if(tcp_read_data(hc->hc_fd, hc->hc_post_data, hc->hc_post_len, spill) < 0)
+  if(tcp_read_data(hc->hc_ts, hc->hc_post_data, hc->hc_post_len) < 0)
     return -1;
 
  /* Parse content-type */
@@ -450,7 +450,7 @@ http_cmd_post(http_connection_t *hc, htsbuf_queue_t *spill)
  * Process a HTTP request
  */
 static int
-http_process_request(http_connection_t *hc, htsbuf_queue_t *spill)
+http_process_request(http_connection_t *hc)
 {
   switch(hc->hc_cmd) {
   default:
@@ -463,7 +463,7 @@ http_process_request(http_connection_t *hc, htsbuf_queue_t *spill)
     return http_cmd_get(hc);
   case HTTP_CMD_POST:
   case HTTP_CMD_PUT:
-    return http_cmd_post(hc, spill);
+    return http_cmd_post(hc);
   }
 }
 
@@ -472,7 +472,7 @@ http_process_request(http_connection_t *hc, htsbuf_queue_t *spill)
  * clean up
  */
 static int
-process_request(http_connection_t *hc, htsbuf_queue_t *spill)
+process_request(http_connection_t *hc)
 {
   char *v, *argv[2];
   int n, rval = -1;
@@ -527,7 +527,7 @@ process_request(http_connection_t *hc, htsbuf_queue_t *spill)
 
   case HTTP_VERSION_1_0:
   case HTTP_VERSION_1_1:
-    rval = http_process_request(hc, spill);
+    rval = http_process_request(hc);
     break;
   }
   free(hc->hc_representative);
@@ -697,7 +697,7 @@ http_parse_get_args(http_connection_t *hc, char *args)
  *
  */
 static void
-http_serve_requests(http_connection_t *hc, htsbuf_queue_t *spill)
+http_serve_requests(http_connection_t *hc)
 {
   char cmdline[1024];
   char hdrline[1024];
@@ -713,7 +713,7 @@ http_serve_requests(http_connection_t *hc, htsbuf_queue_t *spill)
 
     hc->hc_no_output  = 0;
 
-    if(tcp_read_line(hc->hc_fd, cmdline, sizeof(cmdline), spill) < 0) {
+    if(tcp_read_line(hc->hc_ts, cmdline, sizeof(cmdline)) < 0) {
       return;
     }
 
@@ -735,7 +735,7 @@ http_serve_requests(http_connection_t *hc, htsbuf_queue_t *spill)
 
     /* parse header */
     while(1) {
-      if(tcp_read_line(hc->hc_fd, hdrline, sizeof(hdrline), spill) < 0) {
+      if(tcp_read_line(hc->hc_ts, hdrline, sizeof(hdrline)) < 0) {
 	return;
       }
 
@@ -756,7 +756,7 @@ http_serve_requests(http_connection_t *hc, htsbuf_queue_t *spill)
       http_arg_set(&hc->hc_args, argv[0], argv[1]);
     }
 
-    if(process_request(hc, spill)) {
+    if(process_request(hc)) {
       break;
     }
 
@@ -784,10 +784,9 @@ http_serve_requests(http_connection_t *hc, htsbuf_queue_t *spill)
  *
  */
 static void
-http_serve(int fd, void *opaque, struct sockaddr_in *peer, 
+http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer, 
 	   struct sockaddr_in *self)
 {
-  htsbuf_queue_t spill;
   http_connection_t hc;
   
   memset(&hc, 0, sizeof(http_connection_t));
@@ -796,13 +795,11 @@ http_serve(int fd, void *opaque, struct sockaddr_in *peer,
   TAILQ_INIT(&hc.hc_req_args);
   TAILQ_INIT(&hc.hc_response_headers);
 
-  hc.hc_fd = fd;
+  hc.hc_ts = ts;
   hc.hc_peer = peer;
   hc.hc_self = self;
 
-  htsbuf_queue_init(&spill, 0);
-
-  http_serve_requests(&hc, &spill);
+  http_serve_requests(&hc);
 
   free(hc.hc_post_data);
   free(hc.hc_username);
@@ -811,8 +808,7 @@ http_serve(int fd, void *opaque, struct sockaddr_in *peer,
   http_arg_flush(&hc.hc_args);
   http_arg_flush(&hc.hc_req_args);
   http_arg_flush(&hc.hc_response_headers);
-  htsbuf_queue_flush(&spill);
-  close(fd);
+  tcp_close(ts);
 }
 
 

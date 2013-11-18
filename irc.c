@@ -16,13 +16,13 @@
 #include <errno.h>
 #include <ctype.h>
 
-#include "libsvc/dial.h"
-#include "libsvc/queue.h"
-#include "libsvc/htsbuf.h"
-#include "libsvc/strtab.h"
-#include "libsvc/trace.h"
-#include "libsvc/misc.h"
-
+#include "dial.h"
+#include "queue.h"
+#include "htsbuf.h"
+#include "strtab.h"
+#include "trace.h"
+#include "misc.h"
+#include "tcp.h"
 #include "cfg.h"
 #include "irc.h"
 #include "cmd.h"
@@ -106,7 +106,7 @@ typedef struct irc_client {
 
   int ic_pipe[2];
   struct pollfd ic_fds[2];
-  int ic_fd;
+  tcp_stream_t *ic_ts;
 
   char *ic_server;
 
@@ -555,7 +555,7 @@ iom_write(irc_client_t *ic, struct irc_out_msg_queue *q)
 {
   irc_out_msg_t *iom = TAILQ_FIRST(q);
   int len = iom->iom_length - iom->iom_offset;
-  int r = write(ic->ic_fd, iom->iom_data + iom->iom_offset, len);
+  int r = tcp_write(ic->ic_ts, iom->iom_data + iom->iom_offset, len);
 
   if(r == len) {
     if(ic->ic_dotrace)
@@ -592,23 +592,23 @@ irc_thread(void *aux)
   int backoff = 5;
   int run = 1;
 
-  ic->ic_fd = -1;
+  ic->ic_ts = NULL;
   ic->ic_disconnect_sleep = 1;
   while(run) {
 
     talloc_cleanup();
 
-    if(ic->ic_fd != -1)
-      close(ic->ic_fd);
+    if(ic->ic_ts != NULL)
+      tcp_close(ic->ic_ts);
 
     trace(LOG_INFO, "IRC: %s: Attempting to connect", ic->ic_server);
 
-    ic->ic_fd = dial(ic->ic_server, 6667, 5000);
+    ic->ic_ts = dial(ic->ic_server, 6667, 5000);
 
-    if(ic->ic_fd < 0) {
+    if(ic->ic_ts == NULL) {
       backoff = MIN(backoff * 2, 120);
       trace(LOG_ERR, "IRC: %s: Unable to connect -- %s -- Retry in %d seconds",
-            ic->ic_server, strerror(-ic->ic_fd), backoff);
+            ic->ic_server, strerror(errno), backoff);
       sleep(backoff);
       continue;
     }
@@ -617,10 +617,9 @@ irc_thread(void *aux)
 
     backoff = 5;
 
-    fcntl(ic->ic_fd, F_SETFL, fcntl(ic->ic_fd, F_GETFL) | O_NONBLOCK);
+    tcp_nonblock(ic->ic_ts, 1);
 
-
-    ic->ic_fds[0].fd = ic->ic_fd;
+    ic->ic_fds[0].fd = ic->ic_ts->ts_fd;
     ic->ic_fds[0].revents = 0;
     ic->ic_fds[1].fd = ic->ic_pipe[0];
     ic->ic_fds[1].events = POLLIN | POLLERR | POLLHUP;
@@ -728,20 +727,26 @@ irc_thread(void *aux)
       if(ic->ic_fds[0].revents & (POLLERR | POLLHUP)) {
         int err;
         socklen_t len = sizeof(err);
-        getsockopt(ic->ic_fd, SOL_SOCKET, SO_ERROR, &err, &len);
-        trace(LOG_ERR, "IRC: %s: Connection lost -- %s", ic->ic_server, strerror(err));
+        getsockopt(ic->ic_ts->ts_fd, SOL_SOCKET, SO_ERROR, &err, &len);
+        trace(LOG_ERR, "IRC: %s: Connection lost -- %s",
+              ic->ic_server, strerror(err));
         break;
       }
 
       if(ic->ic_fds[0].revents & POLLIN) {
         char buf[1024];
-        int r = read(ic->ic_fd, buf, sizeof(buf));
+        int r = tcp_read(ic->ic_ts, buf, sizeof(buf));
         if(r == 0) {
-          trace(LOG_ERR, "IRC: %s: Connection lost -- Connection reset by peer",
+          trace(LOG_ERR,
+                "IRC: %s: Connection lost -- Connection reset by peer",
                 ic->ic_server);
           break;
         }
         if(r == -1) {
+
+          if(errno == EAGAIN)
+            continue;
+
           trace(LOG_ERR, "IRC: %s: Connection lost -- %s",
                 ic->ic_server, strerror(errno));
           break;
@@ -753,14 +758,15 @@ irc_thread(void *aux)
         pthread_mutex_unlock(&irc_mutex);
 
         if(r) {
-          trace(LOG_ERR, "IRC: %s: Protocol violation, disconnecting", ic->ic_server);
+          trace(LOG_ERR, "IRC: %s: Protocol violation, disconnecting",
+                ic->ic_server);
           break;
         }
       }
     }
     htsbuf_queue_flush(&recvq);
-    close(ic->ic_fd);
-    ic->ic_fd = -1;
+    tcp_close(ic->ic_ts);
+    ic->ic_ts = NULL;
     if(!run)
       break;
     irc_client_cleanup(ic);
@@ -770,8 +776,8 @@ irc_thread(void *aux)
     ic->ic_disconnect_sleep = MIN(ic->ic_disconnect_sleep * 2, 120);
   }
 
-  if(ic->ic_fd != -1)
-    close(ic->ic_fd);
+  if(ic->ic_ts != NULL)
+    tcp_close(ic->ic_ts);
 
   irc_client_cleanup(ic);
   close(ic->ic_pipe[0]);

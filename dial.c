@@ -36,7 +36,7 @@ getstreamsocket(int family)
 /**
  *
  */
-int
+tcp_stream_t *
 dial(const char *hostname, int port, int timeout)
 {
   struct hostent *hp;
@@ -50,8 +50,10 @@ dial(const char *hostname, int port, int timeout)
   socklen_t errlen = sizeof(int);
 
   if(!strcmp(hostname, "localhost")) {
-    if((fd = getstreamsocket(AF_INET)) < 0)
-      return fd;
+    if((fd = getstreamsocket(AF_INET)) < 0) {
+      errno = -fd;
+      return NULL;
+    }
 
     memset(&in, 0, sizeof(in));
     in.sin_family = AF_INET;
@@ -73,21 +75,26 @@ dial(const char *hostname, int port, int timeout)
     if(herr != 0) {
       free(tmphstbuf);
       switch(herr) {
-      case HOST_NOT_FOUND:
-        return -ENOENT;
+      case HOST_NOT_FOUND: {
+        errno = ENOENT;
+        return NULL;
+      }
 
       default:
-        return -ENXIO;
+        errno = ENXIO;
+        return NULL;
       }
 
     } else if(hp == NULL) {
       free(tmphstbuf);
-      return -EIO;
+      errno = EIO;
+      return NULL;
     }
 
     if((fd = getstreamsocket(hp->h_addrtype)) < 0) {
       free(tmphstbuf);
-      return fd;
+      errno = -fd;
+      return NULL;
     }
 
     switch(hp->h_addrtype) {
@@ -109,7 +116,8 @@ dial(const char *hostname, int port, int timeout)
 
     default:
       free(tmphstbuf);
-      return -EPROTONOSUPPORT;
+      errno = EPROTONOSUPPORT;
+      return NULL;
     }
 
     free(tmphstbuf);
@@ -127,13 +135,15 @@ dial(const char *hostname, int port, int timeout)
       if(r == 0) {
         /* Timeout */
         close(fd);
-        return -ETIMEDOUT;
+        errno = ETIMEDOUT;
+        return NULL;
       }
 
       if(r == -1) {
-        int r = -errno;
+        int r = errno;
         close(fd);
-        return r;
+        errno = r;
+        return NULL;
       }
 
       getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *)&err, &errlen);
@@ -146,7 +156,8 @@ dial(const char *hostname, int port, int timeout)
 
   if(err != 0) {
     close(fd);
-    return -err;
+    errno = err;
+    return NULL;
   }
 
   fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
@@ -172,5 +183,5 @@ dial(const char *hostname, int port, int timeout)
   setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof(val));
 #endif
 
-  return fd;
+  return tcp_stream_create_from_fd(fd);
 }
