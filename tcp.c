@@ -144,8 +144,6 @@ tcp_prepare_poll(tcp_stream_t *ts, struct pollfd *pfd)
 
   if(sendq_drain(ts))
     pfd->events |= POLLOUT;
-
-  printf("poll flags: 0x%x\n", pfd->events);
 }
 
 
