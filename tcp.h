@@ -19,17 +19,10 @@
  */
 
 #include <netinet/in.h>
+#include <poll.h>
 #include "htsbuf.h"
 
-typedef struct tcp_stream {
-  int ts_fd;
-  htsbuf_queue_t ts_spill;
-
-  int (*ts_write)(struct tcp_stream *ts, const void *data, int len);
-
-  int (*ts_read)(struct tcp_stream *ts, void *data, int len, int waitall);
-
-} tcp_stream_t;
+typedef struct tcp_stream tcp_stream_t;
 
 void tcp_server_init(void);
 
@@ -58,6 +51,10 @@ void tcp_nonblock(tcp_stream_t *ts, int on);
 tcp_stream_t *tcp_stream_create_from_fd(int fd);
 
 int tcp_sendfile(tcp_stream_t *ts, int fd, int64_t bytes);
+
+void tcp_prepare_poll(tcp_stream_t *ts, struct pollfd *pfd);
+
+int tcp_get_errno(tcp_stream_t *ts);
 
 #if 0
 int tcp_read_timeout(tcp_stream_t *ts, void *buf, size_t len, int timeout);

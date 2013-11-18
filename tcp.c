@@ -38,6 +38,38 @@
 #include "talloc.h"
 
 
+
+struct tcp_stream {
+  int ts_fd;
+  int ts_nonblock;
+
+  int ts_write_unfulfilled;
+
+  htsbuf_queue_t ts_spill;
+
+  htsbuf_queue_t ts_sendq;
+
+  int (*ts_write)(struct tcp_stream *ts, const void *data, int len);
+
+  int (*ts_read)(struct tcp_stream *ts, void *data, int len, int waitall);
+
+};
+
+
+
+/**
+ *
+ */
+int
+tcp_get_errno(tcp_stream_t *ts)
+{
+  int err = 0;
+  socklen_t len = sizeof(err);
+  getsockopt(ts->ts_fd, SOL_SOCKET, SO_ERROR, &err, &len);
+  return err;
+}
+
+
 /**
  *
  */
@@ -45,19 +77,75 @@ void
 tcp_close(tcp_stream_t *ts)
 {
   htsbuf_queue_flush(&ts->ts_spill);
+  htsbuf_queue_flush(&ts->ts_sendq);
   close(ts->ts_fd);
   free(ts);
 }
-
 
 
 /**
  *
  */
 static int
-os_write(struct tcp_stream *ts, const void *data, int len)
+sendq_drain(tcp_stream_t *ts)
 {
-  return write(ts->ts_fd, data, len);
+  htsbuf_data_t *hd;
+  htsbuf_queue_t *q = &ts->ts_sendq;
+  int len;
+
+  while((hd = TAILQ_FIRST(&q->hq_q)) != NULL) {
+
+    len = hd->hd_data_len - hd->hd_data_off;
+    assert(len > 0);
+
+    int r = write(ts->ts_fd, hd->hd_data + hd->hd_data_off, len);
+    if(r < 1)
+      return -1;
+
+    hd->hd_data_off += r;
+
+    if(r != len)
+      return -1;
+
+    assert(hd->hd_data_off == hd->hd_data_len);
+
+    TAILQ_REMOVE(&q->hq_q, hd, hd_link);
+    free(hd->hd_data);
+    free(hd);
+  }
+  return 0;
+}
+
+
+/**
+ *
+ */
+static int
+sendq_write(struct tcp_stream *ts, const void *data, int len)
+{
+  if(!ts->ts_nonblock)
+    return write(ts->ts_fd, data, len);
+
+  htsbuf_append(&ts->ts_sendq, data, len);
+
+  sendq_drain(ts);
+  return len;
+}
+
+
+/**
+ *
+ */
+void
+tcp_prepare_poll(tcp_stream_t *ts, struct pollfd *pfd)
+{
+  pfd->fd = ts->ts_fd;
+  pfd->events = POLLIN | POLLERR | POLLHUP;
+
+  if(sendq_drain(ts))
+    pfd->events |= POLLOUT;
+
+  printf("poll flags: 0x%x\n", pfd->events);
 }
 
 
@@ -81,7 +169,8 @@ tcp_stream_create_from_fd(int fd)
 
   ts->ts_fd = fd;
   htsbuf_queue_init(&ts->ts_spill, INT32_MAX);
-  ts->ts_write = os_write;
+  htsbuf_queue_init(&ts->ts_sendq, INT32_MAX);
+  ts->ts_write = sendq_write;
   ts->ts_read  = os_read;
   return ts;
 }
@@ -117,6 +206,7 @@ tcp_write(tcp_stream_t *ts, const void *buf, const size_t bufsize)
 void
 tcp_nonblock(tcp_stream_t *ts, int on)
 {
+  ts->ts_nonblock = on;
   int flags = fcntl(ts->ts_fd, F_GETFL);
 
   if(on)

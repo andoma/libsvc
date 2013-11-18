@@ -61,7 +61,6 @@ TAILQ_HEAD(msg_target_queue, msg_target);
  */
 typedef struct irc_out_msg {
   TAILQ_ENTRY(irc_out_msg) iom_link;
-  int iom_offset;
   int iom_length;
   char iom_data[0];
 } irc_out_msg_t;
@@ -160,7 +159,6 @@ irc_send(irc_client_t *ic, const char *fmt, ...)
   buf[l++]  = '\n';
 
   irc_out_msg_t *iom = malloc(sizeof(irc_out_msg_t) + l);
-  iom->iom_offset = 0;
   iom->iom_length = l;
   memcpy(iom->iom_data, buf, l);
   TAILQ_INSERT_TAIL(&ic->ic_cmdq, iom, iom_link);
@@ -554,30 +552,15 @@ static int
 iom_write(irc_client_t *ic, struct irc_out_msg_queue *q)
 {
   irc_out_msg_t *iom = TAILQ_FIRST(q);
-  int len = iom->iom_length - iom->iom_offset;
-  int r = tcp_write(ic->ic_ts, iom->iom_data + iom->iom_offset, len);
+  int r = tcp_write(ic->ic_ts, iom->iom_data, iom->iom_length);
 
-  if(r == len) {
-    if(ic->ic_dotrace)
-      trace(LOG_DEBUG, "IRC: %s: SEND: %.*s", ic->ic_server,
-	    iom->iom_length - 2, iom->iom_data);
-    TAILQ_REMOVE(q, iom, iom_link);
-    free(iom);
-    return 0;
-  }
+  assert(r == iom->iom_length);
 
-  if((r == -1 && errno == EAGAIN) || r == 0) {
-    ic->ic_fds[0].events |= POLLOUT;
-    return 0;
-  }
-
-  if(r == -1) {
-    trace(LOG_ERR, "IRC: %s: Write failed -- %s",
-          ic->ic_server, strerror(errno));
-    return 1;
-  }
-
-  iom->iom_offset += r;
+  if(ic->ic_dotrace)
+    trace(LOG_DEBUG, "IRC: %s: SEND: %.*s", ic->ic_server,
+          iom->iom_length - 2, iom->iom_data);
+  TAILQ_REMOVE(q, iom, iom_link);
+  free(iom);
   return 0;
 }
 
@@ -619,8 +602,6 @@ irc_thread(void *aux)
 
     tcp_nonblock(ic->ic_ts, 1);
 
-    ic->ic_fds[0].fd = ic->ic_ts->ts_fd;
-    ic->ic_fds[0].revents = 0;
     ic->ic_fds[1].fd = ic->ic_pipe[0];
     ic->ic_fds[1].events = POLLIN | POLLERR | POLLHUP;
     ic->ic_fds[1].revents = 0;
@@ -640,8 +621,6 @@ irc_thread(void *aux)
 
       int timeout = -1;
       int64_t now = get_ts(), next = INT64_MAX;
-
-      ic->ic_fds[0].events = POLLIN | POLLERR | POLLHUP;
 
       pthread_mutex_lock(&irc_mutex);
 
@@ -692,12 +671,15 @@ irc_thread(void *aux)
       else
         timeout = (next - now + 999) / 1000;
 
+      tcp_prepare_poll(ic->ic_ts, &ic->ic_fds[0]);
+
       int r = poll(ic->ic_fds, 2, timeout);
 
       if(r == -1) {
         if(errno == EINTR)
           continue;
-        trace(LOG_ERR, "IRC: %s: poll() -- %s", ic->ic_server, strerror(errno));
+        trace(LOG_ERR, "IRC: %s: poll() -- %s",
+              ic->ic_server, strerror(errno));
         break;
       }
 
@@ -725,9 +707,8 @@ irc_thread(void *aux)
       }
 
       if(ic->ic_fds[0].revents & (POLLERR | POLLHUP)) {
-        int err;
-        socklen_t len = sizeof(err);
-        getsockopt(ic->ic_ts->ts_fd, SOL_SOCKET, SO_ERROR, &err, &len);
+
+        int err = tcp_get_errno(ic->ic_ts);
         trace(LOG_ERR, "IRC: %s: Connection lost -- %s",
               ic->ic_server, strerror(err));
         break;
@@ -890,7 +871,6 @@ irc_msg_channel(const char *server, const char *channel, const char *str)
         if(*str == '\n')
           str++;
         irc_out_msg_t *iom = malloc(sizeof(irc_out_msg_t) + len);
-        iom->iom_offset = 0;
         iom->iom_length = len;
         memcpy(iom->iom_data, buf, len);
         msg_target_t *mt = &c->c_tgt;
