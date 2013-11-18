@@ -64,3 +64,5 @@ int hexnibble(char c);
 int hex2bin(uint8_t *buf, size_t buflen, const char *str);
 
 void bin2hex(char *dst, size_t dstlen, const uint8_t *src, size_t srclen);
+
+const char *time_to_RFC_1123(time_t t);

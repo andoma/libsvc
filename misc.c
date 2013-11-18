@@ -515,3 +515,32 @@ bin2hex(char *dst, size_t dstlen, const uint8_t *src, size_t srclen)
 }
 
 
+
+static const char *days[7] = {
+  "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
+};
+
+static const char *months[12] = {
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
+  "Dec"
+};
+
+
+/**
+ *
+ */
+const char *
+time_to_RFC_1123(time_t t)
+{
+  static __thread char rbuf[64];
+  struct tm tm0, *tm;
+
+  tm = gmtime_r(&t, &tm0);
+  snprintf(rbuf, sizeof(rbuf),
+           "%s, %02d %s %02d %02d:%02d:%02d +0000",
+           days[tm->tm_wday], tm->tm_mday,
+           months[tm->tm_mon], tm->tm_year + 1900,
+           tm->tm_hour, tm->tm_min, tm->tm_sec);
+
+  return rbuf;
+}
