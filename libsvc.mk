@@ -17,3 +17,4 @@ libunixservice_SRCS += \
 	ctrlsock.c \
 	db.c \
 	cmd.c \
+	talloc.c \
