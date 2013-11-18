@@ -33,6 +33,7 @@
 
 #include "tcp.h"
 #include "trace.h"
+#include "talloc.h"
 
 /**
  *
@@ -290,6 +291,8 @@ tcp_trampoline(void *aux)
       pthread_cond_wait(&tt->tt_cond, &tcp_thread_mutex);
 
     pthread_mutex_unlock(&tcp_thread_mutex);
+
+    talloc_cleanup();
   }
   return NULL;
 }
@@ -328,6 +331,8 @@ tcp_server_start(tcp_server_launch_t *tsl)
   tcp_thread_t *tt;
 
   while(1) {
+    talloc_cleanup();
+
     tt = LIST_FIRST(&tcp_idle_threads);
     if(tt != NULL) {
       LIST_REMOVE(tt, tt_link);
@@ -379,6 +384,9 @@ tcp_server_loop(void *aux)
   socklen_t slen;
 
   while(1) {
+
+    talloc_cleanup();
+
     r = epoll_wait(tcp_server_epoll_fd, ev, sizeof(ev) / sizeof(ev[0]), -1);
     if(r == -1) {
       perror("tcp_server: epoll_wait");

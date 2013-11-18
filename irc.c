@@ -26,6 +26,7 @@
 #include "cfg.h"
 #include "irc.h"
 #include "cmd.h"
+#include "talloc.h"
 
 #define IRC_NICK_RECLAIM_INTERVAL 60
 #define IRC_CHANNEL_RETRY_INTERVAL 10
@@ -595,6 +596,8 @@ irc_thread(void *aux)
   ic->ic_disconnect_sleep = 1;
   while(run) {
 
+    talloc_cleanup();
+
     if(ic->ic_fd != -1)
       close(ic->ic_fd);
 
@@ -633,6 +636,9 @@ irc_thread(void *aux)
     ic->ic_current_nick = strdup(ic->ic_wanted_nick);
 
     while(run) {
+
+      talloc_cleanup();
+
       int timeout = -1;
       int64_t now = get_ts(), next = INT64_MAX;
 

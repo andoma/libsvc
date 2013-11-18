@@ -14,6 +14,7 @@
 #include "trace.h"
 #include "ctrlsock.h"
 #include "cmd.h"
+#include "talloc.h"
 
 static int ctrlsock_fd;
 
@@ -150,6 +151,7 @@ conn_thread(void *aux)
     htsbuf_append(&recvq, buf, r);
     if(parse_input(fd, &recvq, pwd.pw_name))
       break;
+    talloc_cleanup();
   }
 
   htsbuf_queue_flush(&recvq);
