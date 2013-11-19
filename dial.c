@@ -37,7 +37,7 @@ getstreamsocket(int family)
  *
  */
 tcp_stream_t *
-dial(const char *hostname, int port, int timeout)
+dial(const char *hostname, int port, int timeout, int ssl)
 {
   struct hostent *hp;
   char *tmphstbuf;
@@ -182,6 +182,9 @@ dial(const char *hostname, int port, int timeout)
   val = 5;
   setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof(val));
 #endif
+
+  if(ssl)
+    return tcp_stream_create_ssl_from_fd(fd);
 
   return tcp_stream_create_from_fd(fd);
 }

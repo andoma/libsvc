@@ -33,28 +33,36 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
 #include "tcp.h"
 #include "trace.h"
 #include "talloc.h"
 
 
 
+static SSL_CTX *ssl_ctx;
+static pthread_mutex_t *ssl_locks;
+
+
 struct tcp_stream {
   int ts_fd;
-  int ts_nonblock;
+  char ts_nonblock;
 
-  int ts_write_unfulfilled;
+  SSL *ts_ssl;
 
   htsbuf_queue_t ts_spill;
-
   htsbuf_queue_t ts_sendq;
 
   int (*ts_write)(struct tcp_stream *ts, const void *data, int len);
 
   int (*ts_read)(struct tcp_stream *ts, void *data, int len, int waitall);
 
-};
+  int ts_read_status;
+  int ts_write_status;
 
+};
 
 
 /**
@@ -76,9 +84,16 @@ tcp_get_errno(tcp_stream_t *ts)
 void
 tcp_close(tcp_stream_t *ts)
 {
+  if(ts->ts_ssl != NULL) {
+    SSL_shutdown(ts->ts_ssl);
+    SSL_free(ts->ts_ssl);
+  }
+
   htsbuf_queue_flush(&ts->ts_spill);
   htsbuf_queue_flush(&ts->ts_sendq);
-  close(ts->ts_fd);
+  int r = close(ts->ts_fd);
+  if(r)
+    printf("Close failed!\n");
   free(ts);
 }
 
@@ -87,7 +102,7 @@ tcp_close(tcp_stream_t *ts)
  *
  */
 static int
-sendq_drain(tcp_stream_t *ts)
+os_write_try(tcp_stream_t *ts)
 {
   htsbuf_data_t *hd;
   htsbuf_queue_t *q = &ts->ts_sendq;
@@ -121,14 +136,130 @@ sendq_drain(tcp_stream_t *ts)
  *
  */
 static int
-sendq_write(struct tcp_stream *ts, const void *data, int len)
+os_read(struct tcp_stream *ts, void *data, int len, int waitall)
+{
+  return recv(ts->ts_fd, data, len, waitall ? MSG_WAITALL : 0);
+}
+
+
+/**
+ *
+ */
+static int
+os_write(struct tcp_stream *ts, const void *data, int len)
 {
   if(!ts->ts_nonblock)
     return write(ts->ts_fd, data, len);
 
   htsbuf_append(&ts->ts_sendq, data, len);
+  os_write_try(ts);
+  return len;
+}
 
-  sendq_drain(ts);
+
+/**
+ *
+ */
+static int
+ssl_read(struct tcp_stream *ts, void *data, int len, int waitall)
+{
+  assert(waitall == 0); // Not supported atm.
+
+  if(ts->ts_write_status == SSL_ERROR_WANT_READ) {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  ts->ts_read_status = 0;
+  int r = SSL_read(ts->ts_ssl, data, len);
+  int err = SSL_get_error(ts->ts_ssl, r);
+  printf("SSL_read() = %d (%d)\n", r, err);
+  switch(err) {
+  case SSL_ERROR_NONE:
+    return r;
+
+  case SSL_ERROR_ZERO_RETURN:
+    errno = ECONNRESET;
+    return -1;
+
+  case SSL_ERROR_WANT_READ:
+  case SSL_ERROR_WANT_WRITE:
+    ts->ts_read_status = err;
+    errno = EAGAIN;
+    return -1;
+
+  default:
+    errno = EREMOTEIO;
+    return -1;
+  }
+}
+
+
+/**
+ *
+ */
+static void
+ssl_write_try(tcp_stream_t *ts)
+{
+  htsbuf_data_t *hd;
+  htsbuf_queue_t *q = &ts->ts_sendq;
+  int len;
+
+  ts->ts_write_status = 0;
+
+  while((hd = TAILQ_FIRST(&q->hq_q)) != NULL) {
+
+    len = hd->hd_data_len - hd->hd_data_off;
+    assert(len > 0);
+
+    int r = SSL_write(ts->ts_ssl, hd->hd_data + hd->hd_data_off, len);
+    int err = SSL_get_error(ts->ts_ssl, r);
+    printf("SSL_write() = %d (%d)\n", r, err);
+
+    switch(err) {
+    case SSL_ERROR_NONE:
+      hd->hd_data_off += r;
+
+      assert(hd->hd_data_off <= hd->hd_data_len);
+
+      if(hd->hd_data_off == hd->hd_data_len) {
+        TAILQ_REMOVE(&q->hq_q, hd, hd_link);
+        free(hd->hd_data);
+        free(hd);
+      }
+      continue;
+
+    case SSL_ERROR_WANT_READ:
+    case SSL_ERROR_WANT_WRITE:
+      ts->ts_write_status = err;
+      return;
+
+    default:
+      return;
+    }
+  }
+}
+
+
+/**
+ *
+ */
+static int
+ssl_write(struct tcp_stream *ts, const void *data, int len)
+{
+  if(!ts->ts_nonblock) {
+    int r = SSL_write(ts->ts_ssl, data, len);
+    if(r > 0)
+      return r;
+    errno = EREMOTEIO;
+    return -1;
+  }
+
+  htsbuf_append(&ts->ts_sendq, data, len);
+
+  if(ts->ts_read_status != SSL_ERROR_WANT_WRITE)
+    ssl_write_try(ts);
+
   return len;
 }
 
@@ -139,21 +270,47 @@ sendq_write(struct tcp_stream *ts, const void *data, int len)
 void
 tcp_prepare_poll(tcp_stream_t *ts, struct pollfd *pfd)
 {
-  pfd->fd = ts->ts_fd;
-  pfd->events = POLLIN | POLLERR | POLLHUP;
+  assert(ts->ts_nonblock);
 
-  if(sendq_drain(ts))
-    pfd->events |= POLLOUT;
+  pfd->fd = ts->ts_fd;
+  pfd->events = POLLERR | POLLHUP;
+
+  if(ts->ts_ssl != NULL) {
+
+    if(ts->ts_read_status == SSL_ERROR_WANT_WRITE) {
+      pfd->events |= POLLOUT;
+    } else {
+      pfd->events |= POLLIN;
+      ssl_write_try(ts);
+    }
+
+    if(ts->ts_write_status == SSL_ERROR_WANT_WRITE)
+      pfd->events |= POLLOUT;
+    else if(ts->ts_write_status == SSL_ERROR_WANT_READ)
+      pfd->events |= POLLIN;
+
+  } else {
+
+    pfd->events |= POLLIN;
+    if(os_write_try(ts))
+      pfd->events |= POLLOUT;
+  }
 }
 
 
 /**
  *
  */
-static int
-os_read(struct tcp_stream *ts, void *data, int len, int waitall)
+int
+tcp_can_read(tcp_stream_t *ts, struct pollfd *pfd)
 {
-  return recv(ts->ts_fd, data, len, waitall ? MSG_WAITALL : 0);
+  if(ts->ts_ssl == NULL)
+    return pfd->revents & POLLIN;
+
+  if(ts->ts_write_status == SSL_ERROR_WANT_READ)
+    return 0;
+
+  return 1;
 }
 
 
@@ -168,12 +325,57 @@ tcp_stream_create_from_fd(int fd)
   ts->ts_fd = fd;
   htsbuf_queue_init(&ts->ts_spill, INT32_MAX);
   htsbuf_queue_init(&ts->ts_sendq, INT32_MAX);
-  ts->ts_write = sendq_write;
+
+  ts->ts_write = os_write;
   ts->ts_read  = os_read;
+
   return ts;
 }
 
 
+/**
+ *
+ */
+tcp_stream_t *
+tcp_stream_create_ssl_from_fd(int fd)
+{
+  char errmsg[120];
+
+  tcp_stream_t *ts = calloc(1, sizeof(tcp_stream_t));
+  ts->ts_fd = fd;
+
+  if((ts->ts_ssl = SSL_new(ssl_ctx)) == NULL)
+    goto bad;
+
+  if(SSL_set_fd(ts->ts_ssl, fd) == 0)
+    goto bad;
+
+  if(SSL_connect(ts->ts_ssl) <= 0)
+    goto bad;
+
+  SSL_set_mode(ts->ts_ssl, SSL_MODE_AUTO_RETRY);
+
+  ts->ts_fd = fd;
+  htsbuf_queue_init(&ts->ts_spill, INT32_MAX);
+  htsbuf_queue_init(&ts->ts_sendq, INT32_MAX);
+
+  ts->ts_write = ssl_write;
+  ts->ts_read  = ssl_read;
+  return ts;
+
+ bad:
+  ERR_error_string(ERR_get_error(), errmsg);
+  trace(LOG_ERR, "SSL Problem: %s", errmsg);
+
+  tcp_close(ts);
+  errno = EREMOTEIO;
+  return NULL;
+}
+
+
+/**
+ *
+ */
 int
 tcp_sendfile(tcp_stream_t *ts, int fd, int64_t bytes)
 {
@@ -661,6 +863,24 @@ tcp_server_create(int port, const char *bindaddr,
   return ts;
 }
 
+
+
+static unsigned long
+ssl_tid_fn(void)
+{
+  return (unsigned long)pthread_self();
+}
+
+static void
+ssl_lock_fn(int mode, int n, const char *file, int line)
+{
+  if(mode & CRYPTO_LOCK)
+    pthread_mutex_lock(&ssl_locks[n]);
+  else
+    pthread_mutex_unlock(&ssl_locks[n]);
+}
+
+
 /**
  *
  */
@@ -668,6 +888,18 @@ void
 tcp_server_init(void)
 {
   pthread_t tid;
+
+  SSL_library_init();
+  SSL_load_error_strings();
+  ssl_ctx = SSL_CTX_new(SSLv23_client_method());
+
+  int i, n = CRYPTO_num_locks();
+  ssl_locks = malloc(sizeof(pthread_mutex_t) * n);
+  for(i = 0; i < n; i++)
+    pthread_mutex_init(&ssl_locks[i], NULL);
+
+  CRYPTO_set_locking_callback(ssl_lock_fn);
+  CRYPTO_set_id_callback(ssl_tid_fn);
 
   tcp_server_epoll_fd = epoll_create(10);
   pthread_create(&tid, NULL, tcp_server_loop, NULL);

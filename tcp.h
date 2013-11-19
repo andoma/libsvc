@@ -34,6 +34,10 @@ typedef void (tcp_server_callback_t)(tcp_stream_t *ts, void *opaque,
 void *tcp_server_create(int port, const char *bindaddr,
                         tcp_server_callback_t *start, void *opaque);
 
+tcp_stream_t *tcp_stream_create_from_fd(int fd);
+
+tcp_stream_t *tcp_stream_create_ssl_from_fd(int fd);
+
 void tcp_close(tcp_stream_t *ts);
 
 int tcp_read(tcp_stream_t *ts, void *buf, size_t len);
@@ -48,15 +52,10 @@ int tcp_write(tcp_stream_t *ts, const void *buf, const size_t bufsize);
 
 void tcp_nonblock(tcp_stream_t *ts, int on);
 
-tcp_stream_t *tcp_stream_create_from_fd(int fd);
-
 int tcp_sendfile(tcp_stream_t *ts, int fd, int64_t bytes);
 
 void tcp_prepare_poll(tcp_stream_t *ts, struct pollfd *pfd);
 
+int tcp_can_read(tcp_stream_t *ts, struct pollfd *pfd);
+
 int tcp_get_errno(tcp_stream_t *ts);
-
-#if 0
-int tcp_read_timeout(tcp_stream_t *ts, void *buf, size_t len, int timeout);
-#endif
-
