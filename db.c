@@ -5,8 +5,9 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-#include "libsvc/cfg.h"
-#include "libsvc/trace.h"
+#include "cfg.h"
+#include "trace.h"
+#include "filebundle.h"
 
 #include "db.h"
 
@@ -359,5 +360,173 @@ db_rollback(conn_t *c)
   if(mysql_rollback(c->m))
     trace(LOG_ERR, "Unable to rollback transaction -- %s",
           mysql_error(c->m));
+  return 0;
+}
+
+
+/**
+ *
+ */
+static int
+run_sql_statement(conn_t *c, const char *q)
+{
+  MYSQL_STMT *s = mysql_stmt_init(c->m);
+  if(mysql_stmt_prepare(s, q, strlen(q))) {
+    mysql_stmt_close(s);
+    return -1;
+  }
+
+  if(mysql_stmt_execute(s)) {
+    mysql_stmt_close(s);
+    return -1;
+  }
+
+  mysql_stmt_close(s);
+  return 0;
+}
+
+/**
+ *
+ */
+static int
+get_current_version(conn_t *c)
+{
+  int ver;
+  const char *sel   = "SELECT ver from schema_version";
+  const char *creat = "CREATE TABLE schema_version (ver INT);";
+  const char *ins   = "INSERT INTO schema_version (ver) VALUES (0)";
+  MYSQL_STMT *s = mysql_stmt_init(c->m);
+
+  if(mysql_stmt_prepare(s, sel, strlen(sel))) {
+    mysql_stmt_close(s);
+
+    trace(LOG_INFO, "Creating schema_version table");
+
+    if(run_sql_statement(c, creat))
+      return -1;
+    if(run_sql_statement(c, ins))
+      return -1;
+
+    ver = 0;
+
+  } else {
+
+    if(mysql_stmt_execute(s)) {
+      mysql_stmt_close(s);
+      return -1;
+    }
+
+    int r = db_stream_row(0, s,DB_RESULT_INT(ver));
+    if(r) {
+      return -1;
+    }
+    mysql_stmt_close(s);
+  }
+
+  return ver;
+}
+
+/**
+ *
+ */
+static int
+run_multiple_statements(conn_t *c, char *s)
+{
+  char delim = ';';
+
+  while(1) {
+    while(*s && *s <= 32)
+      s++;
+
+    if(*s == 0)
+      break;
+
+    if(!strncmp(s, "DELIMITER ", strlen("DELIMITER "))) {
+      s += strlen("DELIMITER ");
+      delim = *s++;
+      continue;
+    }
+
+    char *e = strchr(s, delim);
+
+    if(e)
+      *e = 0;
+
+    run_sql_statement(c, s);
+
+    if(!e)
+      break;
+    s = e + 1;
+  }
+
+
+  return 0;
+}
+
+/**
+ *
+ */
+int
+db_upgrade_schema(const char *schema_bundle)
+{
+  char path[256];
+  conn_t *c = db_get_conn();
+  if(c == NULL)
+    return -1;
+
+  if(db_begin(c))
+    return -1;
+
+  int ver = get_current_version(c);
+
+  trace(LOG_INFO, "Current database schema is at version %d", ver);
+
+  int n;
+  for(n = 0; ; n++) {
+    snprintf(path, sizeof(path), "%s/%03d.sql", schema_bundle, n + 1);
+    if(filebundle_get(path, NULL, NULL))
+      break;
+  }
+
+  if(n == ver) {
+    db_rollback(c);
+    return 0;
+  }
+
+  trace(LOG_INFO, "Want to upgrade database schema from version %d to %d", ver, n);
+
+  while(1) {
+    const void *q;
+    int len;
+
+    ver++;
+
+    snprintf(path, sizeof(path), "%s/%03d.sql", schema_bundle, ver);
+    if(filebundle_get(path, &q, &len)) {
+      db_rollback(c);
+      return -1;
+    }
+
+    char *x = malloc(len + 1);
+    memcpy(x, q, len);
+    x[len] = 0;
+    int r = run_multiple_statements(c, x);
+    free(x);
+    if(r) {
+      db_rollback(c);
+      trace(LOG_ERR, "Failed to upgrade DB to version %d", ver);
+      return -1;
+    }
+    trace(LOG_INFO, "DB upgraded to version %d", ver);
+    if(ver == n)
+      break;
+  }
+
+
+  char setq[256];
+  snprintf(setq, sizeof(setq), "UPDATE schema_version SET ver=%d", n);
+  run_sql_statement(c, setq);
+
+  db_commit(c);
   return 0;
 }

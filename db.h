@@ -46,3 +46,5 @@ int db_begin(conn_t *c);
 int db_commit(conn_t *c);
 
 int db_rollback(conn_t *c);
+
+int db_upgrade_schema(const char *schema_bundle);
