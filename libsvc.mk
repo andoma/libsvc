@@ -17,6 +17,7 @@ libsvc_SRCS += \
 	ctrlsock.c \
 	cmd.c \
 	talloc.c \
+	filebundle.c \
 
 libsvc_SRCS-${WITH_MYSQL} +=  db.c
 
