@@ -2,7 +2,7 @@
 
 typedef htsmsg_t cfg_t;
 
-int cfg_load(const char *filename);
+int cfg_load(const char *filename, const char *defconf);
 
 cfg_t *cfg_get_root(void);
 

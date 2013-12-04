@@ -42,7 +42,7 @@ cfg_releasep(cfg_t **p)
  *
  */
 int
-cfg_load(const char *filename)
+cfg_load(const char *filename, const char *defconf)
 {
   int err;
   static char *lastfilename;
@@ -57,7 +57,7 @@ cfg_load(const char *filename)
   }
 
   if(filename == NULL)
-    filename = "config.json";
+    filename = defconf;
 
   trace(LOG_NOTICE, "About to load config form %s", filename);
 
