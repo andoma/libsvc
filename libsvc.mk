@@ -1,5 +1,5 @@
 
-libunixservice_SRCS += \
+libsvc_SRCS += \
 	misc.c \
 	htsbuf.c \
 	htsmsg.c \
@@ -15,6 +15,9 @@ libunixservice_SRCS += \
 	cfg.c \
 	urlshorten.c \
 	ctrlsock.c \
-	db.c \
 	cmd.c \
 	talloc.c \
+
+libsvc_SRCS-${WITH_MYSQL} +=  db.c
+
+libsvc_SRCS += ${libsvc_SRCS-yes}
