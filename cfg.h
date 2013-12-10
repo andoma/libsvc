@@ -1,3 +1,4 @@
+#pragma once
 #include "libsvc/htsmsg.h"
 
 typedef htsmsg_t cfg_t;
