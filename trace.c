@@ -104,3 +104,32 @@ enable_syslog(const char *program, const char *facility)
   openlog("doozer", LOG_PID, f);
 
 }
+
+/**
+ *
+ */
+void
+hexdump(const char *pfx, const void *data_, int len)
+{
+  int i, j;
+  const uint8_t *data = data_;
+  char buf[100];
+  
+  for(i = 0; i < len; i+= 16) {
+    int p = snprintf(buf, sizeof(buf), "0x%06x: ", i);
+
+    for(j = 0; j + i < len && j < 16; j++) {
+      p += snprintf(buf + p, sizeof(buf) - p, "%s%02x ",
+		    j==8 ? " " : "", data[i+j]);
+    }
+    const int cnt = (17 - j) * 3 + (j < 8);
+    memset(buf + p, ' ', cnt);
+    p += cnt;
+
+    for(j = 0; j + i < len && j < 16; j++)
+      buf[p++] = data[i+j] < 32 || data[i+j] > 126 ? '.' : data[i+j];
+    buf[p] = 0;
+    trace(LOG_DEBUG, "%s: %s", pfx, buf);
+  }
+}
+
