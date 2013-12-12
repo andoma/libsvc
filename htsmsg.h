@@ -325,4 +325,6 @@ static inline void htsmsg_release(htsmsg_t *m)
     htsmsg_destroy(m);
 }
 
+int htsmsg_get_children(htsmsg_t *msg);
+
 #endif /* HTSMSG_H_ */
