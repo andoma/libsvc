@@ -198,6 +198,7 @@ cmd_register(const cmd_t *cmd)
     cmd_node_t *cn = malloc(sizeof(cmd_node_t));
     cn->cn_token = ct;
     LIST_INSERT_SORTED(&cur->cn_childs, cn, cn_parent_link, cn_cmp);
+    LIST_INIT(&cn->cn_childs);
     cur = cn;
   }
 
