@@ -402,11 +402,17 @@ htsmsg_get_dbl(htsmsg_t *msg, const char *name, double *dblp)
   if((f = htsmsg_field_find(msg, name)) == NULL)
     return HTSMSG_ERR_FIELD_NOT_FOUND;
 
-  if(f->hmf_type != HMF_DBL)
-    return HTSMSG_ERR_CONVERSION_IMPOSSIBLE;
+  if(f->hmf_type == HMF_DBL) {
+    *dblp = f->hmf_dbl;
+    return 0;
+  }
 
-  *dblp = f->hmf_dbl;
-  return 0;
+  if(f->hmf_type == HMF_S64) {
+    *dblp = f->hmf_s64;
+    return 0;
+  }
+  
+  return HTSMSG_ERR_CONVERSION_IMPOSSIBLE;
 }
 
 
