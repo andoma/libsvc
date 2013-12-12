@@ -41,6 +41,9 @@ typedef struct htsmsg {
 
   int hm_refcount;
 
+  void (*hm_free_opaque)(void *);
+  void *hm_opaque;
+
 } htsmsg_t;
 
 

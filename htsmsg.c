@@ -150,6 +150,7 @@ htsmsg_create_map(void)
 
   msg = malloc(sizeof(htsmsg_t));
   TAILQ_INIT(&msg->hm_fields);
+  msg->hm_free_opaque = NULL;
   msg->hm_islist = 0;
   msg->hm_refcount = 0;
   return msg;
@@ -165,6 +166,7 @@ htsmsg_create_list(void)
 
   msg = malloc(sizeof(htsmsg_t));
   TAILQ_INIT(&msg->hm_fields);
+  msg->hm_free_opaque = NULL;
   msg->hm_islist = 1;
   msg->hm_refcount = 0;
   return msg;
@@ -181,6 +183,8 @@ htsmsg_destroy(htsmsg_t *msg)
     return;
 
   htsmsg_clear(msg);
+  if(msg->hm_free_opaque != NULL)
+    msg->hm_free_opaque(msg->hm_opaque);
   free(msg);
 }
 
@@ -274,6 +278,7 @@ htsmsg_add_msg(htsmsg_t *msg, const char *name, htsmsg_t *sub)
 
   f = htsmsg_field_add(msg, name, sub->hm_islist ? HMF_LIST : HMF_MAP,
 		       HMF_NAME_ALLOCED);
+  assert(sub->hm_free_opaque == NULL);
 
   f->hmf_msg.hm_islist = sub->hm_islist;
   TAILQ_MOVE(&f->hmf_msg.hm_fields, &sub->hm_fields, hmf_link);
@@ -292,6 +297,7 @@ htsmsg_add_msg_extname(htsmsg_t *msg, const char *name, htsmsg_t *sub)
 
   f = htsmsg_field_add(msg, name, sub->hm_islist ? HMF_LIST : HMF_MAP, 0);
 
+  assert(sub->hm_free_opaque == NULL);
   TAILQ_MOVE(&f->hmf_msg.hm_fields, &sub->hm_fields, hmf_link);
   free(sub);
 }

@@ -4,6 +4,7 @@ libsvc_SRCS += \
 	htsbuf.c \
 	htsmsg.c \
 	htsmsg_json.c \
+	htsmsg_binary.c \
 	json.c \
 	dbl.c \
 	dial.c \
