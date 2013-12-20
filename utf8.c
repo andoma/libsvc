@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 
 #include "utf8.h"
@@ -139,4 +141,64 @@ utf8_get(const char **s)
         return 0xfffd; // overlong sequence
 
     return r;
+}
+
+
+/**
+ *
+ */
+char *
+utf8_cleanup(const char *str)
+{
+  const char *s = str;
+  int outlen = 1;
+  int c;
+  int bad = 0;
+  while((c = utf8_get(&s)) != 0) {
+    if(c == 0xfffd)
+      bad = 1;
+    outlen += utf8_put(NULL, c);
+  }
+
+  if(!bad)
+    return NULL;
+
+  char *out = malloc(outlen);
+  char *ret = out;
+  while((c = utf8_get(&str)) != 0)
+    out += utf8_put(out, c);
+
+  *out = 0;
+  return ret;
+}
+
+
+/**
+ *
+ */
+void
+utf8_cleanup_inplace(char *str, size_t len)
+{
+  const char *s = str;
+  int outlen = 1;
+  int c;
+  int bad = 0;
+  while((c = utf8_get(&s)) != 0) {
+    if(c == 0xfffd)
+      bad = 1;
+    outlen += utf8_put(NULL, c);
+  }
+
+  if(!bad)
+    return;
+
+  char *out = alloca(outlen);
+  const char *ret = out;
+  s = str;
+  while((c = utf8_get(&s)) != 0)
+    out += utf8_put(out, c);
+
+  *out = 0;
+
+  snprintf(str, len, "%s", ret);
 }

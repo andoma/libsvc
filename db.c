@@ -108,6 +108,15 @@ db_get_conn(void)
       return NULL;
     }
 
+    MYSQL_STMT *s = prep_stmt(m, "SET NAMES utf8");
+    if(mysql_stmt_execute(s)) {
+      trace(LOG_ERR, "Unable to enable UTF-8 on db connection");
+      mysql_close(m);
+      return NULL;
+    }
+    mysql_stmt_close(s);
+
+
     c = calloc(1, sizeof(conn_t));
     c->m = m;
     pthread_setspecific(dbkey, c);
