@@ -15,6 +15,8 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <sys/types.h>
+#include <regex.h>
 #include <pthread.h>
 #include <assert.h>
 #include <stdio.h>
@@ -34,16 +36,40 @@
 #include "tcp.h"
 #include "http.h"
 #include "cfg.h"
+#include "htsmsg_json.h"
 
 static void *http_server;
 
+typedef struct http_path {
+  LIST_ENTRY(http_path) hp_link;
+  char *hp_path;
+  void *hp_opaque;
+  http_callback_t *hp_callback;
+  int hp_len;
+} http_path_t;
+
+
 static LIST_HEAD(, http_path) http_paths;
+
+
+typedef struct http_route {
+  LIST_ENTRY(http_route) hr_link;
+  char *hr_path;
+  regex_t hr_reg;
+  int hr_depth;
+  http_callback2_t *hr_callback;
+} http_route_t;
+
+
+static LIST_HEAD(, http_route) http_routes;
+
 
 static struct strtab HTTP_cmdtab[] = {
   { "GET",        HTTP_CMD_GET },
   { "HEAD",       HTTP_CMD_HEAD },
   { "POST",       HTTP_CMD_POST },
   { "PUT",        HTTP_CMD_PUT },
+  { "DELETE",     HTTP_CMD_DELETE },
   { "DESCRIBE",   RTSP_CMD_DESCRIBE },
   { "OPTIONS",    RTSP_CMD_OPTIONS },
   { "SETUP",      RTSP_CMD_SETUP },
@@ -60,60 +86,81 @@ static struct strtab HTTP_versiontab[] = {
   { "RTSP/1.0",        RTSP_VERSION_1_0 },
 };
 
-static void http_parse_get_args(http_connection_t *hc, char *args);
+static void http_parse_query_args(http_connection_t *hc, char *args);
+
 
 /**
  *
  */
-static http_path_t *
-http_resolve(http_connection_t *hc, char **remainp, char **argsp)
+static int
+http_resolve_path(http_connection_t *hc)
 {
   http_path_t *hp;
   char *v;
+  const char *remain = NULL;
 
   LIST_FOREACH(hp, &http_paths, hp_link) {
-    if(!strncmp(hc->hc_url, hp->hp_path, hp->hp_len)) {
-      if(hc->hc_url[hp->hp_len] == 0 || hc->hc_url[hp->hp_len] == '/' ||
-	 hc->hc_url[hp->hp_len] == '?')
+    if(!strncmp(hc->hc_path, hp->hp_path, hp->hp_len)) {
+      if(hc->hc_path[hp->hp_len] == 0 || hc->hc_path[hp->hp_len] == '/' ||
+	 hc->hc_path[hp->hp_len] == '?')
 	break;
     }
   }
 
   if(hp == NULL)
-    return NULL;
+    return 404;
 
-  v = hc->hc_url + hp->hp_len;
+  v = hc->hc_path + hp->hp_len;
 
-  *remainp = NULL;
-  *argsp = NULL;
 
   switch(*v) {
   case 0:
     break;
 
   case '/':
-    if(v[1] == '?') {
-      *argsp = v + 1;
-      break;
-    }
-
-    *remainp = v + 1;
-    v = strchr(v + 1, '?');
-    if(v != NULL) {
-      *v = 0;  /* terminate remaining url */
-      *argsp = v + 1;
-    }
-    break;
-
-  case '?':
-    *argsp = v + 1;
+    if(v[1])
+      remain = v + 1;
     break;
 
   default:
-    return NULL;
+    return 404;
   }
 
-  return hp;
+
+  return hp->hp_callback(hc, remain, hp->hp_opaque);
+}
+
+
+#define MAX_ROUTE_MATCHES 32
+
+/**
+ *
+ */
+static int
+http_resolve_route(http_connection_t *hc)
+{
+  http_route_t *hr;
+  regmatch_t match[MAX_ROUTE_MATCHES];
+  char *argv[MAX_ROUTE_MATCHES];
+  int argc;
+
+  LIST_FOREACH(hr, &http_routes, hr_link)
+    if(!regexec(&hr->hr_reg, hc->hc_path, 32, match, 0))
+      break;
+
+  if(hr == NULL)
+    return 404;
+
+  for(argc = 0; argc < MAX_ROUTE_MATCHES; argc++) {
+    if(match[argc].rm_so == -1)
+      break;
+    int len = match[argc].rm_eo - match[argc].rm_so;
+    char *s = argv[argc] = alloca(len + 1);
+    s[len] = 0;
+    memcpy(s, hc->hc_path + match[argc].rm_so, len);
+  }
+
+  return hr->hr_callback(hc, argc, argv);
 }
 
 
@@ -325,30 +372,25 @@ http_redirect(http_connection_t *hc, const char *location)
   http_send_reply(hc, HTTP_STATUS_FOUND, "text/html", NULL, location, 0);
 }
 
-/**
- *
- */
-int
-http_access_verify(http_connection_t *hc)
-{
-  return 0;
-}
 
 /**
- * Execute url callback
- *
- * Returns 1 if we should disconnect
- * 
+ * Resolve URL and invoke handler
  */
 static int
-http_exec(http_connection_t *hc, http_path_t *hp, char *remain)
+http_resolve(http_connection_t *hc)
 {
   int err;
 
-  if(http_access_verify(hc))
-    err = HTTP_STATUS_UNAUTHORIZED;
-  else
-    err = hp->hp_callback(hc, remain, hp->hp_opaque);
+  char *args = strchr(hc->hc_path, '?');
+  if(args != NULL) {
+    *args = 0;
+    http_parse_query_args(hc, args + 1);
+  }
+
+  err = http_resolve_route(hc);
+
+  if(err == 404)
+    err = http_resolve_path(hc);
 
   if(err == -1)
     return 1;
@@ -356,29 +398,6 @@ http_exec(http_connection_t *hc, http_path_t *hp, char *remain)
   if(err)
     http_error(hc, err);
   return 0;
-}
-
-
-
-/**
- * HTTP GET
- */
-static int
-http_cmd_get(http_connection_t *hc)
-{
-  http_path_t *hp;
-  char *remain;
-  char *args;
-
-  hp = http_resolve(hc, &remain, &args);
-  if(hp == NULL) {
-    http_error(hc, HTTP_STATUS_NOT_FOUND);
-    return 0;
-  }
-
-  if(args != NULL)
-    http_parse_get_args(hc, args);
-  return http_exec(hc, hp, remain);
 }
 
 
@@ -393,8 +412,7 @@ http_cmd_get(http_connection_t *hc)
 static int
 http_cmd_post(http_connection_t *hc)
 {
-  http_path_t *hp;
-  char *remain, *args, *v, *argv[2];
+  char *v, *argv[2];
   int n;
 
   /* Set keep-alive status */
@@ -433,16 +451,19 @@ http_cmd_post(http_connection_t *hc)
   }
 
   if(!strcmp(argv[0], "application/x-www-form-urlencoded"))
-    http_parse_get_args(hc, hc->hc_post_data);
+    http_parse_query_args(hc, hc->hc_post_data);
 
-  hp = http_resolve(hc, &remain, &args);
-  if(hp == NULL) {
-    http_error(hc, HTTP_STATUS_NOT_FOUND);
-    return 0;
+  assert(hc->hc_post_message == NULL);
+  if(!strcmp(argv[0], "application/json")) {
+    char errbuf[256];
+    hc->hc_post_message = htsmsg_json_deserialize(hc->hc_post_data,
+                                                  errbuf, sizeof(errbuf));
+
+    if(hc->hc_post_message == NULL)
+      return 400;
   }
-  if(args != NULL)
-    http_parse_get_args(hc, args);
-  return http_exec(hc, hp, remain);
+
+  return http_resolve(hc);
 }
 
 
@@ -457,10 +478,11 @@ http_process_request(http_connection_t *hc)
     http_error(hc, HTTP_STATUS_BAD_REQUEST);
     return 0;
   case HTTP_CMD_GET:
-    return http_cmd_get(hc);
+  case HTTP_CMD_DELETE:
+    return http_resolve(hc);
   case HTTP_CMD_HEAD:
     hc->hc_no_output = 1;
-    return http_cmd_get(hc);
+    return http_resolve(hc);
   case HTTP_CMD_POST:
   case HTTP_CMD_PUT:
     return http_cmd_post(hc);
@@ -478,7 +500,7 @@ process_request(http_connection_t *hc)
   int n, rval = -1;
   uint8_t authbuf[150];
   
-  hc->hc_url_orig = strdup(hc->hc_url);
+  hc->hc_path_orig = strdup(hc->hc_path);
 
   /* Set keep-alive status */
   v = http_arg_get(&hc->hc_args, "connection");
@@ -531,7 +553,7 @@ process_request(http_connection_t *hc)
     break;
   }
   free(hc->hc_representative);
-  free(hc->hc_url_orig);
+  free(hc->hc_path_orig);
   return rval;
 }
 
@@ -597,9 +619,50 @@ http_arg_set(struct http_arg_list *list, const char *key,
 
 
 /**
+ *
+ */
+static int route_cmp(const http_route_t *a, const http_route_t *b)
+{
+  return a->hr_depth - b->hr_depth;
+}
+
+/**
+ * Add a regexp'ed route
+ */
+void
+http_route_add(const char *path, http_callback2_t *callback)
+{
+  http_route_t *hr = malloc(sizeof(http_route_t));
+
+  int len = strlen(path);
+
+  for(int i = 0; i < len; i++)
+    if(path[i] == '/')
+      hr->hr_depth++;
+
+  char *p = malloc(len + 2);
+  p[0] = '^';
+  strcpy(p+1, path);
+
+  int rval = regcomp(&hr->hr_reg, p, REG_ICASE | REG_EXTENDED);
+  if(rval) {
+    char errbuf[256];
+    regerror(rval, &hr->hr_reg, errbuf, sizeof(errbuf));
+    trace(LOG_ALERT, "Failed to compile regex for HTTP route %s -- %s",
+          path, errbuf);
+    exit(1);
+  }
+
+  hr->hr_path     = strdup(path);
+  hr->hr_callback = callback;
+  LIST_INSERT_SORTED(&http_routes, hr, hr_link, route_cmp);
+}
+
+
+/**
  * Add a callback for a given "virtual path" on our HTTP server
  */
-http_path_t *
+void
 http_path_add(const char *path, void *opaque, http_callback_t *callback)
 {
   http_path_t *hp = malloc(sizeof(http_path_t));
@@ -609,7 +672,6 @@ http_path_add(const char *path, void *opaque, http_callback_t *callback)
   hp->hp_opaque   = opaque;
   hp->hp_callback = callback;
   LIST_INSERT_HEAD(&http_paths, hp, hp_link);
-  return hp;
 }
 
 
@@ -671,7 +733,7 @@ http_deescape(char *s)
  * Parse arguments of a HTTP GET url, not perfect, but works for us
  */
 static void
-http_parse_get_args(http_connection_t *hc, char *args)
+http_parse_query_args(http_connection_t *hc, char *args)
 {
   char *k, *v;
 
@@ -728,7 +790,7 @@ http_serve_requests(http_connection_t *hc)
       return;
     }
 
-    hc->hc_url = argv[1];
+    hc->hc_path = argv[1];
     if((hc->hc_version = str2val(argv[2], HTTP_versiontab)) == -1) {
       return;
     }
@@ -758,6 +820,12 @@ http_serve_requests(http_connection_t *hc)
 
     if(process_request(hc)) {
       break;
+    }
+
+
+    if(hc->hc_post_message != NULL) {
+      htsmsg_destroy(hc->hc_post_message);
+      hc->hc_post_message = NULL;
     }
 
     free(hc->hc_post_data);
@@ -804,6 +872,9 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
   free(hc.hc_post_data);
   free(hc.hc_username);
   free(hc.hc_password);
+
+  if(hc.hc_post_message != NULL)
+    htsmsg_destroy(hc.hc_post_message);
 
   http_arg_flush(&hc.hc_args);
   http_arg_flush(&hc.hc_req_args);
