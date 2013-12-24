@@ -502,6 +502,12 @@ db_upgrade_schema(const char *schema_bundle)
     return 0;
   }
 
+  if(ver > n) {
+    trace(LOG_INFO, "Current DB version is greater than we support, giving up");
+    db_rollback(c);
+    return -1;
+  }
+
   trace(LOG_INFO, "Want to upgrade database schema from version %d to %d", ver, n);
 
   while(1) {
