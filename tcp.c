@@ -382,7 +382,7 @@ tcp_sendfile(tcp_stream_t *ts, int fd, int64_t bytes)
   while(bytes > 0) {
     int chunk = MIN(1024 * 1024 * 1024, bytes);
     int r = sendfile(ts->ts_fd, fd, NULL, chunk);
-    if(r == -1)
+    if(r < 1)
       return -1;
     bytes -= r;
   }
