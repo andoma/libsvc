@@ -637,7 +637,7 @@ http_route_add(const char *path, http_callback2_t *callback)
   http_route_t *hr = malloc(sizeof(http_route_t));
 
   int len = strlen(path);
-
+  hr->hr_depth = 0;
   for(int i = 0; i < len; i++)
     if(path[i] == '/')
       hr->hr_depth++;
@@ -647,6 +647,7 @@ http_route_add(const char *path, http_callback2_t *callback)
   strcpy(p+1, path);
 
   int rval = regcomp(&hr->hr_reg, p, REG_ICASE | REG_EXTENDED);
+  free(p);
   if(rval) {
     char errbuf[256];
     regerror(rval, &hr->hr_reg, errbuf, sizeof(errbuf));
