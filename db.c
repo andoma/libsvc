@@ -55,6 +55,7 @@ db_stmt_get(conn_t *c, const char *str)
     LIST_REMOVE(s, link);
   }
   LIST_INSERT_HEAD(&c->prep_statements, s, link);
+  mysql_stmt_reset(s->mysql_stmt);
   return s->mysql_stmt;
 }
 
@@ -142,6 +143,7 @@ db_cleanup(void *aux)
   }
   mysql_close(c->m);
   free(c);
+  mysql_thread_end();
 }
 
 
@@ -169,6 +171,7 @@ db_stmt_exec(MYSQL_STMT *s, const char *fmt, ...)
     return -1;
 
   MYSQL_BIND in[args];
+  unsigned long lengths[args];
   memset(in, 0, sizeof(MYSQL_BIND) * args);
   va_list ap;
   va_start(ap, fmt);
@@ -188,6 +191,8 @@ db_stmt_exec(MYSQL_STMT *s, const char *fmt, ...)
       if(in[p].buffer != NULL) {
         in[p].buffer_type = MYSQL_TYPE_STRING;
         in[p].buffer_length = strlen(in[p].buffer);
+        lengths[p] = in[p].buffer_length;
+        in[p].length = &lengths[p];
       } else {
         in[p].buffer_type = MYSQL_TYPE_NULL;
       }
