@@ -94,6 +94,8 @@ typedef struct http_connection {
 
   /* Support for HTTP POST */
 
+  const char *hc_content_type;
+
   char *hc_post_data;
   unsigned int hc_post_len;
 

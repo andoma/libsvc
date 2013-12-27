@@ -450,6 +450,8 @@ http_cmd_post(http_connection_t *hc)
     return 0;
   }
 
+  hc->hc_content_type = argv[0];
+
   if(!strcmp(argv[0], "application/x-www-form-urlencoded"))
     http_parse_query_args(hc, hc->hc_post_data);
 
