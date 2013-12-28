@@ -7,7 +7,7 @@ CFLAGS  += -Wall -Werror -Wwrite-strings -Wno-deprecated-declarations
 CFLAGS  += -Wmissing-prototypes -std=gnu99
 
 CFLAGS  += $(shell pkg-config --cflags libcurl)
-LDFLAGS += $(shell pkg-config --libs libcurl) -lssl -lcrypto -lbz2 -lpthread
+LDFLAGS += $(shell pkg-config --libs libcurl) -lssl -lcrypto -lbz2 -lpthread -lrt
 
 SRCS += \
 	libsvc/misc.c \
