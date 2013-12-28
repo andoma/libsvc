@@ -61,12 +61,13 @@ MKBUNDLE = $(CURDIR)/libsvc/mkbundle
 all: ${PROG}
 
 $(info ${SRCS})
+$(info ${OBJS})
 
-${PROG}: $(OBJS) $(BUNDLE_OBJS) Makefile
+${PROG}: $(OBJS) $(BUNDLE_OBJS) $(ALLDEPS)
 	@mkdir -p $(dir $@)
 	$(CC) -o $@ $(OBJS) $(BUNDLE_OBJS) $(LDFLAGS) ${LDFLAGS_cfg}
 
-${BUILDDIR}/%.o: %.c Makefile
+${BUILDDIR}/%.o: %.c  $(ALLDEPS)
 	@mkdir -p $(dir $@)
 	$(CC) -MD -MP $(CFLAGS_com) $(CFLAGS) -c -o $@ $(CURDIR)/$<
 
