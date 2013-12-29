@@ -179,6 +179,7 @@ http_rc2str(int code)
   case HTTP_STATUS_UNAUTHORIZED:    return "Unauthorized";
   case HTTP_STATUS_BAD_REQUEST:     return "Bad request";
   case HTTP_STATUS_FOUND:           return "Found";
+  case 304:                         return "Not modified";
   default:
     return "Unknown returncode";
     break;
