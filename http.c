@@ -423,8 +423,8 @@ http_cmd_post(http_connection_t *hc)
   }
 
   hc->hc_post_len = atoi(v);
-  if(hc->hc_post_len > 64 * 1024 * 1024) {
-    /* Bail out if POST data > 64 MB */
+  if(hc->hc_post_len > 1024 * 1024 * 1024) {
+    /* Bail out if POST data > 1 GB */
     hc->hc_keep_alive = 0;
     return -1;
   }
