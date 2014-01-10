@@ -442,6 +442,12 @@ http_cmd_post(http_connection_t *hc)
   char *v, *argv[2];
   int n;
 
+  v = http_arg_get(&hc->hc_args, "Content-Length");
+  if(v == NULL) {
+    /* No content length in POST, make us disconnect */
+    return HTTP_ERROR_DISCONNECT;
+  }
+  hc->hc_post_len = atoi(v);
 
   v = http_arg_get(&hc->hc_args, "Expect");
   if(v != NULL && !strcasecmp(v, "100-continue")) {
@@ -458,13 +464,7 @@ http_cmd_post(http_connection_t *hc)
     }
   }
 
-  v = http_arg_get(&hc->hc_args, "Content-Length");
-  if(v == NULL) {
-    /* No content length in POST, make us disconnect */
-    return HTTP_ERROR_DISCONNECT;
-  }
 
-  hc->hc_post_len = atoi(v);
   if(hc->hc_post_len > 1024 * 1024 * 1024) {
     /* Bail out if POST data > 1 GB */
     hc->hc_keep_alive = 0;
