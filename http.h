@@ -32,6 +32,7 @@ typedef struct http_arg {
 #define HTTP_STATUS_OK           200
 #define HTTP_STATUS_PARTIAL_CONTENT 206
 #define HTTP_STATUS_FOUND        302
+#define HTTP_STATUS_TEMPORARY_REDIRECT 307
 #define HTTP_STATUS_BAD_REQUEST  400
 #define HTTP_STATUS_UNAUTHORIZED 401
 #define HTTP_STATUS_NOT_FOUND    404
@@ -120,7 +121,9 @@ int http_output_html(http_connection_t *hc);
 
 int http_output_content(http_connection_t *hc, const char *content);
 
-void http_redirect(http_connection_t *hc, const char *location);
+void http_redirect(http_connection_t *hc, const char *location, int status);
+
+int http_send_100_continue(http_connection_t *hc);
 
 int http_send_header(http_connection_t *hc, int rc, const char *content,
                      int64_t contentlen, const char *encoding,
@@ -132,9 +135,12 @@ typedef int (http_callback_t)(http_connection_t *hc,
 
 void http_path_add(const char *path, void *opaque, http_callback_t *callback);
 
-typedef int (http_callback2_t)(http_connection_t *hc, int argc, char **argv);
+typedef int (http_callback2_t)(http_connection_t *hc, int argc, char **argv,
+                               int flags);
 
-void http_route_add(const char *path, http_callback2_t *callback);
+#define HTTP_ROUTE_HANDLE_100_CONTINUE 0x1
+
+void http_route_add(const char *path, http_callback2_t *callback, int flags);
 
 int http_server_init(int port, const char *bindaddr);
 

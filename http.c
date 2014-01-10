@@ -54,6 +54,7 @@ static LIST_HEAD(, http_path) http_paths;
 
 typedef struct http_route {
   LIST_ENTRY(http_route) hr_link;
+  int hr_flags;
   char *hr_path;
   regex_t hr_reg;
   int hr_depth;
@@ -63,6 +64,7 @@ typedef struct http_route {
 
 static LIST_HEAD(, http_route) http_routes;
 
+#define HTTP_ERROR_DISCONNECT -1
 
 static struct strtab HTTP_cmdtab[] = {
   { "GET",        HTTP_CMD_GET },
@@ -137,7 +139,7 @@ http_resolve_path(http_connection_t *hc)
  *
  */
 static int
-http_resolve_route(http_connection_t *hc)
+http_resolve_route(http_connection_t *hc, int cont)
 {
   http_route_t *hr;
   regmatch_t match[MAX_ROUTE_MATCHES];
@@ -151,6 +153,9 @@ http_resolve_route(http_connection_t *hc)
   if(hr == NULL)
     return 404;
 
+  if(cont && !(hr->hr_flags & HTTP_ROUTE_HANDLE_100_CONTINUE))
+    return 100;
+
   for(argc = 0; argc < MAX_ROUTE_MATCHES; argc++) {
     if(match[argc].rm_so == -1)
       break;
@@ -160,7 +165,8 @@ http_resolve_route(http_connection_t *hc)
     memcpy(s, hc->hc_path + match[argc].rm_so, len);
   }
 
-  return hr->hr_callback(hc, argc, argv);
+  return hr->hr_callback(hc, argc, argv,
+                         cont ? HTTP_ROUTE_HANDLE_100_CONTINUE : 0);
 }
 
 
@@ -180,6 +186,7 @@ http_rc2str(int code)
   case HTTP_STATUS_BAD_REQUEST:     return "Bad request";
   case HTTP_STATUS_FOUND:           return "Found";
   case 304:                         return "Not modified";
+  case HTTP_STATUS_TEMPORARY_REDIRECT: return "Temporary redirect";
   default:
     return "Unknown returncode";
     break;
@@ -194,6 +201,22 @@ static const char *cachemonths[12] = {
   "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
   "Dec"
 };
+
+
+/**
+ *
+ */
+int
+http_send_100_continue(http_connection_t *hc)
+{
+  htsbuf_queue_t q;
+  htsbuf_queue_init(&q, 0);
+
+  htsbuf_qprintf(&q, "%s 100 Continue\r\n\r\n",
+		 val2str(hc->hc_version, HTTP_versiontab));
+  return tcp_write_queue(hc->hc_ts, &q);
+}
+
 
 
 /**
@@ -357,7 +380,7 @@ http_output_content(http_connection_t *hc, const char *content)
  * Send an HTTP REDIRECT
  */
 void
-http_redirect(http_connection_t *hc, const char *location)
+http_redirect(http_connection_t *hc, const char *location, int status)
 {
   htsbuf_queue_flush(&hc->hc_reply);
 
@@ -370,30 +393,33 @@ http_redirect(http_connection_t *hc, const char *location)
 		 "</BODY></HTML>\r\n",
 		 location, location);
 
-  http_send_reply(hc, HTTP_STATUS_FOUND, "text/html", NULL, location, 0);
+  http_send_reply(hc, status, "text/html", NULL, location, 0);
 }
 
 
 /**
  * Resolve URL and invoke handler
+ *
+ * If 'cont' is set we are pre-resolving for a 'Expect: 100-continue'
+ * request
+ *
+ * If this function returns non-zero the conncetion will be terminated
+ *
+ * Normal errors are supposed to be handled without having to disconnection
+ * the connection and thus they are sent inside here using http_error()
+ *
  */
 static int
 http_resolve(http_connection_t *hc)
 {
   int err;
 
-  char *args = strchr(hc->hc_path, '?');
-  if(args != NULL) {
-    *args = 0;
-    http_parse_query_args(hc, args + 1);
-  }
-
-  err = http_resolve_route(hc);
+  err = http_resolve_route(hc, 0);
 
   if(err == 404)
     err = http_resolve_path(hc);
 
-  if(err == -1)
+  if(err == HTTP_ERROR_DISCONNECT)
     return 1;
 
   if(err)
@@ -416,18 +442,33 @@ http_cmd_post(http_connection_t *hc)
   char *v, *argv[2];
   int n;
 
-  /* Set keep-alive status */
+
+  v = http_arg_get(&hc->hc_args, "Expect");
+  if(v != NULL && !strcasecmp(v, "100-continue")) {
+    int err = http_resolve_route(hc, 1);
+
+    if(err == 100) {
+
+      if(http_send_100_continue(hc))
+        return 1;
+
+    } else if(err != 0) {
+      http_error(hc, err);
+      return 0;
+    }
+  }
+
   v = http_arg_get(&hc->hc_args, "Content-Length");
   if(v == NULL) {
     /* No content length in POST, make us disconnect */
-    return -1;
+    return HTTP_ERROR_DISCONNECT;
   }
 
   hc->hc_post_len = atoi(v);
   if(hc->hc_post_len > 1024 * 1024 * 1024) {
     /* Bail out if POST data > 1 GB */
     hc->hc_keep_alive = 0;
-    return -1;
+    return HTTP_ERROR_DISCONNECT;
   }
 
   /* Allocate space for data, we add a terminating null char to ease
@@ -437,14 +478,15 @@ http_cmd_post(http_connection_t *hc)
   hc->hc_post_data[hc->hc_post_len] = 0;
 
   if(tcp_read_data(hc->hc_ts, hc->hc_post_data, hc->hc_post_len) < 0)
-    return -1;
+    return HTTP_ERROR_DISCONNECT;
 
- /* Parse content-type */
+  /* Parse content-type */
   v = http_arg_get(&hc->hc_args, "Content-Type");
   if(v == NULL) {
     http_error(hc, HTTP_STATUS_BAD_REQUEST);
     return 0;
   }
+  v = mystrdupa(v);
   n = str_tokenize(v, argv, 2, ';');
   if(n == 0) {
     http_error(hc, HTTP_STATUS_BAD_REQUEST);
@@ -476,6 +518,15 @@ http_cmd_post(http_connection_t *hc)
 static int
 http_process_request(http_connection_t *hc)
 {
+  // Split of query args
+
+  char *args = strchr(hc->hc_path, '?');
+  if(args != NULL) {
+    *args = 0;
+    http_parse_query_args(hc, args + 1);
+  }
+
+
   switch(hc->hc_cmd) {
   default:
     http_error(hc, HTTP_STATUS_BAD_REQUEST);
@@ -633,10 +684,11 @@ static int route_cmp(const http_route_t *a, const http_route_t *b)
  * Add a regexp'ed route
  */
 void
-http_route_add(const char *path, http_callback2_t *callback)
+http_route_add(const char *path, http_callback2_t *callback, int flags)
 {
   http_route_t *hr = malloc(sizeof(http_route_t));
 
+  hr->hr_flags = flags;
   int len = strlen(path);
   hr->hr_depth = 0;
   for(int i = 0; i < len; i++)
