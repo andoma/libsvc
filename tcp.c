@@ -173,7 +173,6 @@ ssl_read(struct tcp_stream *ts, void *data, int len, int waitall)
   ts->ts_read_status = 0;
   int r = SSL_read(ts->ts_ssl, data, len);
   int err = SSL_get_error(ts->ts_ssl, r);
-  printf("SSL_read() = %d (%d)\n", r, err);
   switch(err) {
   case SSL_ERROR_NONE:
     return r;
@@ -214,7 +213,6 @@ ssl_write_try(tcp_stream_t *ts)
 
     int r = SSL_write(ts->ts_ssl, hd->hd_data + hd->hd_data_off, len);
     int err = SSL_get_error(ts->ts_ssl, r);
-    printf("SSL_write() = %d (%d)\n", r, err);
 
     switch(err) {
     case SSL_ERROR_NONE:
