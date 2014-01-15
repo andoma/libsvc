@@ -15,11 +15,13 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifdef linux
 #include <sys/sendfile.h>
+#endif
+
 #include <sys/param.h>
 #include <pthread.h>
 #include <netdb.h>
-#include <sys/epoll.h>
 #include <poll.h>
 #include <assert.h>
 #include <stdio.h>
@@ -188,7 +190,7 @@ ssl_read(struct tcp_stream *ts, void *data, int len, int waitall)
     return -1;
 
   default:
-    errno = EREMOTEIO;
+    errno = EBADMSG;
     return -1;
   }
 }
@@ -249,7 +251,7 @@ ssl_write(struct tcp_stream *ts, const void *data, int len)
     int r = SSL_write(ts->ts_ssl, data, len);
     if(r > 0)
       return r;
-    errno = EREMOTEIO;
+    errno = EBADMSG;
     return -1;
   }
 
@@ -366,7 +368,7 @@ tcp_stream_create_ssl_from_fd(int fd)
   trace(LOG_ERR, "SSL Problem: %s", errmsg);
 
   tcp_close(ts);
-  errno = EREMOTEIO;
+  errno = EBADMSG;
   return NULL;
 }
 
@@ -377,6 +379,10 @@ tcp_stream_create_ssl_from_fd(int fd)
 int
 tcp_sendfile(tcp_stream_t *ts, int fd, int64_t bytes)
 {
+#if defined(__APPLE__)
+  off_t len = bytes;
+  return sendfile(fd, ts->ts_fd, 0, &len, NULL, 0);
+#elif defined(linux)
   while(bytes > 0) {
     int chunk = MIN(1024 * 1024 * 1024, bytes);
     int r = sendfile(ts->ts_fd, fd, NULL, chunk);
@@ -384,6 +390,10 @@ tcp_sendfile(tcp_stream_t *ts, int fd, int64_t bytes)
       return -1;
     bytes -= r;
   }
+#else
+#error Need sendfile implementation
+#endif
+
   return 0;
 }
 

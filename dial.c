@@ -42,9 +42,11 @@ dial(const char *hostname, int port, int timeout, int ssl)
   struct hostent *hp;
   char *tmphstbuf;
   int fd, val, r, err, herr;
+#if !defined(__APPLE__)
   struct hostent hostbuf;
   size_t hstbuflen;
   int res;
+#endif
   struct sockaddr_in6 in6;
   struct sockaddr_in in;
   socklen_t errlen = sizeof(int);
@@ -63,6 +65,14 @@ dial(const char *hostname, int port, int timeout, int ssl)
 
   } else {
 
+#if defined(__APPLE__)
+    herr = 0;
+    tmphstbuf = NULL; /* free NULL is a nop */
+    /* TODO: AF_INET6 */
+    hp = gethostbyname(hostname);
+    if(hp == NULL)
+      herr = h_errno;
+#else
     hstbuflen = 1024;
     tmphstbuf = malloc(hstbuflen);
 
@@ -71,7 +81,7 @@ dial(const char *hostname, int port, int timeout, int ssl)
       hstbuflen *= 2;
       tmphstbuf = realloc(tmphstbuf, hstbuflen);
     }
-
+#endif
     if(herr != 0) {
       free(tmphstbuf);
       switch(herr) {

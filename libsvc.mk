@@ -30,8 +30,16 @@ SRCS += \
 # Curl
 ##############################################################
 ifeq (${WITH_CURL},yes)
+
+ifeq ($(shell uname),Darwin)
+LDFLAGS += -lcurl -lssh2 -lz -liconv
+endif
+
+ifeq ($(shell uname),Linux)
 CFLAGS  += $(shell pkg-config --cflags libcurl)
 LDFLAGS += $(shell pkg-config --libs libcurl)
+endif
+
 SRCS += libsvc/urlshorten.c
 endif
 
@@ -100,7 +108,11 @@ endif
 # Final linker stuff
 ##############################################################
 
-LDFLAGS += -lssl -lcrypto -lbz2 -lpthread -lrt -lm
+LDFLAGS += -lssl -lcrypto -lbz2 -lpthread -lm
+
+ifeq ($(shell uname),Linux)
+LDFLAGS += -lrt
+endif
 
 ##############################################################
 
