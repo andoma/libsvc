@@ -24,6 +24,8 @@
 
 typedef struct tcp_stream tcp_stream_t;
 
+void tcp_init(void);
+
 void tcp_server_init(void);
 
 
