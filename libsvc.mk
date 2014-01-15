@@ -24,7 +24,7 @@ SRCS += \
 	libsvc/cmd.c \
 	libsvc/talloc.c \
 	libsvc/filebundle.c \
-
+	libsvc/memstream.c \
 
 ##############################################################
 # Curl

@@ -9,12 +9,13 @@
 
 #include <curl/curl.h>
 
-#include "libsvc/misc.h"
-#include "libsvc/htsmsg_json.h"
-#include "libsvc/trace.h"
-#include "libsvc/cfg.h"
+#include "misc.h"
+#include "htsmsg_json.h"
+#include "trace.h"
+#include "cfg.h"
 
 #include "urlshorten.h"
+#include "memstream.h"
 
 const char *
 urlshorten(const char *input)
@@ -44,7 +45,7 @@ urlshorten(const char *input)
   char *out = NULL;
   size_t outlen = 0;
 
-  FILE *f = open_memstream(&out, &outlen);
+  FILE *f = open_buffer(&out, &outlen);
   curl_easy_setopt(curl, CURLOPT_URL, url);
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
