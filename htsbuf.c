@@ -32,11 +32,21 @@
 void
 htsbuf_queue_init(htsbuf_queue_t *hq, unsigned int maxsize)
 {
-  if(maxsize == 0)
-    maxsize = INT32_MAX;
   TAILQ_INIT(&hq->hq_q);
   hq->hq_size = 0;
-  hq->hq_maxsize = maxsize;
+  hq->hq_alloc_size = 1000;
+}
+
+
+/**
+ *
+ */
+void
+htsbuf_queue_init2(htsbuf_queue_t *hq, unsigned int alloc_size)
+{
+  TAILQ_INIT(&hq->hq_q);
+  hq->hq_size = 0;
+  hq->hq_alloc_size = alloc_size;
 }
 
 
@@ -90,7 +100,7 @@ htsbuf_append(htsbuf_queue_t *hq, const void *buf, size_t len)
   hd = malloc(sizeof(htsbuf_data_t));
   TAILQ_INSERT_TAIL(&hq->hq_q, hd, hd_link);
   
-  c = MAX(len, 1000); /* Allocate 1000 bytes to support lots of small writes */
+  c = MAX(len, hq->hq_alloc_size);
 
   hd->hd_data = malloc(c);
   hd->hd_data_size = c;

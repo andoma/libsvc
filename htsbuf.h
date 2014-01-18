@@ -38,10 +38,12 @@ typedef struct htsbuf_data {
 typedef struct htsbuf_queue {
   struct htsbuf_data_queue hq_q;
   unsigned int hq_size;
-  unsigned int hq_maxsize;
+  unsigned int hq_alloc_size;
 } htsbuf_queue_t;  
 
 void htsbuf_queue_init(htsbuf_queue_t *hq, unsigned int maxsize);
+
+void htsbuf_queue_init2(htsbuf_queue_t *hq, unsigned int alloc_size);
 
 void htsbuf_queue_flush(htsbuf_queue_t *hq);
 
