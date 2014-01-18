@@ -41,6 +41,7 @@ LDFLAGS += $(shell pkg-config --libs libcurl)
 endif
 
 SRCS += libsvc/urlshorten.c
+SRCS += libsvc/curlhelpers.c
 endif
 
 ##############################################################
