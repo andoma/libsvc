@@ -17,8 +17,12 @@ libsvc_curl_sock_fn(void *clientp,
                     curlsocktype purpose,
                     struct curl_sockaddr *a)
 {
+#ifdef linux
+  int fd = socket(a->family, a->socktype | SOCK_CLOEXEC, a->protocol);
+#else
   int fd = socket(a->family, a->socktype, a->protocol);
   fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
+#endif
   return fd;
 }
 
