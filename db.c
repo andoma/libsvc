@@ -284,14 +284,22 @@ db_init(void)
  *
  */
 static int
-db_stmt_bind_exec(MYSQL_STMT *s, MYSQL_BIND *in)
+db_stmt_bind_exec(MYSQL_STMT *s, MYSQL_BIND *in,
+                 const db_args_t *argv, int argc)
 {
   int err;
+  unsigned long *lengths = malloc(sizeof(unsigned long) * argc);
+
+  for(int p = 0; p < argc; p++) {
+    lengths[p] = in[p].buffer_length;
+    in[p].length = &lengths[p];
+  }
 
   err = mysql_stmt_bind_param(s, in);
   if(err) {
     trace(LOG_ERR, "Failed to bind parameters to prepared statement %s -- %s",
           mysql_stmt_sqlstate(s), mysql_stmt_error(s));
+    free(lengths);
     return mysql_stmt_errno(s);
   }
 
@@ -299,8 +307,10 @@ db_stmt_bind_exec(MYSQL_STMT *s, MYSQL_BIND *in)
   if(err) {
     trace(LOG_ERR, "Failed to execute prepared statement %s -- %s",
           mysql_stmt_sqlstate(s), mysql_stmt_error(s));
+    free(lengths);
     return mysql_stmt_errno(s);
   }
+  free(lengths);
   return 0;
 }
 
@@ -309,14 +319,15 @@ db_stmt_bind_exec(MYSQL_STMT *s, MYSQL_BIND *in)
  *
  */
 static int
-db_stmt_exec_try(db_stmt_t *stmt, MYSQL_BIND *in, int argc)
+db_stmt_exec_try(db_stmt_t *stmt, MYSQL_BIND *in,
+                 const db_args_t *argv, int argc)
 {
   while(1) {
     MYSQL_STMT *s = stmt->mysql_stmt;
     if(mysql_stmt_param_count(s) != argc)
       return -1;
 
-    int err = db_stmt_bind_exec(s, in);
+    int err = db_stmt_bind_exec(s, in, argv, argc);
     switch(err) {
     case 0:
       return DB_ERR_OK;
@@ -346,7 +357,6 @@ db_stmt_execa(db_stmt_t *stmt, int argc, const db_args_t *argv)
     return DB_ERR_OTHER;
 
   MYSQL_BIND in[argc];
-  unsigned long lengths[argc];
   memset(in, 0, sizeof(MYSQL_BIND) * argc);
 
   for(int p = 0; p < argc; p++) {
@@ -354,6 +364,7 @@ db_stmt_execa(db_stmt_t *stmt, int argc, const db_args_t *argv)
     case 'i':
       in[p].buffer_type = MYSQL_TYPE_LONG;
       in[p].buffer = (char *)&argv[p].i32;
+      in[p].buffer_length = sizeof(int);
       break;
 
     case 's':
@@ -361,8 +372,6 @@ db_stmt_execa(db_stmt_t *stmt, int argc, const db_args_t *argv)
       if(in[p].buffer != NULL) {
         in[p].buffer_type = MYSQL_TYPE_STRING;
         in[p].buffer_length = strlen(in[p].buffer);
-        lengths[p] = in[p].buffer_length;
-        in[p].length = &lengths[p];
       } else {
         in[p].buffer_type = MYSQL_TYPE_NULL;
       }
@@ -378,7 +387,7 @@ db_stmt_execa(db_stmt_t *stmt, int argc, const db_args_t *argv)
       abort();
     }
   }
-  return db_stmt_exec_try(stmt, in, argc);
+  return db_stmt_exec_try(stmt, in, argv, argc);
 }
 
 /**
@@ -390,42 +399,26 @@ db_stmt_exec(db_stmt_t *stmt, const char *fmt, ...)
   if(stmt == NULL)
     return -1;
 
+  int p, argc = strlen(fmt);
+  db_args_t argv[argc];
 
-  int p, args = strlen(fmt);
-  int *x;
-
-  MYSQL_BIND in[args];
-  unsigned long lengths[args];
-  memset(in, 0, sizeof(MYSQL_BIND) * args);
   va_list ap;
   va_start(ap, fmt);
 
   for(p = 0; *fmt; p++, fmt++) {
-
+    argv[p].type = *fmt;
     switch(*fmt) {
     case 'i':
-      x = alloca(sizeof(int));
-      *x = va_arg(ap, int);
-      in[p].buffer_type = MYSQL_TYPE_LONG;
-      in[p].buffer = (char *)x;
+      argv[p].i32 = va_arg(ap, int);
       break;
 
     case 's':
-      in[p].buffer = va_arg(ap, char *);
-      if(in[p].buffer != NULL) {
-        in[p].buffer_type = MYSQL_TYPE_STRING;
-        in[p].buffer_length = strlen(in[p].buffer);
-        lengths[p] = in[p].buffer_length;
-        in[p].length = &lengths[p];
-      } else {
-        in[p].buffer_type = MYSQL_TYPE_NULL;
-      }
+      argv[p].str = va_arg(ap, char *);
       break;
 
     case 'b':
-      in[p].buffer = va_arg(ap, char *);
-      in[p].buffer_length = va_arg(ap, int);
-      in[p].buffer_type = MYSQL_TYPE_STRING;
+      argv[p].str = va_arg(ap, char *);
+      argv[p].len = va_arg(ap, int);
       break;
 
     default:
@@ -434,7 +427,7 @@ db_stmt_exec(db_stmt_t *stmt, const char *fmt, ...)
   }
 
   va_end(ap);
-  return db_stmt_exec_try(stmt, in, args);
+  return db_stmt_execa(stmt, argc, argv);
 }
 
 
