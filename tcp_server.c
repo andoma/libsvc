@@ -121,6 +121,7 @@ tcp_trampoline(void *aux)
 
     talloc_cleanup();
   }
+  free(tt);
   return NULL;
 }
 
