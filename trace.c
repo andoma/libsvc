@@ -123,7 +123,8 @@ hexdump(const char *pfx, const void *data_, int len)
 		    j==8 ? " " : "", data[i+j]);
     }
     const int cnt = (17 - j) * 3 + (j < 8);
-    memset(buf + p, ' ', cnt);
+    for(int i = 0; i < cnt; i++)
+      buf[p + i] = ' ';
     p += cnt;
 
     for(j = 0; j + i < len && j < 16; j++)
