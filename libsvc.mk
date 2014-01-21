@@ -121,11 +121,13 @@ OBJS=    $(SRCS:%.c=$(BUILDDIR)/%.o)
 DEPS=    ${OBJS:%.o=%.d}
 
 # Common CFLAGS for all files
-CFLAGS_com  = -g -funsigned-char -O2 -D_FILE_OFFSET_BITS=64
+CFLAGS_com  = -g -funsigned-char -D_FILE_OFFSET_BITS=64
 CFLAGS_com += -I${BUILDDIR} -I${CURDIR}
+CFLAGS_opt = -O2
+
 
 $(BUILDDIR)/bundles/%.o: $(BUILDDIR)/bundles/%.c $(ALLDEPS)
-	$(CC) $(CFLAGS_com) -c -o $@ $<
+	$(CC) ${CFLAGS} ${CFLAGS_com} ${CFLAGS_opt}-c -o $@ $<
 
 $(BUILDDIR)/bundles/%.c: % $(CURDIR)/libsvc/mkbundle $(ALLDEPS)
 	@mkdir -p $(dir $@)
@@ -148,7 +150,7 @@ ${PROG}: $(OBJS) $(BUNDLE_OBJS) $(ALLDEPS)
 
 ${BUILDDIR}/%.o: %.c  $(ALLDEPS)
 	@mkdir -p $(dir $@)
-	$(CC) -MD -MP $(CFLAGS_com) $(CFLAGS) -c -o $@ $(CURDIR)/$<
+	$(CC) -MD -MP $(CFLAGS_com) $(CFLAGS) ${CFLAGS_opt} -c -o $@ $(CURDIR)/$<
 
 .PHONY:	clean distclean
 
