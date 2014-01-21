@@ -11,13 +11,23 @@
 
 #include "db.h"
 
+#include <mysql.h>
+
 static pthread_key_t dbkey;
 
-typedef struct stmt {
-  LIST_ENTRY(stmt) link;
+typedef struct db_stmt {
+  LIST_ENTRY(db_stmt) link;
   MYSQL_STMT *mysql_stmt;
   char *sql;
-} stmt_t;
+} db_stmt_t;
+
+LIST_HEAD(db_stmt_list, db_stmt);
+
+struct db_conn {
+  MYSQL *m;
+  struct db_stmt_list prep_statements;
+};
+
 
 /**
  *
@@ -38,38 +48,55 @@ prep_stmt(MYSQL *m, const char *str)
 /**
  *
  */
-MYSQL_STMT *
-db_stmt_get(conn_t *c, const char *str)
+db_stmt_t *
+db_stmt_get(db_conn_t *c, const char *str)
 {
-  stmt_t *s;
+  db_stmt_t *s;
   LIST_FOREACH(s, &c->prep_statements, link) {
     if(!strcmp(s->sql, str))
       break;
   }
 
   if(s == NULL) {
-    s = malloc(sizeof(stmt_t));
-    s->sql = strdup(str);
+    s = malloc(sizeof(db_stmt_t));
     s->mysql_stmt = prep_stmt(c->m, str);
+    if(s->mysql_stmt == NULL) {
+      free(s);
+      return NULL;
+    }
+    s->sql = strdup(str);
   } else {
     LIST_REMOVE(s, link);
+    mysql_stmt_reset(s->mysql_stmt);
   }
   LIST_INSERT_HEAD(&c->prep_statements, s, link);
-  mysql_stmt_reset(s->mysql_stmt);
-  return s->mysql_stmt;
+  return s;
 }
 
 
 /**
  *
  */
-MYSQL_STMT *
+static void
+db_stmt_kill(db_stmt_t *s)
+{
+  mysql_stmt_close(s->mysql_stmt);
+  free(s->sql);
+  LIST_REMOVE(s, link);
+  free(s);
+}
+
+
+/**
+ *
+ */
+db_stmt_t *
 db_stmt_prep(const char *sql)
 {
-  conn_t *c = db_get_conn();
+  db_conn_t *c = db_get_conn();
   if(c == NULL)
     return NULL;
-  return prep_stmt(c->m, sql);
+  return db_stmt_get(c, sql);
 }
 
 
@@ -77,20 +104,20 @@ db_stmt_prep(const char *sql)
  *
  */
 void
-db_stmt_cleanup(MYSQL_STMT **ptr)
+db_stmt_cleanup(db_stmt_t **ptr)
 {
   if(*ptr)
-    mysql_stmt_close(*ptr);
+    db_stmt_kill(*ptr);
 }
 
 
 /**
  *
  */
-conn_t *
+db_conn_t *
 db_get_conn(void)
 {
-  conn_t *c = pthread_getspecific(dbkey);
+  db_conn_t *c = pthread_getspecific(dbkey);
   if(c == NULL) {
     mysql_thread_init();
 
@@ -118,7 +145,7 @@ db_get_conn(void)
     mysql_stmt_close(s);
 
 
-    c = calloc(1, sizeof(conn_t));
+    c = calloc(1, sizeof(db_conn_t));
     c->m = m;
     pthread_setspecific(dbkey, c);
   }
@@ -132,9 +159,9 @@ db_get_conn(void)
 static void
 db_cleanup(void *aux)
 {
-  conn_t *c = aux;
+  db_conn_t *c = aux;
 
-  stmt_t *s;
+  db_stmt_t *s;
   while((s = LIST_FIRST(&c->prep_statements)) != NULL) {
     LIST_REMOVE(s, link);
     mysql_stmt_close(s->mysql_stmt);
@@ -153,16 +180,92 @@ db_cleanup(void *aux)
 void
 db_init(void)
 {
+  mysql_library_init(0, NULL, NULL);
   pthread_key_create(&dbkey, db_cleanup);
 }
 
 
 
-int
-db_stmt_exec(MYSQL_STMT *s, const char *fmt, ...)
+/**
+ *
+ */
+static int
+db_stmt_exec_final(MYSQL_STMT *s, MYSQL_BIND *in)
 {
-  if(s == NULL)
+  if(mysql_stmt_bind_param(s, in)) {
+    trace(LOG_ERR, "Failed to bind parameters to prepared statement %s -- %s",
+          mysql_stmt_sqlstate(s), mysql_stmt_error(s));
     return -1;
+  }
+
+  if(mysql_stmt_execute(s)) {
+    trace(LOG_ERR, "Failed to execute prepared statement %s -- %s",
+          mysql_stmt_sqlstate(s), mysql_stmt_error(s));
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
+ *
+ */
+int
+db_stmt_execa(db_stmt_t *stmt, int argc, const db_args_t *argv)
+{
+  if(stmt == NULL)
+    return -1;
+
+  MYSQL_STMT *s = stmt->mysql_stmt;
+  if(mysql_stmt_param_count(s) != argc)
+    return -1;
+
+  MYSQL_BIND in[argc];
+  unsigned long lengths[argc];
+  memset(in, 0, sizeof(MYSQL_BIND) * argc);
+
+  for(int p = 0; p < argc; p++) {
+    switch(argv[p].type) {
+    case 'i':
+      in[p].buffer_type = MYSQL_TYPE_LONG;
+      in[p].buffer = (char *)&argv[p].i32;
+      break;
+
+    case 's':
+      in[p].buffer = (char *)argv[p].str;
+      if(in[p].buffer != NULL) {
+        in[p].buffer_type = MYSQL_TYPE_STRING;
+        in[p].buffer_length = strlen(in[p].buffer);
+        lengths[p] = in[p].buffer_length;
+        in[p].length = &lengths[p];
+      } else {
+        in[p].buffer_type = MYSQL_TYPE_NULL;
+      }
+      break;
+
+    case 'b':
+      in[p].buffer = (char *)argv[p].str;
+      in[p].buffer_length = argv[p].len;
+      in[p].buffer_type = MYSQL_TYPE_STRING;
+      break;
+
+    default:
+      abort();
+    }
+  }
+  return db_stmt_exec_final(s, in);
+}
+
+/**
+ *
+ */
+int
+db_stmt_exec(db_stmt_t *stmt, const char *fmt, ...)
+{
+  if(stmt == NULL)
+    return -1;
+
+  MYSQL_STMT *s = stmt->mysql_stmt;
 
   int p, args = strlen(fmt);
   int *x;
@@ -209,26 +312,16 @@ db_stmt_exec(MYSQL_STMT *s, const char *fmt, ...)
     }
   }
 
-  if(mysql_stmt_bind_param(s, in)) {
-    trace(LOG_ERR, "Failed to bind parameters to prepared statement %s -- %s",
-          mysql_stmt_sqlstate(s), mysql_stmt_error(s));
-    return -1;
-  }
-
-  if(mysql_stmt_execute(s)) {
-    trace(LOG_ERR, "Failed to execute prepared statement %s -- %s",
-          mysql_stmt_sqlstate(s), mysql_stmt_error(s));
-    return -1;
-  }
-  return 0;
+  va_end(ap);
+  return db_stmt_exec_final(s, in);
 }
 
 
 /**
  *
  */
-int
-db_stream_row(int flags, MYSQL_STMT *s, ...)
+static int
+db_stream_rowv(int flags, MYSQL_STMT *s, va_list ap)
 {
   int fields = mysql_stmt_field_count(s);
 
@@ -241,9 +334,6 @@ db_stream_row(int flags, MYSQL_STMT *s, ...)
 
   memset(out, 0, sizeof(MYSQL_BIND) * fields);
   memset(lens, 0, sizeof(unsigned long) * fields);
-
-  va_list ap;
-  va_start(ap, s);
 
   while(p < fields) {
     int type = va_arg(ap, int);
@@ -336,12 +426,61 @@ db_stream_row(int flags, MYSQL_STMT *s, ...)
   }
 }
 
+/**
+ *
+ */
+void
+db_stmt_reset(db_stmt_t *s)
+{
+  mysql_stmt_reset(s->mysql_stmt);
+}
+
 
 /**
  *
  */
 int
-db_begin(conn_t *c)
+db_stmt_affected_rows(db_stmt_t *s)
+{
+  return mysql_stmt_affected_rows(s->mysql_stmt);
+}
+
+/**
+ *
+ */
+int
+db_stream_row(int flags, db_stmt_t *stmt, ...)
+{
+  if(stmt == NULL)
+    return -1;
+
+  va_list ap;
+  va_start(ap, stmt);
+  int r = db_stream_rowv(flags, stmt->mysql_stmt, ap);
+  va_end(ap);
+  return r;
+}
+
+
+/**
+ *
+ */
+static int
+db_stream_rowi(int flags, MYSQL_STMT *s, ...)
+{
+  va_list ap;
+  va_start(ap, s);
+  int r = db_stream_rowv(flags, s, ap);
+  va_end(ap);
+  return r;
+}
+
+
+/**
+ *
+ */
+int
+db_begin(db_conn_t *c)
 {
   int r = mysql_query(c->m, "START TRANSACTION");
   if(!r)
@@ -356,7 +495,7 @@ db_begin(conn_t *c)
  *
  */
 int
-db_commit(conn_t *c)
+db_commit(db_conn_t *c)
 {
   if(mysql_commit(c->m))
     trace(LOG_ERR, "Unable to commit transaction -- %s",
@@ -369,7 +508,7 @@ db_commit(conn_t *c)
  *
  */
 int
-db_rollback(conn_t *c)
+db_rollback(db_conn_t *c)
 {
   if(mysql_rollback(c->m))
     trace(LOG_ERR, "Unable to rollback transaction -- %s",
@@ -382,7 +521,7 @@ db_rollback(conn_t *c)
  *
  */
 static int
-run_sql_statement(conn_t *c, const char *q)
+run_sql_statement(db_conn_t *c, const char *q)
 {
   MYSQL_STMT *s = mysql_stmt_init(c->m);
   if(mysql_stmt_prepare(s, q, strlen(q))) {
@@ -403,7 +542,7 @@ run_sql_statement(conn_t *c, const char *q)
  *
  */
 static int
-get_current_version(conn_t *c)
+get_current_version(db_conn_t *c)
 {
   int ver;
   const char *sel   = "SELECT ver from schema_version";
@@ -430,7 +569,7 @@ get_current_version(conn_t *c)
       return -1;
     }
 
-    int r = db_stream_row(0, s,DB_RESULT_INT(ver));
+    int r = db_stream_rowi(0, s, DB_RESULT_INT(ver));
     if(r) {
       return -1;
     }
@@ -444,7 +583,7 @@ get_current_version(conn_t *c)
  *
  */
 static int
-run_multiple_statements(conn_t *c, char *s)
+run_multiple_statements(db_conn_t *c, char *s)
 {
   char delim = ';';
 
@@ -484,7 +623,7 @@ int
 db_upgrade_schema(const char *schema_bundle)
 {
   char path[256];
-  conn_t *c = db_get_conn();
+  db_conn_t *c = db_get_conn();
   if(c == NULL)
     return -1;
 
