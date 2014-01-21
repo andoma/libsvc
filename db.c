@@ -284,9 +284,10 @@ db_init(void)
  *
  */
 static int
-db_stmt_bind_exec(MYSQL_STMT *s, MYSQL_BIND *in,
+db_stmt_bind_exec(db_stmt_t *stmt, MYSQL_BIND *in,
                  const db_args_t *argv, int argc)
 {
+  MYSQL_STMT *s = stmt->mysql_stmt;
   int err;
   unsigned long *lengths = malloc(sizeof(unsigned long) * argc);
 
@@ -298,7 +299,7 @@ db_stmt_bind_exec(MYSQL_STMT *s, MYSQL_BIND *in,
   err = mysql_stmt_bind_param(s, in);
   if(err) {
     trace(LOG_ERR, "Failed to bind parameters to prepared statement %s -- %s",
-          mysql_stmt_sqlstate(s), mysql_stmt_error(s));
+          stmt->sql, mysql_stmt_error(s));
     free(lengths);
     return mysql_stmt_errno(s);
   }
@@ -306,7 +307,7 @@ db_stmt_bind_exec(MYSQL_STMT *s, MYSQL_BIND *in,
   err = mysql_stmt_execute(s);
   if(err) {
     trace(LOG_ERR, "Failed to execute prepared statement %s -- %s",
-          mysql_stmt_sqlstate(s), mysql_stmt_error(s));
+          stmt->sql, mysql_stmt_error(s));
     free(lengths);
     return mysql_stmt_errno(s);
   }
@@ -323,11 +324,10 @@ db_stmt_exec_try(db_stmt_t *stmt, MYSQL_BIND *in,
                  const db_args_t *argv, int argc)
 {
   while(1) {
-    MYSQL_STMT *s = stmt->mysql_stmt;
-    if(mysql_stmt_param_count(s) != argc)
-      return -1;
+    if(mysql_stmt_param_count(stmt->mysql_stmt) != argc)
+      return DB_ERR_OTHER;
 
-    int err = db_stmt_bind_exec(s, in, argv, argc);
+    int err = db_stmt_bind_exec(stmt, in, argv, argc);
     switch(err) {
     case 0:
       return DB_ERR_OK;
