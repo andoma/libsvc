@@ -12,9 +12,13 @@
 #define DB_RESULT_INT(x)    DB_RESULT_TAG_INT, &x
 #define DB_RESULT_TIME(x)   DB_RESULT_TAG_TIME, &x
 
-#define DB_ERR_NO_DATA 1
-#define DB_ERR_OK      0
-#define DB_ERR_OTHER  -1
+
+typedef enum {
+  DB_ERR_NO_DATA  = 1,
+  DB_ERR_OK       = 0,
+  DB_ERR_OTHER    = -1,
+  DB_ERR_DEADLOCK = -2,
+} db_err_t;
 
 
 typedef struct db_stmt db_stmt_t;
@@ -37,13 +41,14 @@ db_stmt_t *db_stmt_get(db_conn_t *c, const char *str);
 
 void db_stmt_reset(db_stmt_t *s);
 
-int db_stmt_exec(db_stmt_t *s, const char *fmt, ...);
+db_err_t db_stmt_exec(db_stmt_t *s, const char *fmt, ...);
 
-int db_stmt_execa(db_stmt_t *stmt, int argc, const db_args_t *argv);
+db_err_t db_stmt_execa(db_stmt_t *stmt, int argc, const db_args_t *argv);
 
 int db_stmt_affected_rows(db_stmt_t *s);
 
-int db_stream_row(int flags, db_stmt_t *s, ...);
+int db_stream_row(int flags, db_stmt_t *s, ...)
+  __attribute__ ((warn_unused_result));
 
 db_stmt_t *db_stmt_prep(const char *sql);
 
@@ -52,7 +57,8 @@ void db_stmt_cleanup(db_stmt_t **ptr);
 #define scoped_db_stmt(x, sql) \
  db_stmt_t *x __attribute__((cleanup(db_stmt_cleanup)))=db_stmt_prep(sql);
 
-int db_begin(db_conn_t *c);
+db_err_t db_begin(db_conn_t *c)
+  __attribute__ ((warn_unused_result));
 
 int db_commit(db_conn_t *c);
 

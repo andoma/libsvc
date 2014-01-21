@@ -12,6 +12,8 @@
 #include "db.h"
 
 #include <mysql.h>
+#include <mysqld_error.h>
+#include <errmsg.h>
 
 static pthread_key_t dbkey;
 
@@ -19,6 +21,7 @@ typedef struct db_stmt {
   LIST_ENTRY(db_stmt) link;
   MYSQL_STMT *mysql_stmt;
   char *sql;
+  struct db_conn *c;
 } db_stmt_t;
 
 LIST_HEAD(db_stmt_list, db_stmt);
@@ -29,19 +32,35 @@ struct db_conn {
 };
 
 
+static int db_reconnect(db_conn_t *c) __attribute__ ((warn_unused_result));
+
+static void db_cleanup(void *aux);
+
 /**
  *
  */
 static MYSQL_STMT *
-prep_stmt(MYSQL *m, const char *str)
+prep_stmt(db_conn_t *c, const char *str)
 {
-  MYSQL_STMT *ms = mysql_stmt_init(m);
-  if(mysql_stmt_prepare(ms, str, strlen(str))) {
-    trace(LOG_ERR, "Unable to prepare statement '%s' -- %s",
-          str, mysql_error(m));
-    return NULL;
+  while(1) {
+    MYSQL_STMT *ms = mysql_stmt_init(c->m);
+    if(!mysql_stmt_prepare(ms, str, strlen(str)))
+      return ms;
+
+    switch(mysql_errno(c->m)) {
+    case CR_SERVER_GONE_ERROR:
+    case CR_SERVER_LOST:
+      mysql_stmt_close(ms);
+      if(db_reconnect(c))
+        return NULL;
+      continue;
+    default:
+      trace(LOG_ERR, "Unable to prepare statement '%s' -- %s",
+            str, mysql_error(c->m));
+      mysql_stmt_close(ms);
+      return NULL;
+    }
   }
-  return ms;
 }
 
 
@@ -59,7 +78,8 @@ db_stmt_get(db_conn_t *c, const char *str)
 
   if(s == NULL) {
     s = malloc(sizeof(db_stmt_t));
-    s->mysql_stmt = prep_stmt(c->m, str);
+    s->mysql_stmt = prep_stmt(c, str);
+    s->c = c;
     if(s->mysql_stmt == NULL) {
       free(s);
       return NULL;
@@ -114,36 +134,109 @@ db_stmt_cleanup(db_stmt_t **ptr)
 /**
  *
  */
+static MYSQL *
+db_connect(void)
+{
+  MYSQL *m = mysql_init(NULL);
+
+  cfg_root(cfg);
+
+  const char *username = cfg_get_str(cfg, CFG("db", "username"), NULL);
+  const char *password = cfg_get_str(cfg, CFG("db", "password"), NULL);
+  const char *database = cfg_get_str(cfg, CFG("db", "database"), NULL);
+
+  if(mysql_real_connect(m, "localhost", username,
+                        password, database, 0, NULL, 0) != m) {
+    trace(LOG_ERR, "Failed to connect: Error: %s", mysql_error(m));
+    mysql_close(m);
+    return NULL;
+  }
+
+  const char *q = "SET NAMES utf8";
+  MYSQL_STMT *s = mysql_stmt_init(m);
+
+  if(mysql_stmt_prepare(s, q, strlen(q))) {
+    trace(LOG_ERR, "Unable to prep UTF-8 stmt on db connection");
+    mysql_close(m);
+    return NULL;
+  }
+
+  if(mysql_stmt_execute(s)) {
+    trace(LOG_ERR, "Unable to enable UTF-8 on db connection");
+    mysql_close(m);
+    return NULL;
+  }
+  mysql_stmt_close(s);
+  return m;
+}
+
+/**
+ *
+ */
+static int
+db_reconnect(db_conn_t *c)
+{
+  db_stmt_t *s;
+ again:
+  LIST_FOREACH(s, &c->prep_statements, link) {
+    mysql_stmt_close(s->mysql_stmt);
+    s->mysql_stmt = NULL;
+  }
+  mysql_close(c->m);
+  c->m = NULL;
+
+  trace(LOG_INFO, "Mysql: Reconnecting");
+
+  for(int i = 0; i < 10; i++) {
+    c->m = db_connect();
+
+    if(c->m != NULL)
+      break;
+    int timo = 1 + i * 2;
+    trace(LOG_INFO, "Mysql: Reconnect failed, retrying in %d seconds", timo);
+    sleep(timo);
+  }
+
+  if(c->m == NULL) {
+    trace(LOG_ALERT, "Unable to reconnect to mysql -- stuff may fail now");
+    db_cleanup(c);
+    return -1;
+  }
+
+  LIST_FOREACH(s, &c->prep_statements, link) {
+    s->mysql_stmt = mysql_stmt_init(c->m);
+    if(!mysql_stmt_prepare(s->mysql_stmt, s->sql, strlen(s->sql)))
+      continue;
+
+    switch(mysql_errno(c->m)) {
+    case CR_SERVER_GONE_ERROR:
+    case CR_SERVER_LOST:
+      mysql_stmt_close(s->mysql_stmt);
+      s->mysql_stmt = NULL;
+      goto again;
+    default:
+      trace(LOG_ERR, "Unable to prepare statement '%s' -- %s",
+            s->sql, mysql_error(c->m));
+      mysql_stmt_close(s->mysql_stmt);
+      s->mysql_stmt = NULL;
+      break;
+    }
+  }
+  return 0;
+}
+
+
+/**
+ *
+ */
 db_conn_t *
 db_get_conn(void)
 {
   db_conn_t *c = pthread_getspecific(dbkey);
   if(c == NULL) {
-    mysql_thread_init();
+    //    mysql_thread_init();
 
-    MYSQL *m = mysql_init(NULL);
-
-    cfg_root(cfg);
-
-    const char *username = cfg_get_str(cfg, CFG("db", "username"), NULL);
-    const char *password = cfg_get_str(cfg, CFG("db", "password"), NULL);
-    const char *database = cfg_get_str(cfg, CFG("db", "database"), NULL);
-
-    if(mysql_real_connect(m, "localhost", username,
-                          password, database, 0, NULL, 0) != m) {
-      trace(LOG_ERR, "Failed to connect: Error: %s", mysql_error(m));
-      mysql_close(m);
-      return NULL;
-    }
-
-    MYSQL_STMT *s = prep_stmt(m, "SET NAMES utf8");
-    if(mysql_stmt_execute(s)) {
-      trace(LOG_ERR, "Unable to enable UTF-8 on db connection");
-      mysql_close(m);
-      return NULL;
-    }
-    mysql_stmt_close(s);
-
+    MYSQL *m = db_connect();
 
     c = calloc(1, sizeof(db_conn_t));
     c->m = m;
@@ -160,15 +253,16 @@ static void
 db_cleanup(void *aux)
 {
   db_conn_t *c = aux;
-
   db_stmt_t *s;
   while((s = LIST_FIRST(&c->prep_statements)) != NULL) {
     LIST_REMOVE(s, link);
-    mysql_stmt_close(s->mysql_stmt);
+    if(s->mysql_stmt != NULL)
+      mysql_stmt_close(s->mysql_stmt);
     free(s->sql);
     free(s);
   }
-  mysql_close(c->m);
+  if(c->m != NULL)
+    mysql_close(c->m);
   free(c);
   mysql_thread_end();
 }
@@ -190,18 +284,22 @@ db_init(void)
  *
  */
 static int
-db_stmt_exec_final(MYSQL_STMT *s, MYSQL_BIND *in)
+db_stmt_bind_exec(MYSQL_STMT *s, MYSQL_BIND *in)
 {
-  if(mysql_stmt_bind_param(s, in)) {
+  int err;
+
+  err = mysql_stmt_bind_param(s, in);
+  if(err) {
     trace(LOG_ERR, "Failed to bind parameters to prepared statement %s -- %s",
           mysql_stmt_sqlstate(s), mysql_stmt_error(s));
-    return -1;
+    return mysql_stmt_errno(s);
   }
 
-  if(mysql_stmt_execute(s)) {
+  err = mysql_stmt_execute(s);
+  if(err) {
     trace(LOG_ERR, "Failed to execute prepared statement %s -- %s",
           mysql_stmt_sqlstate(s), mysql_stmt_error(s));
-    return -1;
+    return mysql_stmt_errno(s);
   }
   return 0;
 }
@@ -210,15 +308,42 @@ db_stmt_exec_final(MYSQL_STMT *s, MYSQL_BIND *in)
 /**
  *
  */
-int
+static int
+db_stmt_exec_try(db_stmt_t *stmt, MYSQL_BIND *in, int argc)
+{
+  while(1) {
+    MYSQL_STMT *s = stmt->mysql_stmt;
+    if(mysql_stmt_param_count(s) != argc)
+      return -1;
+
+    int err = db_stmt_bind_exec(s, in);
+    switch(err) {
+    case 0:
+      return DB_ERR_OK;
+    case CR_SERVER_GONE_ERROR:
+    case CR_SERVER_LOST:
+      if(db_reconnect(stmt->c))
+        return DB_ERR_OTHER;
+      break;
+    case ER_LOCK_DEADLOCK:
+      return DB_ERR_DEADLOCK;
+    default:
+      trace(LOG_ERR, "Unable to exec statement '%s' -- %s",
+            stmt->sql, mysql_error(stmt->c->m));
+      return DB_ERR_OTHER;
+    }
+  }
+}
+
+
+/**
+ *
+ */
+db_err_t
 db_stmt_execa(db_stmt_t *stmt, int argc, const db_args_t *argv)
 {
   if(stmt == NULL)
-    return -1;
-
-  MYSQL_STMT *s = stmt->mysql_stmt;
-  if(mysql_stmt_param_count(s) != argc)
-    return -1;
+    return DB_ERR_OTHER;
 
   MYSQL_BIND in[argc];
   unsigned long lengths[argc];
@@ -253,7 +378,7 @@ db_stmt_execa(db_stmt_t *stmt, int argc, const db_args_t *argv)
       abort();
     }
   }
-  return db_stmt_exec_final(s, in);
+  return db_stmt_exec_try(stmt, in, argc);
 }
 
 /**
@@ -265,13 +390,9 @@ db_stmt_exec(db_stmt_t *stmt, const char *fmt, ...)
   if(stmt == NULL)
     return -1;
 
-  MYSQL_STMT *s = stmt->mysql_stmt;
 
   int p, args = strlen(fmt);
   int *x;
-
-  if(mysql_stmt_param_count(s) != args)
-    return -1;
 
   MYSQL_BIND in[args];
   unsigned long lengths[args];
@@ -313,7 +434,7 @@ db_stmt_exec(db_stmt_t *stmt, const char *fmt, ...)
   }
 
   va_end(ap);
-  return db_stmt_exec_final(s, in);
+  return db_stmt_exec_try(stmt, in, args);
 }
 
 
@@ -479,15 +600,28 @@ db_stream_rowi(int flags, MYSQL_STMT *s, ...)
 /**
  *
  */
-int
+db_err_t
 db_begin(db_conn_t *c)
 {
-  int r = mysql_query(c->m, "START TRANSACTION");
-  if(!r)
-    return 0;
-  trace(LOG_ERR, "Unable to start transaction -- %s",
-        mysql_error(c->m));
-  return -1;
+  while(1) {
+    int err = mysql_query(c->m, "START TRANSACTION");
+    if(!err)
+      return 0;
+
+    switch(mysql_errno(c->m)) {
+    case CR_SERVER_GONE_ERROR:
+    case CR_SERVER_LOST:
+      if(db_reconnect(c))
+        return DB_ERR_OTHER;
+      continue;
+    case ER_LOCK_DEADLOCK:
+      return DB_ERR_DEADLOCK;
+    default:
+      trace(LOG_ERR, "Unable to start transaction -- %s",
+            mysql_error(c->m));
+      return DB_ERR_OTHER;
+    }
+  }
 }
 
 
