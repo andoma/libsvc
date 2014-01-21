@@ -24,7 +24,6 @@ talloc_getq(void)
     return q;
 
   q = calloc(1, sizeof(talloc_item_t *));
-  printf("Created talloc queue for thread %lx\n", pthread_self());
   pthread_setspecific(talloc_key, q);
   return q;
 }
@@ -41,7 +40,6 @@ talloc_free_items(talloc_item_t **q)
   for(p = *q; p != NULL; p = next) {
     next = p->next;
     free(p);
-    printf("Free'd %p\n", p);
   }
 }
 
@@ -78,7 +76,6 @@ talloc_insert(talloc_item_t *t)
   talloc_item_t **q = talloc_getq();
   t->next = *q;
   *q = t;
-  printf("Alloced %p on %lx\n", t, pthread_self());
 }
 
 
