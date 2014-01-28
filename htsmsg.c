@@ -41,6 +41,10 @@ htsmsg_field_destroy(htsmsg_t *msg, htsmsg_field_t *f)
     htsmsg_clear(&f->hmf_msg);
     break;
 
+  case HMF_COMMENT:
+    free((void *)f->hmf_str);
+    break;
+
   case HMF_STR:
     if(f->hmf_flags & HMF_ALLOCED)
       free((void *)f->hmf_str);
@@ -82,7 +86,7 @@ htsmsg_field_add(htsmsg_t *msg, const char *name, int type, int flags)
   
   TAILQ_INSERT_TAIL(&msg->hm_fields, f, hmf_link);
 
-  if(msg->hm_islist) {
+  if(msg->hm_islist || type == HMF_COMMENT) {
     assert(name == NULL);
   } else {
     assert(name != NULL);
@@ -110,6 +114,9 @@ htsmsg_field_find(htsmsg_t *msg, const char *name)
   if(-((unsigned long)(intptr_t)name) < 4096) {
     unsigned int num = -(intptr_t)name - 1;
     HTSMSG_FOREACH(f, msg) {
+      if(f->hmf_type == HMF_COMMENT)
+        continue;
+
       if(!num--)
 	return f;
     }
@@ -227,6 +234,18 @@ htsmsg_add_dbl(htsmsg_t *msg, const char *name, double dbl)
 {
   htsmsg_field_t *f = htsmsg_field_add(msg, name, HMF_DBL, HMF_NAME_ALLOCED);
   f->hmf_dbl = dbl;
+}
+
+
+/*
+ *
+ */
+void
+htsmsg_add_comment(htsmsg_t *msg, const char *comment)
+{
+  htsmsg_field_t *f = htsmsg_field_add(msg, NULL, HMF_COMMENT,
+                                       HMF_ALLOCED);
+  f->hmf_str = strdup(comment);
 }
 
 
@@ -602,6 +621,10 @@ htsmsg_print0(htsmsg_t *msg, int indent)
     case HMF_DBL:
       printf("DBL) = %f\n", f->hmf_dbl);
       break;
+
+    case HMF_COMMENT:
+      printf("COMMENT) = %s\n", f->hmf_str);
+      break;
     }
   }
 } 
@@ -651,6 +674,10 @@ htsmsg_copy_i(htsmsg_t *src, htsmsg_t *dst)
 
     case HMF_DBL:
       htsmsg_add_dbl(dst, f->hmf_name, f->hmf_dbl);
+      break;
+
+    case HMF_COMMENT:
+      htsmsg_add_comment(dst, f->hmf_str);
       break;
     }
   }

@@ -44,8 +44,20 @@ htsmsg_json_write(htsmsg_t *msg, htsbuf_queue_t *hq, int isarray,
 
   TAILQ_FOREACH(f, &msg->hm_fields, hmf_link) {
 
-    if(pretty) 
+    if(pretty) {
       htsbuf_append(hq, indentor, indent < 16 ? indent : 16);
+
+      if(f->hmf_type == HMF_COMMENT) {
+        htsbuf_append(hq, "// ", 3);
+        htsbuf_append(hq, f->hmf_str, strlen(f->hmf_str));
+        htsbuf_append(hq, "\n", 1);
+        continue;
+      }
+    } else {
+      if(f->hmf_type == HMF_COMMENT)
+        continue;
+    }
+
 
     if(!isarray) {
       htsbuf_append_and_escape_jsonstr(hq, f->hmf_name ?: "noname");
@@ -177,6 +189,12 @@ add_null(void *opaque, void *parent, const char *name)
 {
 }
 
+static void 
+add_comment(void *opaque, void *parent, const char *comment)
+{
+  htsmsg_add_comment(parent, comment);
+}
+
 /**
  *
  */
@@ -190,6 +208,7 @@ static const json_deserializer_t json_to_htsmsg = {
   .jd_add_double      = add_double,
   .jd_add_bool        = add_bool,
   .jd_add_null        = add_null,
+  .jd_add_comment     = add_comment,
 };
 
 

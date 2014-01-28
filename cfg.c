@@ -204,7 +204,10 @@ cfg_list_length(cfg_t *c)
 {
   htsmsg_field_t *f;
   int r = 0;
-  HTSMSG_FOREACH(f, c)
+  HTSMSG_FOREACH(f, c) {
+    if(f->hmf_type == HMF_COMMENT)
+      continue;
     r++;
+  }
   return r;
 }

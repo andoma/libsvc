@@ -35,7 +35,8 @@ static const char *json_parse_value(const char *s, void *parent,
 
 
 static const char *
-skip_ws(const char *s)
+skip_ws(const char *s, const json_deserializer_t *jd,
+        void *opaque, void *parent)
 {
  again:
   while(*s > 0 && *s < 33)
@@ -44,9 +45,19 @@ skip_ws(const char *s)
   if(s[0] == '/' && s[1] == '/') {
     s += 2;
 
+    const char *comment = s;
+
     while(*s != '\n' && *s != 0)
       s++;
 
+    if(jd != NULL && jd->jd_add_comment != NULL) {
+
+      size_t len = s - comment;
+      char *buf = alloca(len + 1);
+      memcpy(buf, comment, len);
+      buf[len] = 0;
+      jd->jd_add_comment(opaque, parent, buf);
+    }
     if(*s == '\n')
       s++;
     goto again;
@@ -57,7 +68,6 @@ skip_ws(const char *s)
 
   return s;
 }
-
 
 /**
  * Returns a newly allocated string
@@ -70,7 +80,7 @@ json_parse_string(const char *s, const char **endp,
   char *r, *a, *b;
   int l, esc = 0;
 
-  s = skip_ws(s);
+  s = skip_ws(s, NULL, NULL, NULL);
 
   if(*s != '"')
     return NOT_THIS_TYPE;
@@ -170,7 +180,7 @@ json_parse_map(const char *s, const char **endp, const json_deserializer_t *jd,
   const char *s2;
   void *r;
 
-  s = skip_ws(s);
+  s = skip_ws(s, NULL, NULL, NULL);
 
   if(*s != '{')
     return NOT_THIS_TYPE;
@@ -179,13 +189,13 @@ json_parse_map(const char *s, const char **endp, const json_deserializer_t *jd,
 
   r = jd->jd_create_map(opaque);
 
-  s = skip_ws(s);
+  s = skip_ws(s, jd, opaque, r);
 
   if(*s != '}') {
 
     while(1) {
 
-      s = skip_ws(s);
+      s = skip_ws(s, jd, opaque, r);
       if(*s == '}')
 	break;
 
@@ -201,7 +211,7 @@ json_parse_map(const char *s, const char **endp, const json_deserializer_t *jd,
 
       s = s2;
 
-      s = skip_ws(s);
+      s = skip_ws(s, jd, opaque, r);
 
       if(*s != ':') {
 	jd->jd_destroy_obj(opaque, r);
@@ -222,7 +232,7 @@ json_parse_map(const char *s, const char **endp, const json_deserializer_t *jd,
 
       s = s2;
 
-      s = skip_ws(s);
+      s = skip_ws(s, jd, opaque, r);
 
       if(*s == '}')
 	break;
@@ -253,7 +263,7 @@ json_parse_list(const char *s, const char **endp, const json_deserializer_t *jd,
   const char *s2;
   void *r;
 
-  s = skip_ws(s);
+  s = skip_ws(s, NULL, NULL, NULL);
 
   if(*s != '[')
     return NOT_THIS_TYPE;
@@ -262,13 +272,13 @@ json_parse_list(const char *s, const char **endp, const json_deserializer_t *jd,
 
   r = jd->jd_create_list(opaque);
   
-  s = skip_ws(s);
+  s = skip_ws(s, jd, opaque, r);
 
   if(*s != ']') {
 
     while(1) {
 
-      s = skip_ws(s);
+      s = skip_ws(s, jd, opaque, r);
       if(*s == ']')
 	break;
 
@@ -281,7 +291,7 @@ json_parse_list(const char *s, const char **endp, const json_deserializer_t *jd,
 
       s = s2;
 
-      s = skip_ws(s);
+      s = skip_ws(s, jd, opaque, r);
 
       if(*s == ']')
 	break;
@@ -308,7 +318,7 @@ json_parse_double(const char *s, double *dp)
 {
   const char *ep;
 
-  s = skip_ws(s);
+  s = skip_ws(s, NULL, NULL, NULL);
 
   double d = my_str2double(s, &ep);
 
@@ -327,7 +337,7 @@ static char *
 json_parse_integer(const char *s, long *lp)
 {
   char *ep;
-  s = skip_ws(s);
+  s = skip_ws(s, NULL, NULL, NULL);
   const char *s2 = s;
   if(*s2 == '-')
     s2++;
@@ -364,6 +374,8 @@ json_parse_value(const char *s, void *parent, const char *name,
   long l = 0;
   void *c;
 
+  s = skip_ws(s, jd, opaque, parent);
+
   if((c = json_parse_map(s, &s2, jd, opaque, failp, failmsg)) == NULL)
     return NULL;
 
@@ -396,7 +408,7 @@ json_parse_value(const char *s, void *parent, const char *name,
     return s2;
   }
 
-  s = skip_ws(s);
+  s = skip_ws(s, NULL, NULL, NULL);
 
   if(!strncmp(s, "true", 4)) {
     jd->jd_add_bool(opaque, parent, name, 1);

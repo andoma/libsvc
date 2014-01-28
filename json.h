@@ -25,6 +25,9 @@ typedef struct json_deserializer {
   void (*jd_add_null)(void *jd_opaque, void *parent,
 		      const char *name);
 
+  void (*jd_add_comment)(void *jd_opaque, void *parent,
+                         const char *comment);
+
 } json_deserializer_t;
 
 void *json_deserialize(const char *src, const json_deserializer_t *jd,

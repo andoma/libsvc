@@ -53,6 +53,7 @@ typedef struct htsmsg {
 #define HMF_BIN  4
 #define HMF_LIST 5
 #define HMF_DBL  6
+#define HMF_COMMENT 7
 
 typedef struct htsmsg_field {
   TAILQ_ENTRY(htsmsg_field) hmf_link;
@@ -138,6 +139,11 @@ void htsmsg_add_msg(htsmsg_t *msg, const char *name, htsmsg_t *sub);
  * Add an field where source is a double
  */
 void htsmsg_add_dbl(htsmsg_t *msg, const char *name, double dbl);
+
+/**
+ * Add a comment field
+ */
+void htsmsg_add_comment(htsmsg_t *msg, const char *comment);
 
 /**
  * Add an field where source is a list or map message.
