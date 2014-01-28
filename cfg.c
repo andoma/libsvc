@@ -229,7 +229,7 @@ cfg_find_map(cfg_t *c, const char *key, const char *value)
 
     const char *s = htsmsg_get_str(m, key);
     if(s != NULL && !strcmp(value, s))
-      return c;
+      return m;
   }
   return NULL;
 }
