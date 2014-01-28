@@ -211,3 +211,25 @@ cfg_list_length(cfg_t *c)
   }
   return r;
 }
+
+/**
+ *
+ */
+cfg_t *
+cfg_find_map(cfg_t *c, const char *key, const char *value)
+{
+  if(c == NULL)
+    return NULL;
+
+  htsmsg_field_t *f;
+  HTSMSG_FOREACH(f, c) {
+    htsmsg_t *m = htsmsg_get_map_by_field(f);
+    if(m == NULL)
+      continue;
+
+    const char *s = htsmsg_get_str(m, key);
+    if(s != NULL && !strcmp(value, s))
+      return c;
+  }
+  return NULL;
+}

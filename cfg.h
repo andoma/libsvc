@@ -25,4 +25,6 @@ cfg_t *cfg_get_map(cfg_t *c, const char *id);
 
 cfg_t *cfg_get_list(cfg_t *c, const char *id);
 
+cfg_t *cfg_find_map(cfg_t *c, const char *key, const char *value);
+
 int cfg_list_length(cfg_t *c);
