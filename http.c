@@ -579,11 +579,14 @@ process_request(http_connection_t *hc)
   if((v = http_arg_get(&hc->hc_args, "Authorization")) != NULL) {
     v = mystrdupa(v);
     if((n = str_tokenize(v, argv, 2, -1)) == 2) {
-      n = base64_decode(authbuf, argv[1], sizeof(authbuf) - 1);
-      authbuf[n] = 0;
-      if((n = str_tokenize((char *)authbuf, argv, 2, ':')) == 2) {
-	hc->hc_username = strdup(argv[0]);
-	hc->hc_password = strdup(argv[1]);
+
+      if(!strcasecmp(argv[0], "basic")) {
+        n = base64_decode(authbuf, argv[1], sizeof(authbuf) - 1);
+        authbuf[n] = 0;
+        if((n = str_tokenize((char *)authbuf, argv, 2, ':')) == 2) {
+          hc->hc_username = strdup(argv[0]);
+          hc->hc_password = strdup(argv[1]);
+        }
       }
     }
   }
