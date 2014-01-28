@@ -1,6 +1,8 @@
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <stdarg.h>
 
 #include "talloc.h"
 
@@ -100,6 +102,49 @@ talloc_zalloc(size_t s)
   talloc_item_t *t = calloc(1, s + sizeof(talloc_item_t));
   talloc_insert(t);
   return t + 1;
+}
+
+
+/**
+ *
+ */
+char *
+tstrdup(const char *str)
+{
+  size_t len = strlen(str);
+  char *r = talloc_malloc(len + 1);
+  memcpy(r, str, len);
+  r[len] = 0;
+  return r;
+}
+
+
+/**
+ *
+ */
+char *
+tsprintf(const char *fmt, ...)
+{
+  char buf[100];
+  va_list ap;
+  int n;
+
+  va_start(ap, fmt);
+  n = vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+
+  if(n < 0)
+    abort();
+
+  if(n < sizeof(buf))
+    return tstrdup(buf);
+
+  char *b = talloc_malloc(n + 1);
+
+  va_start(ap, fmt);
+  vsnprintf(b, n + 1, fmt, ap);
+  va_end(ap);
+  return b;
 }
 
 
