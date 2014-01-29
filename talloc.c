@@ -43,6 +43,7 @@ talloc_free_items(talloc_item_t **q)
     next = p->next;
     free(p);
   }
+  *q = NULL;
 }
 
 
