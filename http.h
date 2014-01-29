@@ -32,10 +32,12 @@ typedef struct http_arg {
 #define HTTP_STATUS_OK           200
 #define HTTP_STATUS_PARTIAL_CONTENT 206
 #define HTTP_STATUS_FOUND        302
+#define HTTP_STATUS_NOT_MODIFIED 304
 #define HTTP_STATUS_TEMPORARY_REDIRECT 307
 #define HTTP_STATUS_BAD_REQUEST  400
 #define HTTP_STATUS_UNAUTHORIZED 401
 #define HTTP_STATUS_NOT_FOUND    404
+#define HTTP_STATUS_ISE          500
 
 
 typedef struct http_connection {
@@ -116,6 +118,8 @@ void http_arg_set(struct http_arg_list *list,
                   const char *key, const char *val);
 
 void http_error(http_connection_t *hc, int error);
+
+int http_err(http_connection_t *hc, int error, const char *str);
 
 int http_output_html(http_connection_t *hc);
 

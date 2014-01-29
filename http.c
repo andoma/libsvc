@@ -185,8 +185,9 @@ http_rc2str(int code)
   case HTTP_STATUS_UNAUTHORIZED:    return "Unauthorized";
   case HTTP_STATUS_BAD_REQUEST:     return "Bad request";
   case HTTP_STATUS_FOUND:           return "Found";
-  case 304:                         return "Not modified";
+  case HTTP_STATUS_NOT_MODIFIED:    return "Not modified";
   case HTTP_STATUS_TEMPORARY_REDIRECT: return "Temporary redirect";
+  case HTTP_STATUS_ISE: return "Internal Server Error";
   default:
     return "Unknown returncode";
     break;
@@ -198,8 +199,8 @@ static const char *cachedays[7] = {
 };
 
 static const char *cachemonths[12] = {
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
-  "Dec"
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
 
 
@@ -332,14 +333,10 @@ http_send_reply(http_connection_t *hc, int rc, const char *content,
 /**
  * Send HTTP error back
  */
-void
-http_error(http_connection_t *hc, int error)
+int
+http_err(http_connection_t *hc, int error, const char *str)
 {
   const char *errtxt = http_rc2str(error);
-#if 0
-  fprintf(stderr, "%s: %s -- %d\n", 
-	 inet_ntoa(hc->hc_peer->sin_addr), hc->hc_url, error);
-#endif
   htsbuf_queue_flush(&hc->hc_reply);
 
   htsbuf_qprintf(&hc->hc_reply, 
@@ -347,11 +344,26 @@ http_error(http_connection_t *hc, int error)
 		 "<HTML><HEAD>\r\n"
 		 "<TITLE>%d %s</TITLE>\r\n"
 		 "</HEAD><BODY>\r\n"
-		 "<H1>%d %s</H1>\r\n"
-		 "</BODY></HTML>\r\n",
-		 error, errtxt,  error, errtxt);
+		 "<H1>%d %s</H1>\r\n",
+		 error, errtxt, error, errtxt);
+
+  if(str != NULL)
+    htsbuf_qprintf(&hc->hc_reply, "<p>%s</p>\r\n", str);
+
+  htsbuf_qprintf(&hc->hc_reply, "</BODY></HTML>\r\n");
 
   http_send_reply(hc, error, "text/html", NULL, NULL, 0);
+  return 0;
+}
+
+
+/**
+ * Send HTTP error back
+ */
+void
+http_error(http_connection_t *hc, int error)
+{
+  http_err(hc, error, NULL);
 }
 
 
