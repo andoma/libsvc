@@ -101,7 +101,7 @@ enable_syslog(const char *program, const char *facility)
   }
 
   dosyslog = 1;
-  openlog("doozer", LOG_PID, f);
+  openlog(program, LOG_PID, f);
 
 }
 
