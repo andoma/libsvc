@@ -127,7 +127,7 @@ CFLAGS_opt = -O2
 
 
 $(BUILDDIR)/bundles/%.o: $(BUILDDIR)/bundles/%.c $(ALLDEPS)
-	$(CC) ${CFLAGS} ${CFLAGS_com} ${CFLAGS_opt}-c -o $@ $<
+	$(CC) ${CFLAGS} ${CFLAGS_com} ${CFLAGS_opt} -c -o $@ $<
 
 $(BUILDDIR)/bundles/%.c: % $(CURDIR)/libsvc/mkbundle $(ALLDEPS)
 	@mkdir -p $(dir $@)
