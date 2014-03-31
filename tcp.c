@@ -40,9 +40,6 @@
 
 #include "tcp.h"
 #include "trace.h"
-#include "talloc.h"
-
-
 
 static SSL_CTX *ssl_ctx;
 static pthread_mutex_t *ssl_locks;

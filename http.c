@@ -37,6 +37,7 @@
 #include "http.h"
 #include "cfg.h"
 #include "htsmsg_json.h"
+#include "talloc.h"
 
 static void *http_server;
 
@@ -842,6 +843,8 @@ http_serve_requests(http_connection_t *hc)
   htsbuf_queue_init(&hc->hc_reply, 0);
 
   do {
+    talloc_cleanup();
+
     cfg_root(cr);
     int tracehttp = cfg_get_int(cr, CFG("http", "trace"), 0);
 
