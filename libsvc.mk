@@ -4,7 +4,7 @@ prefix ?= /usr/local
 
 
 CFLAGS  += -Wall -Werror -Wwrite-strings -Wno-deprecated-declarations 
-CFLAGS  += -Wmissing-prototypes -std=gnu99
+CFLAGS  += -Wmissing-prototypes -std=gnu99 -DPROGNAME=\"${PROGNAME}\"
 
 SRCS += \
 	libsvc/libsvc.c \
@@ -61,6 +61,7 @@ endif
 ifeq (${WITH_HTTP_SERVER},yes)
 SRCS    +=  libsvc/http.c
 WITH_TCP_SERVER := yes
+CFLAGS += -DWITH_HTTP_SERVER
 endif
 
 ##############################################################
@@ -102,6 +103,7 @@ endif
 ##############################################################
 ifeq (${WITH_CTRLSOCK},yes)
 SRCS +=  libsvc/ctrlsock.c
+CFLAGS += -DWITH_CTRLSOCK
 endif
 
 
@@ -116,6 +118,8 @@ LDFLAGS += -lrt
 endif
 
 ##############################################################
+
+ALLDEPS += libsvc/libsvc.mk Makefile
 
 OBJS=    $(SRCS:%.c=$(BUILDDIR)/%.o)
 DEPS=    ${OBJS:%.o=%.d}
