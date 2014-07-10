@@ -8,6 +8,7 @@
 #include "htsmsg_json.h"
 #include "talloc.h"
 #include "misc.h"
+#include "memstream.h"
 
 size_t
 libsvc_curl_waste_output(char *ptr, size_t size, size_t nmemb, void *userdata)
@@ -160,7 +161,7 @@ libsvc_http_json_get(const char *url, const char *auth,
 
   char *out;
   size_t outlen;
-  FILE *f = open_memstream(&out, &outlen);
+  FILE *f = open_buffer(&out, &outlen);
 
   struct curl_slist *slist = NULL;
 
