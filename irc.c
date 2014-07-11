@@ -552,9 +552,7 @@ static int
 iom_write(irc_client_t *ic, struct irc_out_msg_queue *q)
 {
   irc_out_msg_t *iom = TAILQ_FIRST(q);
-  int r = tcp_write(ic->ic_ts, iom->iom_data, iom->iom_length);
-
-  assert(r == iom->iom_length);
+  tcp_write(ic->ic_ts, iom->iom_data, iom->iom_length);
 
   if(ic->ic_dotrace)
     trace(LOG_DEBUG, "IRC: %s: SEND: %.*s", ic->ic_server,
