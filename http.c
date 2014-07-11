@@ -954,7 +954,8 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
   http_arg_flush(&hc.hc_args);
   http_arg_flush(&hc.hc_req_args);
   http_arg_flush(&hc.hc_response_headers);
-  tcp_close(ts);
+  if(hc.hc_ts != NULL)
+    tcp_close(hc.hc_ts);
 }
 
 
