@@ -151,3 +151,5 @@ int http_server_init(int port, const char *bindaddr);
 int http_access_verify(http_connection_t *hc);
 
 void http_deescape(char *s);
+
+void http_serve_static(const char *path, const char *filebundle);

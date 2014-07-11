@@ -38,6 +38,8 @@
 #include "cfg.h"
 #include "htsmsg_json.h"
 #include "talloc.h"
+#include "filebundle.h"
+
 
 static void *http_server;
 
@@ -969,4 +971,58 @@ http_server_init(int port, const char *bindaddr)
   if(http_server == NULL)
     return errno;
   return 0;
+}
+
+
+/**
+ *
+ */
+static int
+serve_file(http_connection_t *hc, const char *remain, void *opaque)
+{
+  char path[1024];
+
+  if(strstr(remain, ".."))
+    return 404;
+
+  snprintf(path, sizeof(path), "%s/%s", (const char *)opaque, remain);
+
+  void *data;
+  int size;
+
+  if(filebundle_load(path, &data, &size))
+    return 404;
+
+  htsbuf_append(&hc->hc_reply, data, size);
+
+  const char *ct = NULL;
+  const char *postfix = strrchr(remain, '.');
+  if(postfix != NULL) {
+    postfix++;
+    if(!strcmp(postfix, "html")) {
+      ct = "text/html";
+    } else if(!strcmp(postfix, "css")) {
+      ct = "text/css";
+    } else if(!strcmp(postfix, "js")) {
+      ct = "application/javascript";
+    } else if(!strcmp(postfix, "jpeg")) {
+      ct = "image/jpeg";
+    } else if(!strcmp(postfix, "png")) {
+      ct = "image/png";
+    }
+  }
+
+  http_output_content(hc, ct);
+  filebundle_free(data);
+  return 200;
+}
+
+
+/**
+ *
+ */
+void
+http_serve_static(const char *path, const char *filebundle)
+{
+  http_path_add(path, (void *)filebundle, serve_file);
 }
