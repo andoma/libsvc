@@ -10,7 +10,7 @@ struct filebundle *filebundles;
 
 
 int
-filebundle_get(const char *p, const void **ptr, int *len)
+filebundle_load(const char *p, void **ptr, int *len)
 {
   const struct filebundle_entry *fe;
   const struct filebundle *fb;
@@ -37,9 +37,15 @@ filebundle_get(const char *p, const void **ptr, int *len)
     return ENOENT;
 
   if(ptr)
-    *ptr = fe->data;
+    *ptr = (void *)fe->data;
   if(len)
     *len = fe->size;
   return 0;
 }
 
+
+void
+filebundle_free(void *ptr)
+{
+  // NOP for embedded stuff
+}

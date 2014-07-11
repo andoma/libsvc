@@ -764,7 +764,7 @@ db_upgrade_schema(const char *schema_bundle)
   int n;
   for(n = 0; ; n++) {
     snprintf(path, sizeof(path), "%s/%03d.sql", schema_bundle, n + 1);
-    if(filebundle_get(path, NULL, NULL))
+    if(filebundle_load(path, NULL, NULL))
       break;
   }
 
@@ -782,19 +782,20 @@ db_upgrade_schema(const char *schema_bundle)
   trace(LOG_INFO, "Want to upgrade database schema from version %d to %d", ver, n);
 
   while(1) {
-    const void *q;
+    void *q;
     int len;
 
     ver++;
 
     snprintf(path, sizeof(path), "%s/%03d.sql", schema_bundle, ver);
-    if(filebundle_get(path, &q, &len)) {
+    if(filebundle_load(path, &q, &len)) {
       db_rollback(c);
       return -1;
     }
 
     char *x = malloc(len + 1);
     memcpy(x, q, len);
+    filebundle_free(q);
     x[len] = 0;
     int r = run_multiple_statements(c, x);
     free(x);

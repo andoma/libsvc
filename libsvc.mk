@@ -23,7 +23,6 @@ SRCS += \
 	libsvc/cfg.c \
 	libsvc/cmd.c \
 	libsvc/talloc.c \
-	libsvc/filebundle.c \
 	libsvc/memstream.c \
 
 ##############################################################
@@ -146,11 +145,15 @@ BUNDLE_OBJS=$(BUNDLE_SRCS:%.c=%.o)
 
 MKBUNDLE = $(CURDIR)/libsvc/mkbundle
 
-all: ${PROG}
+all: ${PROG} ${PROG}.installable
 
-${PROG}: $(OBJS) $(BUNDLE_OBJS) $(ALLDEPS)
+${PROG}: $(OBJS) $(ALLDEPS) ${BUILDDIR}/libsvc/filebundle_disk.o
 	@mkdir -p $(dir $@)
-	$(CC) -o $@ $(OBJS) $(BUNDLE_OBJS) $(LDFLAGS) ${LDFLAGS_cfg}
+	$(CC) -o $@ $(OBJS) ${BUILDDIR}/libsvc/filebundle_disk.o $(LDFLAGS) ${LDFLAGS_cfg}
+
+${PROG}.installable: $(OBJS) $(BUNDLE_OBJS) $(ALLDEPS) ${BUILDDIR}/libsvc/filebundle_embedded.o
+	@mkdir -p $(dir $@)
+	$(CC) -o $@ $(OBJS) $(BUNDLE_OBJS) ${BUILDDIR}/libsvc/filebundle_embedded.o $(LDFLAGS) ${LDFLAGS_cfg}
 
 ${BUILDDIR}/%.o: %.c  $(ALLDEPS)
 	@mkdir -p $(dir $@)

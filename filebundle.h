@@ -11,4 +11,6 @@ struct filebundle {
   const char *prefix;
 };
 
-int filebundle_get(const char *p, const void **ptr, int *len);
+int filebundle_load(const char *p, void **ptr, int *len);
+
+void filebundle_free(void *ptr);
