@@ -982,6 +982,9 @@ serve_file(http_connection_t *hc, const char *remain, void *opaque)
 {
   char path[1024];
 
+  if(remain == NULL)
+    remain = "index.html";
+
   if(strstr(remain, ".."))
     return 404;
 
