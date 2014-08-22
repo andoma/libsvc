@@ -9,6 +9,7 @@ CFLAGS  += -Wmissing-prototypes -std=gnu99 -DPROGNAME=\"${PROGNAME}\"
 SRCS += \
 	libsvc/libsvc.c \
 	libsvc/misc.c \
+	libsvc/task.c \
 	libsvc/htsbuf.c \
 	libsvc/htsmsg.c \
 	libsvc/htsmsg_json.c \
