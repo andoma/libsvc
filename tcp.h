@@ -61,3 +61,5 @@ void tcp_prepare_poll(tcp_stream_t *ts, struct pollfd *pfd);
 int tcp_can_read(tcp_stream_t *ts, struct pollfd *pfd);
 
 int tcp_get_errno(tcp_stream_t *ts);
+
+int tcp_steal_fd(tcp_stream_t *ts);

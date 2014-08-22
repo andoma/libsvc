@@ -90,12 +90,25 @@ tcp_close(tcp_stream_t *ts)
 
   htsbuf_queue_flush(&ts->ts_spill);
   htsbuf_queue_flush(&ts->ts_sendq);
-  int r = close(ts->ts_fd);
-  if(r)
-    printf("Close failed!\n");
+  if(ts->ts_fd != -1) {
+    int r = close(ts->ts_fd);
+    if(r)
+      printf("Close failed!\n");
+  }
   free(ts);
 }
 
+
+/**
+ *
+ */
+int
+tcp_steal_fd(tcp_stream_t *ts)
+{
+  int fd = ts->ts_fd;
+  ts->ts_fd = -1;
+  return fd;
+}
 
 /**
  *

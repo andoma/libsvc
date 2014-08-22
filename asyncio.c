@@ -222,8 +222,7 @@ async_fd_create(int fd, int flags)
 static void
 async_fd_release(async_fd_t *af)
 {
-  af->af_refcount--;
-  if(af->af_refcount > 0)
+  if(__sync_sub_and_fetch(&af->af_refcount, 1))
     return;
 
   assert(af->af_dns_req == NULL);
@@ -232,6 +231,9 @@ async_fd_release(async_fd_t *af)
 
   if(af->af_fd != -1)
     close(af->af_fd);
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_destroy(&af->af_sendq_mutex);
 
   htsbuf_queue_flush(&af->af_sendq);
   htsbuf_queue_flush(&af->af_recvq);
@@ -275,6 +277,14 @@ do_write(async_fd_t *af)
   }
 
   mod_poll_flags(af, EPOLLOUT, 0);
+}
+
+static void
+do_write_lock(async_fd_t *af)
+{
+  pthread_mutex_lock(&af->af_sendq_mutex);
+  do_write(af);
+  pthread_mutex_unlock(&af->af_sendq_mutex);
 }
 
 
@@ -379,7 +389,7 @@ asyncio_loop(void *aux)
 
     for(i = 0; i < r; i++) {
       async_fd_t *af = ev[i].data.ptr;
-      af->af_refcount++;
+      __sync_add_and_fetch(&af->af_refcount, 1);
     }
 
     for(i = 0; i < r; i++) {
@@ -443,11 +453,33 @@ asyncio_close(async_fd_t *af)
  *
  */
 void
+asyncio_shutdown(async_fd_t *af)
+{
+  assert(af->af_fd != -1);
+
+  asyncio_timer_disarm(&af->af_timer);
+
+  shutdown(af->af_fd, SHUT_RD);
+
+  mod_poll_flags(af, 0, -1);
+}
+
+
+/**
+ *
+ */
+void
 asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork)
 {
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+
   htsbuf_append(&af->af_sendq, buf, len);
   if(af->af_fd != -1 && !cork)
     do_write(af);
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
 }
 
 
@@ -457,9 +489,15 @@ asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork)
 void
 asyncio_sendq(async_fd_t *af, htsbuf_queue_t *q, int cork)
 {
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+
   htsbuf_appendq(&af->af_sendq, q);
   if(af->af_fd != -1 && !cork)
     do_write(af);
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
 }
 
 
@@ -512,7 +550,7 @@ asyncio_bind(const char *bindaddr, int port,
  *
  */
 async_fd_t *
-asyncio_stream(int fd, 
+asyncio_stream(int fd,
 	       asyncio_read_cb_t *read,
 	       asyncio_error_cb_t *err,
 	       void *opaque)
@@ -525,6 +563,40 @@ asyncio_stream(int fd,
   af->af_error = err;
   af->af_opaque = opaque;
   return af;
+}
+
+
+/**
+ *
+ */
+async_fd_t *
+asyncio_stream_mt(int fd,
+                  asyncio_read_cb_t *read,
+                  asyncio_error_cb_t *err,
+                  void *opaque)
+{
+  setup_socket(fd);
+  async_fd_t *af = async_fd_create(fd, 0);
+
+  af->af_flags = AF_SENDQ_MUTEX;
+  pthread_mutex_init(&af->af_sendq_mutex, NULL);
+
+  af->af_pollin  = &do_read;
+  af->af_pollout = &do_write_lock;
+  af->af_bytes_avail = read;
+  af->af_error = err;
+  af->af_opaque = opaque;
+  return af;
+}
+
+
+/**
+ *
+ */
+void
+asyncio_enable_read(async_fd_t *fd)
+{
+  mod_poll_flags(fd, EPOLLIN, 0);
 }
 
 
@@ -995,7 +1067,6 @@ asyncio_add_worker(void (*fn)(void))
 void
 asyncio_init(void)
 {
-
   if(pipe(asyncio_pipe)) {
     perror("pipe");
     return;

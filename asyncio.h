@@ -60,22 +60,24 @@ typedef struct async_fd {
 
   void *af_opaque;
 
-  int af_refcount;
-
-  int af_fd;
-
   htsbuf_queue_t af_sendq;
   htsbuf_queue_t af_recvq;
 
-  int af_epoll_flags;
-
-  int af_port;
   char *af_hostname;
 
   asyncio_dns_req_t *af_dns_req;
   
   asyncio_timer_t af_timer;
 
+  pthread_mutex_t af_sendq_mutex;
+
+  int af_refcount;
+  int af_fd;
+  int af_epoll_flags;
+  uint16_t af_port;
+
+  uint16_t af_flags;
+#define AF_SENDQ_MUTEX        0x1
 } async_fd_t;
 
 
@@ -96,6 +98,13 @@ async_fd_t *asyncio_stream(int fd,
 			   asyncio_error_cb_t *err,
 			   void *opaque);
 
+
+// Multithread safe version of asyncio_stream()
+async_fd_t *asyncio_stream_mt(int fd,
+                              asyncio_read_cb_t *read,
+                              asyncio_error_cb_t *err,
+                              void *opaque);
+
 void asyncio_close(async_fd_t *af);
 
 void asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork);
@@ -103,6 +112,10 @@ void asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork);
 void asyncio_sendq(async_fd_t *af, htsbuf_queue_t *hq, int cork);
 
 void asyncio_reconnect(async_fd_t *af, int delay);
+
+void asyncio_enable_read(async_fd_t *fd);
+
+void asyncio_shutdown(async_fd_t *fd);
 
 /*************************************************************************
  * Workers

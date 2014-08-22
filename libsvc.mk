@@ -59,7 +59,7 @@ endif
 ##############################################################
 
 ifeq (${WITH_HTTP_SERVER},yes)
-SRCS    +=  libsvc/http.c
+SRCS    +=  libsvc/http.c libsvc/websocket_server.c
 WITH_TCP_SERVER := yes
 CFLAGS += -DWITH_HTTP_SERVER
 endif
@@ -79,6 +79,7 @@ endif
 
 ifeq (${WITH_ASYNCIO},yes)
 SRCS +=  libsvc/asyncio.c
+CFLAGS +=  -DWITH_ASYNCIO
 endif
 
 ##############################################################

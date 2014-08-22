@@ -5,12 +5,20 @@
 #include "db.h"
 #endif
 
+#ifdef WITH_ASYNCIO
+#include "asyncio.h"
+#endif
+
 
 void
 libsvc_init(void)
 {
 #ifdef WITH_MYSQL
   db_init();
+#endif
+
+#ifdef WITH_ASYNCIO
+  asyncio_init();
 #endif
 
   tcp_init();
