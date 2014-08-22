@@ -208,7 +208,7 @@ async_fd_create(int fd, int flags)
 {
   async_fd_t *af = calloc(1, sizeof(async_fd_t));
   af->af_fd = fd;
-  af->af_refcount = 1;
+  atomic_set(&af->af_refcount, 1);
   htsbuf_queue_init(&af->af_sendq, INT32_MAX);
   htsbuf_queue_init(&af->af_recvq, INT32_MAX);
   mod_poll_flags(af, flags, 0);
@@ -222,7 +222,7 @@ async_fd_create(int fd, int flags)
 static void
 async_fd_release(async_fd_t *af)
 {
-  if(__sync_sub_and_fetch(&af->af_refcount, 1))
+  if(atomic_dec(&af->af_refcount))
     return;
 
   assert(af->af_dns_req == NULL);
@@ -389,7 +389,7 @@ asyncio_loop(void *aux)
 
     for(i = 0; i < r; i++) {
       async_fd_t *af = ev[i].data.ptr;
-      __sync_add_and_fetch(&af->af_refcount, 1);
+      atomic_inc(&af->af_refcount);
     }
 
     for(i = 0; i < r; i++) {

@@ -1,6 +1,6 @@
 #include <sys/socket.h>
 #include "htsbuf.h"
-
+#include "atomic.h"
 
 /**************************************************************************
  * Timers
@@ -71,7 +71,7 @@ typedef struct async_fd {
 
   pthread_mutex_t af_sendq_mutex;
 
-  int af_refcount;
+  atomic_t af_refcount;
   int af_fd;
   int af_epoll_flags;
   uint16_t af_port;
