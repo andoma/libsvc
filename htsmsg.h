@@ -146,6 +146,16 @@ void htsmsg_add_dbl(htsmsg_t *msg, const char *name, double dbl);
 void htsmsg_add_comment(htsmsg_t *msg, const char *comment);
 
 /**
+ * Set (update) a string field.
+ */
+void htsmsg_set_str(htsmsg_t *msg, const char *name, const char *str);
+
+/**
+ * Set (update) a string field.
+ */
+void htsmsg_set_u32(htsmsg_t *msg, const char *name, uint32_t u32);
+
+/**
  * Add an field where source is a list or map message.
  *
  * This function will not strdup() \p name but relies on the caller
@@ -312,6 +322,8 @@ htsmsg_field_t *htsmsg_field_find(htsmsg_t *msg, const char *name);
 htsmsg_t *htsmsg_copy(htsmsg_t *src);
 
 #define HTSMSG_FOREACH(f, msg) TAILQ_FOREACH(f, &(msg)->hm_fields, hmf_link)
+
+int htsmsg_cmp(const htsmsg_t *a, const htsmsg_t *b);
 
 
 /**

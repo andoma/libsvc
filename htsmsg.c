@@ -30,11 +30,9 @@ static void htsmsg_clear(htsmsg_t *msg);
 /**
  *
  */
-void
-htsmsg_field_destroy(htsmsg_t *msg, htsmsg_field_t *f)
+static void
+htsmsg_field_clear(htsmsg_t *msg, htsmsg_field_t *f)
 {
-  TAILQ_REMOVE(&msg->hm_fields, f, hmf_link);
-
   switch(f->hmf_type) {
   case HMF_MAP:
   case HMF_LIST:
@@ -57,6 +55,18 @@ htsmsg_field_destroy(htsmsg_t *msg, htsmsg_field_t *f)
   default:
     break;
   }
+  f->hmf_flags &= ~HMF_ALLOCED;
+}
+
+
+/**
+ *
+ */
+void
+htsmsg_field_destroy(htsmsg_t *msg, htsmsg_field_t *f)
+{
+  TAILQ_REMOVE(&msg->hm_fields, f, hmf_link);
+  htsmsg_field_clear(msg, f);
   if(f->hmf_flags & HMF_NAME_ALLOCED)
     free((void *)f->hmf_name);
   free(f);
@@ -128,6 +138,22 @@ htsmsg_field_find(htsmsg_t *msg, const char *name)
       return f;
   }
   return NULL;
+}
+
+
+/*
+ *
+ */
+static htsmsg_field_t *
+htsmsg_field_get(htsmsg_t *msg, const char *name, int type)
+{
+  htsmsg_field_t *f = htsmsg_field_find(msg, name);
+  if(f != NULL) {
+    htsmsg_field_clear(msg, f);
+    f->hmf_type = type;
+    return f;
+  }
+  return htsmsg_field_add(msg, name, type, HMF_NAME_ALLOCED);
 }
 
 
@@ -261,6 +287,7 @@ htsmsg_add_str(htsmsg_t *msg, const char *name, const char *str)
   f->hmf_str = strdup(str);
 }
 
+
 /*
  *
  */
@@ -319,6 +346,29 @@ htsmsg_add_msg_extname(htsmsg_t *msg, const char *name, htsmsg_t *sub)
   assert(sub->hm_free_opaque == NULL);
   TAILQ_MOVE(&f->hmf_msg.hm_fields, &sub->hm_fields, hmf_link);
   free(sub);
+}
+
+/**
+ *
+ */
+void
+htsmsg_set_str(htsmsg_t *msg, const char *name, const char *str)
+{
+  htsmsg_field_t *f = htsmsg_field_get(msg, name, HMF_STR);
+  f->hmf_flags |= HMF_ALLOCED;
+  f->hmf_str = strdup(str);
+}
+
+
+
+/**
+ *
+ */
+void
+htsmsg_set_u32(htsmsg_t *msg, const char *name, uint32_t u32)
+{
+  htsmsg_field_t *f = htsmsg_field_get(msg, name, HMF_STR);
+  f->hmf_s64 = u32;
 }
 
 
@@ -690,6 +740,63 @@ htsmsg_copy(htsmsg_t *src)
   htsmsg_copy_i(src, dst);
   return dst;
 }
+
+
+/**
+ *
+ */
+int
+htsmsg_cmp(const htsmsg_t *a, const htsmsg_t *b)
+{
+  htsmsg_field_t *af = TAILQ_FIRST(&a->hm_fields);
+  htsmsg_field_t *bf = TAILQ_FIRST(&b->hm_fields);
+
+  while(af != NULL && bf != NULL) {
+
+    if(af->hmf_type != bf->hmf_type)
+      return 0;
+
+    if(!((af->hmf_name == NULL && bf->hmf_name == NULL) ||
+         !strcmp(af->hmf_name, bf->hmf_name)))
+      return 0;
+
+    switch(af->hmf_type) {
+    case HMF_MAP:
+    case HMF_LIST:
+      if(!htsmsg_cmp(&af->hmf_msg, &bf->hmf_msg))
+        return 0;
+      break;
+
+    case HMF_COMMENT:
+    case HMF_STR:
+      if(strcmp(af->hmf_str, bf->hmf_str))
+        return 0;
+      break;
+
+    case HMF_S64:
+      if(af->hmf_s64 != bf->hmf_s64)
+        return 0;
+      break;
+
+    case HMF_BIN:
+      if(af->hmf_binsize != bf->hmf_binsize)
+        return 0;
+      if(memcmp(af->hmf_bin, bf->hmf_bin, af->hmf_binsize))
+        return 0;
+      break;
+
+    case HMF_DBL:
+      if(af->hmf_dbl != bf->hmf_dbl)
+        return 0;
+      break;
+    }
+    af = TAILQ_NEXT(af, hmf_link);
+    bf = TAILQ_NEXT(bf, hmf_link);
+  }
+  return af == NULL && bf == NULL;
+}
+
+
 
 /**
  *
