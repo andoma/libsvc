@@ -10,6 +10,8 @@
 
 int url_escape(char *dst, const int size, const char *src, int how);
 
+char *url_escape_tmp(const char *src, int how);
+
 char *base64_encode(char *out, int out_size, const uint8_t *in, int in_size);
 
 int  base64_decode(uint8_t *out, const char *in, int out_size);

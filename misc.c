@@ -15,7 +15,7 @@
 #include "misc.h"
 #include "utf8.h"
 #include "threading.h"
-
+#include "talloc.h"
 
 static const char hexchars[16] = "0123456789ABCDEF";
 
@@ -543,4 +543,17 @@ time_to_RFC_1123(time_t t)
            tm->tm_hour, tm->tm_min, tm->tm_sec);
 
   return rbuf;
+}
+
+
+/**
+ *
+ */
+char *
+url_escape_tmp(const char *src, int how)
+{
+  int len = url_escape(NULL, 0, src, how);
+  char *r = talloc_malloc(len);
+  url_escape(r, len, src, how);
+  return r;
 }
