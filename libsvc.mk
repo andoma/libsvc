@@ -55,11 +55,22 @@ LDFLAGS += $(shell mysql_config --libs_r)
 endif
 
 ##############################################################
+# Websocket server
+##############################################################
+
+ifeq (${WITH_WS_SERVER},yes)
+SRCS    +=  libsvc/websocket_server.c
+WITH_HTTP_SERVER := yes
+WITH_ASYNCIO := yes
+CFLAGS += -DWITH_WS_SERVER
+endif
+
+##############################################################
 # HTTP Server
 ##############################################################
 
 ifeq (${WITH_HTTP_SERVER},yes)
-SRCS    +=  libsvc/http.c libsvc/websocket_server.c
+SRCS    +=  libsvc/http.c
 WITH_TCP_SERVER := yes
 CFLAGS += -DWITH_HTTP_SERVER
 endif
@@ -90,7 +101,7 @@ ifeq (${WITH_LIBGIT2},yes)
 CFLAGS +=  -DWITH_LIBGIT2
 ALLDEPS += ${BUILDDIR}/libgit2/include/git2.h
 CFLAGS  += -I${BUILDDIR}/libgit2/include/
-LDFLAGS += -L${BUILDDIR}/libgit2/lib -lgit2 -lssh2
+LDFLAGS += -L${BUILDDIR}/libgit2/lib -lgit2 -lssh2 -lz
 
 ${BUILDDIR}/libgit2/include/git2.h:
 	mkdir -p ${BUILDDIR}/libgit2/build
