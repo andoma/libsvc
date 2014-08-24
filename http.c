@@ -30,6 +30,8 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 
+#include <openssl/evp.h>
+
 #include "strtab.h"
 #include "misc.h"
 #include "trace.h"
@@ -39,6 +41,8 @@
 #include "htsmsg_json.h"
 #include "talloc.h"
 #include "filebundle.h"
+#include "htsmsg_binary.h"
+
 
 
 static void *http_server;
@@ -93,6 +97,9 @@ static struct strtab HTTP_versiontab[] = {
 
 static void http_parse_query_args(http_connection_t *hc, char *args);
 
+static char *generate_session_cookie(http_connection_t *hc);
+
+static void get_session_cookie(http_connection_t *hc, const char *str);
 
 /**
  *
@@ -197,11 +204,11 @@ http_rc2str(int code)
   }
 }
 
-static const char *cachedays[7] = {
+static const char *httpdays[7] = {
   "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
 };
 
-static const char *cachemonths[12] = {
+static const char *httpmonths[12] = {
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
@@ -222,6 +229,24 @@ http_send_100_continue(http_connection_t *hc)
 }
 
 
+/**
+ *
+ */
+static const char *
+http_mktime(time_t t, int delta)
+{
+  struct tm tm0, *tm;
+
+  t += delta;
+
+  tm = gmtime_r(&t, &tm0);
+
+  return tsprintf("%s, %02d %s %d %02d:%02d:%02d GMT",
+                  httpdays[tm->tm_wday],	tm->tm_year + 1900,
+                  httpmonths[tm->tm_mon], tm->tm_mday,
+                  tm->tm_hour, tm->tm_min, tm->tm_sec);
+}
+
 
 /**
  * Transmit a HTTP reply
@@ -233,9 +258,8 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
 		 int maxage, const char *range,
 		 const char *disposition, const char *transfer_encoding)
 {
-  struct tm tm0, *tm;
   htsbuf_queue_t hdrs;
-  time_t t;
+  time_t t = time(NULL);
 
   htsbuf_queue_init(&hdrs, 0);
 
@@ -243,29 +267,29 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
 		 val2str(hc->hc_version, HTTP_versiontab),
 		 rc, http_rc2str(rc));
 
-  htsbuf_qprintf(&hdrs, "Server: doozer2\r\n");
+  htsbuf_qprintf(&hdrs, "Server: libsvc\r\n");
+
+  if(!htsmsg_cmp(hc->hc_session, hc->hc_session_received)) {
+    printf("   NEED TO SEND COOKIE\n");
+    const char *cookie = generate_session_cookie(hc);
+    if(cookie != NULL) {
+      htsbuf_qprintf(&hdrs,
+                     "Set-Cookie: libsvc.session=%s; Path=/; "
+                     "expires=%s; HttpOnly\r\n",
+                     cookie,
+                     http_mktime(t, 365 * 86400));
+    } else {
+      htsbuf_qprintf(&hdrs,
+                     "Set-Cookie: libsvc.session=deleted; Path=/; "
+                     "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly\r\n");
+    }
+  }
 
   if(maxage == 0) {
     htsbuf_qprintf(&hdrs, "Cache-Control: no-cache\r\n");
   } else {
-    time(&t);
-
-    tm = gmtime_r(&t, &tm0);
-    htsbuf_qprintf(&hdrs, 
-		"Last-Modified: %s, %02d %s %d %02d:%02d:%02d GMT\r\n",
-		cachedays[tm->tm_wday],	tm->tm_year + 1900,
-		cachemonths[tm->tm_mon], tm->tm_mday,
-		tm->tm_hour, tm->tm_min, tm->tm_sec);
-
-    t += maxage;
-
-    tm = gmtime_r(&t, &tm0);
-    htsbuf_qprintf(&hdrs, 
-		"Expires: %s, %02d %s %d %02d:%02d:%02d GMT\r\n",
-		cachedays[tm->tm_wday],	tm->tm_year + 1900,
-		cachemonths[tm->tm_mon], tm->tm_mday,
-		tm->tm_hour, tm->tm_min, tm->tm_sec);
-      
+    htsbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", http_mktime(t, 0));
+    htsbuf_qprintf(&hdrs, "Expires: %s\r\n", http_mktime(t, maxage));
     htsbuf_qprintf(&hdrs, "Cache-Control: max-age=%d\r\n", maxage);
   }
 
@@ -616,6 +640,26 @@ process_request(http_connection_t *hc)
 
   }
 
+  assert(hc->hc_session == NULL);
+  assert(hc->hc_session_received == NULL);
+
+  if((v = http_arg_get(&hc->hc_args, "Cookie")) != NULL) {
+    v = mystrdupa(v);
+    char *x = strstr(v, "libsvc.session=");
+    if(x != NULL) {
+      x += strlen("libsvc.session=");
+      char *e = strchr(x, ';');
+      if(e != NULL)
+        *e = 0;
+      get_session_cookie(hc, x);
+    }
+  }
+
+  if(hc->hc_session_received == NULL)
+    hc->hc_session_received = htsmsg_create_map();
+
+  hc->hc_session = htsmsg_copy(hc->hc_session_received);
+
   switch(hc->hc_version) {
   case RTSP_VERSION_1_0:
     break;
@@ -836,8 +880,8 @@ http_parse_query_args(http_connection_t *hc, char *args)
 static void
 http_serve_requests(http_connection_t *hc)
 {
-  char cmdline[1024];
-  char hdrline[1024];
+  char cmdline[4096];
+  char hdrline[4096];
   char *argv[3], *c;
   int n;
 
@@ -905,6 +949,16 @@ http_serve_requests(http_connection_t *hc)
       hc->hc_post_message = NULL;
     }
 
+    if(hc->hc_session_received != NULL) {
+      htsmsg_destroy(hc->hc_session_received);
+      hc->hc_session_received = NULL;
+    }
+
+    if(hc->hc_session != NULL) {
+      htsmsg_destroy(hc->hc_session);
+      hc->hc_session = NULL;
+    }
+
     free(hc->hc_post_data);
     hc->hc_post_data = NULL;
 
@@ -953,11 +1007,18 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
   if(hc.hc_post_message != NULL)
     htsmsg_destroy(hc.hc_post_message);
 
+  if(hc.hc_session_received != NULL)
+    htsmsg_destroy(hc.hc_session_received);
+
+  if(hc.hc_session != NULL)
+    htsmsg_destroy(hc.hc_session);
+
   http_arg_flush(&hc.hc_args);
   http_arg_flush(&hc.hc_req_args);
   http_arg_flush(&hc.hc_response_headers);
   if(hc.hc_ts != NULL)
     tcp_close(hc.hc_ts);
+  talloc_cleanup();
 }
 
 
@@ -972,7 +1033,6 @@ http_server_init(int port, const char *bindaddr)
     return errno;
   return 0;
 }
-
 
 /**
  *
@@ -1028,4 +1088,158 @@ void
 http_serve_static(const char *path, const char *filebundle)
 {
   http_path_add(path, (void *)filebundle, serve_file);
+}
+
+
+#define COOKIE_NONCE_LEN 13
+#define COOKIE_TAG_LEN 16
+
+static unsigned char ccm_key[24];
+static int ccm_key_valid;
+static uint8_t cookie_generation;
+
+void
+http_server_init_session_cookie(const char *password, uint8_t generation)
+{
+  if(password == NULL)
+    return;
+
+  int r = PKCS5_PBKDF2_HMAC(password, strlen(password),
+                            NULL, 0, 1000,
+                            EVP_sha256(), sizeof(ccm_key), ccm_key);
+  if(!r) {
+    trace(LOG_ALERT, "Unable to initialize session cookie keys");
+    return;
+  }
+  ccm_key_valid = 1;
+  cookie_generation = generation;
+}
+
+/**
+ *
+ */
+static char *
+generate_session_cookie(http_connection_t *hc)
+{
+  void *data;
+  size_t len;
+  EVP_CIPHER_CTX *ctx;
+
+  char cookie[4000];
+  uint8_t cookiebin[3000] = {0};
+  int outlen = 0, tmplen;
+
+  if(!ccm_key_valid)
+    return NULL;
+
+  if(get_random_bytes(cookiebin, COOKIE_NONCE_LEN))
+    return NULL;
+
+  if(htsmsg_binary_serialize(hc->hc_session, &data, &len, 2500)) {
+    trace(LOG_ALERT, "Max cookie length exceeded");
+    return NULL;
+  }
+
+  /* htsmsg_binary_serialize() puts four byte of length in front of
+     the message (will be skipped further down). Anyway, we don't
+     include that so make sure message at least contains something */
+
+  if(len <= 5) {
+    free(data);
+    return NULL;
+  }
+
+  ctx = EVP_CIPHER_CTX_new();
+
+  EVP_EncryptInit_ex(ctx, EVP_aes_192_ccm(), NULL, NULL, NULL);
+
+  EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, COOKIE_NONCE_LEN, NULL);
+
+  EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, COOKIE_TAG_LEN, NULL);
+
+  EVP_EncryptInit_ex(ctx, NULL, NULL, ccm_key, cookiebin);
+
+  uint8_t *datau8 = data;
+  datau8[3] = cookie_generation;
+  /* Encrypt plaintext: can only be called once */
+  EVP_EncryptUpdate(ctx, cookiebin + COOKIE_NONCE_LEN + COOKIE_TAG_LEN,
+                    &outlen, data + 3, len - 3);
+  free(data);
+
+  EVP_EncryptFinal_ex(ctx, cookiebin + COOKIE_NONCE_LEN + COOKIE_TAG_LEN,
+                      &tmplen);
+
+  EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_GET_TAG, COOKIE_TAG_LEN,
+                      cookiebin + COOKIE_NONCE_LEN);
+
+  outlen += COOKIE_NONCE_LEN + COOKIE_TAG_LEN;
+
+  EVP_CIPHER_CTX_free(ctx);
+
+  hexdump("COOKIEBIN", cookiebin, outlen);
+
+  char *b64 = base64_encode(cookie, sizeof(cookie), cookiebin, outlen);
+  if(b64 == NULL) {
+    trace(LOG_ALERT, "Max cookie length exceeded (base64 encoded)");
+    return NULL;
+  }
+
+  return tstrdup(b64);
+}
+
+
+/**
+ *
+ */
+static void
+get_session_cookie(http_connection_t *hc, const char *str)
+{
+  EVP_CIPHER_CTX *ctx;
+  int outlen, rv;
+
+  if(!ccm_key_valid)
+    return;
+
+  int l = strlen(str);
+
+  uint8_t *bin = talloc_malloc(l);
+
+  int binlen = base64_decode(bin, str, l);
+  if(binlen == -1)
+    return;
+
+  if(binlen < COOKIE_NONCE_LEN + COOKIE_TAG_LEN + 2)
+    return;
+
+  ctx = EVP_CIPHER_CTX_new();
+  EVP_DecryptInit_ex(ctx, EVP_aes_192_ccm(), NULL, NULL, NULL);
+  EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, COOKIE_NONCE_LEN, NULL);
+  EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG,
+                      COOKIE_TAG_LEN, bin + COOKIE_NONCE_LEN);
+
+  EVP_DecryptInit_ex(ctx, NULL, NULL, ccm_key, bin);
+
+  uint8_t *plaintext = malloc(l);
+
+  rv = EVP_DecryptUpdate(ctx, plaintext, &outlen,
+                         bin + COOKIE_NONCE_LEN + COOKIE_TAG_LEN,
+                         binlen - COOKIE_NONCE_LEN - COOKIE_TAG_LEN);
+
+  EVP_CIPHER_CTX_free(ctx);
+  if(rv <= 0) {
+    free(plaintext);
+    return;
+  }
+
+  if(plaintext[0] != cookie_generation) {
+    free(plaintext);
+    return;
+  }
+
+  // plaintext ownership is transfered to htsmsg
+  hc->hc_session_received =
+    htsmsg_binary_deserialize(plaintext + 1, outlen - 1, plaintext);
+
+  if(hc->hc_session_received != NULL)
+    htsmsg_print(hc->hc_session_received);
 }

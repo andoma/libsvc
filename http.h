@@ -104,6 +104,11 @@ typedef struct http_connection {
 
   struct htsmsg *hc_post_message; // For application/json
 
+  /* Session management */
+
+  struct htsmsg *hc_session_received;
+  struct htsmsg *hc_session;
+
 } http_connection_t;
 
 
@@ -153,3 +158,5 @@ int http_access_verify(http_connection_t *hc);
 void http_deescape(char *s);
 
 void http_serve_static(const char *path, const char *filebundle);
+
+void http_server_init_session_cookie(const char *password, uint8_t generation);
