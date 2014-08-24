@@ -16,4 +16,5 @@ htsmsg_t *libsvc_http_json_get(const char *url, const char *auth,
                                char *errbuf, size_t errlen);
 
 htsmsg_t *libsvc_http_json_post(const char *url, const char *auth,
-                                char *errbuf, size_t errlen);
+                                char *errbuf, size_t errlen,
+                                const void *payload, size_t payloadlen);
