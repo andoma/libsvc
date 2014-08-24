@@ -259,7 +259,7 @@ htsmsg_binary_write(htsmsg_t *msg, uint8_t *ptr)
 }
 
 
-/*
+/**
  *
  */
 int
@@ -282,5 +282,27 @@ htsmsg_binary_serialize(htsmsg_t *msg, void **datap, size_t *lenp, int maxlen)
   htsmsg_binary_write(msg, data + 4);
   *datap = data;
   *lenp  = len + 4;
+  return 0;
+}
+
+
+/**
+ *
+ */
+int
+htsmsg_binary_serialize_nolen(htsmsg_t *msg, void **datap, size_t *lenp,
+                              int maxlen)
+{
+  size_t len;
+  uint8_t *data;
+
+  len = htsmsg_binary_count(msg);
+  if(len > maxlen)
+    return -1;
+
+  data = malloc(len);
+  htsmsg_binary_write(msg, data);
+  *datap = data;
+  *lenp  = len;
   return 0;
 }
