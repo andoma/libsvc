@@ -35,6 +35,7 @@ void url_split(char *proto, int proto_size,
 
 int makedirs(const char *path);
 
+int get_random_bytes(void *out, size_t len);
 
 
 #define mystrdupa(n) ({ int my_l = strlen(n); \

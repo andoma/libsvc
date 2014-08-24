@@ -312,6 +312,25 @@ readfile(const char *path, int *errptr, time_t *tsp)
 /**
  *
  */
+int
+get_random_bytes(void *out, size_t len)
+{
+  int fd = open("/dev/urandom", O_RDONLY);
+  if(fd == -1)
+    return -1;
+
+  int r = read(fd, out, len);
+  close(fd);
+  if(r != len)
+    return -1;
+  return 0;
+}
+
+
+
+/**
+ *
+ */
 void 
 url_split(char *proto, int proto_size,
           char *authorization, int authorization_size,
