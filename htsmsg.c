@@ -367,7 +367,7 @@ htsmsg_set_str(htsmsg_t *msg, const char *name, const char *str)
 void
 htsmsg_set_u32(htsmsg_t *msg, const char *name, uint32_t u32)
 {
-  htsmsg_field_t *f = htsmsg_field_get(msg, name, HMF_STR);
+  htsmsg_field_t *f = htsmsg_field_get(msg, name, HMF_S64);
   f->hmf_s64 = u32;
 }
 
