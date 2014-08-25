@@ -238,7 +238,10 @@ libsvc_http_json_get(const char *url, const char *auth,
   free(out);
   curl_easy_cleanup(curl);
 
-  htsmsg_t *m = htsmsg_json_deserialize(ce->ce_response, errbuf, errlen);
+  htsmsg_t *m = NULL;
+  if(ce->ce_response != NULL)
+    m = htsmsg_json_deserialize(ce->ce_response, errbuf, errlen);
+
   pthread_mutex_unlock(&cache_mutex);
   return m;
 }
