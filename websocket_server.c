@@ -65,8 +65,20 @@ struct ws_server_connection {
   pthread_mutex_t wsc_mutex;
   pthread_cond_t wsc_cond;
   int wsc_thread_running;
+
+  struct htsmsg *wsc_session;
+
 };
 
+
+/**
+ *
+ */
+htsmsg_t *
+websocket_http_session(ws_server_connection_t *wsc)
+{
+  return wsc->wsc_session;
+}
 
 /**
  *
@@ -77,6 +89,8 @@ wsc_destroy(ws_server_connection_t *wsc)
   pthread_cond_destroy(&wsc->wsc_cond);
   pthread_mutex_destroy(&wsc->wsc_mutex);
   asyncio_close(wsc->wsc_af);
+  if(wsc->wsc_session != NULL)
+    htsmsg_destroy(wsc->wsc_session);
   free(wsc);
 }
 
@@ -353,7 +367,10 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 
   wsc->wsc_af = af;
   wsc->wsc_path = wsp;
+  wsc->wsc_session = hc->hc_session_received;
   wsc->wsc_opaque = wsp->wsp_connected(wsc);
+
+  hc->hc_session_received = NULL;
 
   asyncio_enable_read(af);
 

@@ -24,3 +24,5 @@ void websocket_sendq(ws_server_connection_t *wss,
                      int opcode, htsbuf_queue_t *hq);
 
 void websocket_send_json(ws_server_connection_t *wss, htsmsg_t *msg);
+
+htsmsg_t *websocket_http_session(ws_server_connection_t *wsc);
