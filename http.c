@@ -270,7 +270,6 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
   htsbuf_qprintf(&hdrs, "Server: libsvc\r\n");
 
   if(!htsmsg_cmp(hc->hc_session, hc->hc_session_received)) {
-    printf("   NEED TO SEND COOKIE\n");
     const char *cookie = generate_session_cookie(hc);
     if(cookie != NULL) {
       htsbuf_qprintf(&hdrs,
@@ -1239,7 +1238,4 @@ get_session_cookie(http_connection_t *hc, const char *str)
   // plaintext ownership is transfered to htsmsg
   hc->hc_session_received =
     htsmsg_binary_deserialize(plaintext + 1, outlen - 1, plaintext);
-
-  if(hc->hc_session_received != NULL)
-    htsmsg_print(hc->hc_session_received);
 }
