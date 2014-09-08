@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -575,4 +576,114 @@ url_escape_tmp(const char *src, int how)
   char *r = talloc_malloc(len);
   url_escape(r, len, src, how);
   return r;
+}
+
+
+/**
+ *
+ */
+char **
+strvec_split(const char *str, char ch)
+{
+  const char *s;
+  int c = 1, i;
+  char **r;
+
+  for(s = str; *s != 0; s++)
+    if(*s == ch)
+      c++;
+
+  r = malloc(sizeof(char *) * (c + 1));
+  for(i = 0; i < c; i++) {
+    s = strchr(str, ch);
+    if(s == NULL) {
+      assert(i == c - 1);
+      r[i] = strdup(str);
+    } else {
+      r[i] = malloc(s - str + 1);
+      memcpy(r[i], str, s - str);
+      r[i][s - str] = 0;
+      str = s + 1;
+    }
+  }
+  r[i] = NULL;
+  return r;
+}
+
+
+/**
+ *
+ */
+void
+strvec_free(char **s)
+{
+  if(s == NULL)
+    return;
+  void *m = s;
+  for(;*s != NULL; s++)
+    free(*s);
+  free(m);
+}
+
+
+/**
+ *
+ */
+void 
+strvec_addpn(char ***strvp, const char *v, size_t len)
+{
+  char **strv = *strvp;
+  int i = 0;
+  if(strv == NULL) {
+    strv = malloc(sizeof(char *) * 2);
+  } else {
+    while(strv[i] != NULL)
+      i++;
+    strv = realloc(strv, sizeof(char *) * (i + 2));
+  }
+  strv[i] = memcpy(malloc(len + 1), v, len);
+  strv[i][len] = 0;
+  strv[i+1] = NULL;
+  *strvp = strv;
+}
+
+/**
+ *
+ */
+void 
+strvec_addp(char ***strvp, const char *v)
+{
+  strvec_addpn(strvp, v, strlen(v));
+}
+
+
+/**
+ *
+ */
+int
+strvec_len(char **s)
+{
+  int len = 0;
+  while(*s != NULL) {
+    len++;
+    s++;
+  }
+  return len;
+}
+
+
+/**
+ *
+ */
+char **
+strvec_dup(char **s)
+{
+  int i, len = strvec_len(s);
+  char **ret;
+
+  ret = malloc(sizeof(char *) * (len + 1));
+  for(i = 0; i < len; i++)
+    ret[i] = strdup(s[i]);
+  ret[i] = NULL;
+  return ret;
 }

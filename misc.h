@@ -69,3 +69,15 @@ int hex2bin(uint8_t *buf, size_t buflen, const char *str);
 void bin2hex(char *dst, size_t dstlen, const uint8_t *src, size_t srclen);
 
 const char *time_to_RFC_1123(time_t t);
+
+void strvec_addp(char ***str, const char *v);
+
+void strvec_addpn(char ***str, const char *v, size_t len);
+
+char **strvec_split(const char *str, char ch);
+
+void strvec_free(char **s);
+
+int strvec_len(char **s);
+
+char **strvec_dup(char **s);
