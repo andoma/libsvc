@@ -39,7 +39,6 @@
 #include <openssl/err.h>
 
 #include "tcp.h"
-#include "trace.h"
 
 static SSL_CTX *ssl_ctx;
 static pthread_mutex_t *ssl_locks;
@@ -375,7 +374,7 @@ tcp_stream_create_ssl_from_fd(int fd)
 
  bad:
   ERR_error_string(ERR_get_error(), errmsg);
-  trace(LOG_ERR, "SSL Problem: %s", errmsg);
+  fprintf(stderr, "SSL: %s\n", errmsg);
 
   tcp_close(ts);
   errno = EBADMSG;
@@ -573,8 +572,22 @@ tcp_read(tcp_stream_t *ts, void *buf, size_t len)
 }
 
 
+/**
+ *
+ */
+htsbuf_queue_t *
+tcp_read_buffered(tcp_stream_t *ts)
+{
+  if(tcp_fill_htsbuf_from_fd(ts, &ts->ts_spill) < 0)
+    return NULL;
+
+  return &ts->ts_spill;
+}
 
 
+/**
+ *
+ */
 static unsigned long
 ssl_tid_fn(void)
 {
