@@ -117,6 +117,7 @@ wsc_dispatch_thread(void *aux)
                                 &wsc->wsc_mutex, &t) == ETIMEDOUT) {
         break;
       }
+      continue;
     }
 
     TAILQ_REMOVE(&wsc->wsc_queue, wsd, wsd_link);
@@ -165,6 +166,8 @@ ws_enq_data(ws_server_connection_t *wsc, int opcode, void *data, int arg)
     pthread_create(&id, &attr, wsc_dispatch_thread, wsc);
     pthread_attr_destroy(&attr);
     wsc->wsc_thread_running = 1;
+  } else {
+    pthread_cond_signal(&wsc->wsc_cond);
   }
   pthread_mutex_unlock(&wsc->wsc_mutex);
 }
@@ -242,61 +245,61 @@ websocket_read_cb(void *opaque, struct htsbuf_queue *hq)
 {
   ws_server_connection_t *wsc = opaque;
   uint8_t hdr[14]; // max header length
-  int p = htsbuf_peek(hq, &hdr, 14);
-  const uint8_t *m;
-
-  if(p < 2)
-    return;
-
-  int opcode  = hdr[0] & 0xf;
-  int64_t len = hdr[1] & 0x7f;
-  int hoff = 2;
-
-  if(len == 126) {
-    if(p < 4)
+  while(1) {
+    int p = htsbuf_peek(hq, &hdr, 14);
+    const uint8_t *m;
+    if(p < 2)
       return;
-    len = hdr[2] << 8 | hdr[3];
-    hoff = 4;
-  } else if(len == 127) {
-    if(p < 10)
-      return;
-    memcpy(&len, hdr + 2, sizeof(uint64_t));
+
+    int opcode  = hdr[0] & 0xf;
+    int64_t len = hdr[1] & 0x7f;
+    int hoff = 2;
+    if(len == 126) {
+      if(p < 4)
+        return;
+      len = hdr[2] << 8 | hdr[3];
+      hoff = 4;
+    } else if(len == 127) {
+      if(p < 10)
+        return;
+      memcpy(&len, hdr + 2, sizeof(uint64_t));
 #if defined(__LITTLE_ENDIAN__)
-    len = __builtin_bswap64(len);
+      len = __builtin_bswap64(len);
 #endif
-    hoff = 10;
-  }
+      hoff = 10;
+    }
 
-  if(hdr[1] & 0x80) {
-    if(p < hoff + 4)
+    if(hdr[1] & 0x80) {
+      if(p < hoff + 4)
+        return;
+      m = hdr + hoff;
+
+      hoff += 4;
+    } else {
+      m = NULL;
+    }
+
+    if(hq->hq_size < hoff + len)
       return;
-    m = hdr + hoff;
 
-    hoff += 4;
-  } else {
-    m = NULL;
-  }
+    uint8_t *d = malloc(len+1);
+    htsbuf_drop(hq, hoff);
+    htsbuf_read(hq, d, len);
+    d[len] = 0;
 
-  if(hq->hq_size < hoff + len)
-    return;
+    if(m != NULL) {
+      int i;
+      for(i = 0; i < len; i++)
+        d[i] ^= m[i&3];
+    }
 
-  uint8_t *d = malloc(len+1);
-  htsbuf_drop(hq, hoff);
-  htsbuf_read(hq, d, len);
-  d[len] = 0;
-
-  if(m != NULL) {
-    int i;
-    for(i = 0; i < len; i++)
-      d[i] ^= m[i&3];
-  }
-
-  if(opcode == 9) {
-    // PING
-    websocket_send(wsc, 10, d, len);
-    free(d);
-  } else {
-    ws_enq_data(wsc, opcode, d, len);
+    if(opcode == 9) {
+      // PING
+      websocket_send(wsc, 10, d, len);
+      free(d);
+    } else {
+      ws_enq_data(wsc, opcode, d, len);
+    }
   }
 }
 
