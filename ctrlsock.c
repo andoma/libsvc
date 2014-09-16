@@ -38,7 +38,7 @@
 #include "ctrlsock.h"
 #include "cmd.h"
 #include "talloc.h"
-
+#include "sock.h"
 static int ctrlsock_fd;
 
 
