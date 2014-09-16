@@ -33,6 +33,8 @@
 #include "talloc.h"
 #include "misc.h"
 #include "memstream.h"
+#include "sock.h"
+
 
 size_t
 libsvc_curl_waste_output(char *ptr, size_t size, size_t nmemb, void *userdata)
@@ -49,13 +51,7 @@ libsvc_curl_sock_fn(void *clientp,
                     curlsocktype purpose,
                     struct curl_sockaddr *a)
 {
-#ifdef linux
-  int fd = socket(a->family, a->socktype | SOCK_CLOEXEC, a->protocol);
-#else
-  int fd = socket(a->family, a->socktype, a->protocol);
-  fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
-#endif
-  return fd;
+  return libsvc_socket(a->family, a->socktype, a->protocol);
 }
 
 /**

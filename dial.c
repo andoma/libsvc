@@ -35,7 +35,7 @@
 #include <stdlib.h>
 
 #include "dial.h"
-
+#include "sock.h"
 
 /**
  *
@@ -46,7 +46,7 @@ getstreamsocket(int family)
   int fd;
   int val = 1;
 
-  fd = socket(family, SOCK_STREAM, 0);
+  fd = libsvc_socket(family, SOCK_STREAM, 0);
   if(fd == -1)
     return -errno;
 

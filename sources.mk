@@ -18,6 +18,7 @@ libsvc_SRCS += \
 	cmd.c \
 	talloc.c \
 	memstream.c \
+	sock.c \
 
 libsvc_INCS += \
 	libsvc.h \
@@ -38,6 +39,7 @@ libsvc_INCS += \
 	cmd.h \
 	talloc.h \
 	memstream.h \
+	sock.h \
 
 ##############################################################
 # Curl

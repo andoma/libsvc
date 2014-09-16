@@ -219,7 +219,7 @@ ctrlsock_thread(void *aux)
 void
 ctrlsock_init(const char *ctrlsockpath)
 {
-  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  int fd = libsvc_socket(AF_UNIX, SOCK_STREAM, 0);
   if(fd == -1) {
     trace(LOG_ERR, "Unable to create ctrl socket -- %s",
           strerror(errno));

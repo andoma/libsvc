@@ -20,7 +20,6 @@
 * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
-
 #include <fcntl.h>
 #include <sys/time.h>
 #include <sys/param.h>
@@ -40,6 +39,7 @@
 #include "asyncio.h"
 #include "trace.h"
 #include "talloc.h"
+#include "sock.h"
 
 LIST_HEAD(asyncio_timer_list, asyncio_timer);
 LIST_HEAD(asyncio_worker_list, asyncio_worker);
@@ -352,7 +352,7 @@ do_accept(async_fd_t *af)
 
   slen = sizeof(struct sockaddr_in);
 
-  int fd = accept(af->af_fd, (struct sockaddr *)&remote, &slen);
+  int fd = libsvc_accept(af->af_fd, (struct sockaddr *)&remote, &slen);
   if(fd == -1) {
     perror("accept");
     return;
@@ -536,7 +536,7 @@ asyncio_bind(const char *bindaddr, int port,
   int one = 1;
   struct sockaddr_in s;
 
-  fd = socket(AF_INET, SOCK_STREAM, 0);
+  fd = libsvc_socket(AF_INET, SOCK_STREAM, 0);
   if(fd == -1)
     return NULL;
 
@@ -690,7 +690,7 @@ initiate_connect(async_fd_t *af, const struct sockaddr_in *addr)
   struct sockaddr_in sin = *addr;
   sin.sin_port = htons(af->af_port);
 
-  if((fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+  if((fd = libsvc_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
     con_send_err(af, "Unable to create socket");
     return;
   }

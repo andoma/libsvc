@@ -45,7 +45,7 @@
 #include "tcp.h"
 #include "trace.h"
 #include "talloc.h"
-
+#include "sock.h"
 
 /**
  *
@@ -242,8 +242,9 @@ tcp_server_loop(void *aux)
 	tsl->opaque = ts->opaque;
 	slen = sizeof(struct sockaddr_in);
 
-	tsl->fd = accept(ts->serverfd, 
-			 (struct sockaddr *)&tsl->peer, &slen);
+        tsl->fd = libsvc_accept(ts->serverfd,
+                                (struct sockaddr *)&tsl->peer, &slen);
+
 	if(tsl->fd == -1) {
 	  perror("accept");
 	  free(tsl);
@@ -279,7 +280,7 @@ tcp_server_create(int port, const char *bindaddr,
   struct sockaddr_in s;
   int one = 1;
   memset(&e, 0, sizeof(e));
-  fd = socket(AF_INET, SOCK_STREAM, 0);
+  fd = libsvc_socket(AF_INET, SOCK_STREAM, 0);
   if(fd == -1)
     return NULL;
 
