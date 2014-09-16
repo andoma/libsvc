@@ -36,6 +36,7 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
+#include "queue.h"
 #include "asyncio.h"
 #include "trace.h"
 #include "talloc.h"

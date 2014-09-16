@@ -27,8 +27,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <inttypes.h>
-
-#include "queue.h"
+#include <sys/queue.h>
 
 TAILQ_HEAD(htsbuf_data_queue, htsbuf_data);
 
