@@ -127,8 +127,17 @@ void
 asyncio_wakeup_worker(int id)
 {
   char x = id;
-  if(write(asyncio_pipe[1], &x, 1) != 1)
+  while(1) {
+    int r = write(asyncio_pipe[1], &x, 1);
+    if(r == 1)
+      return;
+
+    if(r == -1 && errno == EINTR)
+      continue;
+
     fprintf(stderr, "Pipe problems\n");
+    break;
+  }
 }
 
 
@@ -286,7 +295,7 @@ do_write(async_fd_t *af)
     if(r == 0)
       break;
 
-    if(r == -1 && (errno == EAGAIN))
+    if(r == -1 && (errno == EAGAIN || errno == EINTR))
       break;
 
     if(r == -1) {
@@ -325,7 +334,7 @@ do_read(async_fd_t *af)
       return;
     }
 
-    if(r == -1 && (errno == EAGAIN))
+    if(r == -1 && (errno == EAGAIN || errno == EINTR))
       break;
 
     if(r == -1) {
@@ -405,6 +414,9 @@ asyncio_loop(void *aux)
 
     r = epoll_wait(epfd, ev, sizeof(ev) / sizeof(ev[0]), timeout);
     if(r == -1) {
+      if(errno == EINTR)
+        continue;
+
       perror("tcp_server: epoll_wait");
       usleep(100000);
       continue;
