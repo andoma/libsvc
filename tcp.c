@@ -131,6 +131,9 @@ os_write_try(tcp_stream_t *ts)
     assert(len > 0);
 
     int r = write(ts->ts_fd, hd->hd_data + hd->hd_data_off, len);
+    if(r < 0 && errno == EINTR)
+      continue;
+
     if(r < 1)
       return -1;
 
@@ -153,9 +156,38 @@ os_write_try(tcp_stream_t *ts)
  *
  */
 static int
+safe_write(int fd, const void *data, int len)
+{
+  int written = 0;
+
+  while(written < len) {
+    int r = write(fd, data + written, len - written);
+    if(r < 0 && errno == EINTR)
+      continue;
+
+    if(r <= 0)
+      return written;
+
+    written += r;
+  }
+  return written;
+}
+
+
+/**
+ *
+ */
+static int
 os_read(struct tcp_stream *ts, void *data, int len, int waitall)
 {
-  return recv(ts->ts_fd, data, len, waitall ? MSG_WAITALL : 0);
+  while(1) {
+    int r = recv(ts->ts_fd, data, len, waitall ? MSG_WAITALL : 0);
+
+    if(r < 0 && errno == EINTR)
+      continue;
+
+    return r;
+  }
 }
 
 
@@ -166,7 +198,7 @@ static int
 os_write(struct tcp_stream *ts, const void *data, int len)
 {
   if(!ts->ts_nonblock)
-    return write(ts->ts_fd, data, len);
+    return safe_write(ts->ts_fd, data, len);
 
   htsbuf_append(&ts->ts_sendq, data, len);
   os_write_try(ts);
