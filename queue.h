@@ -1,9 +1,7 @@
-/*
- * sys/queue.h wrappers and helpers
- */
 
-#ifndef HTSQ_H
-#define HTSQ_H
+
+
+#pragma once
 
 #include <sys/queue.h>
 
@@ -241,4 +239,3 @@ if (((elm)->field.sqe_next = (listelm)->field.sqe_next) == NULL)        \
 #define	SIMPLEQ_EMPTY(head)	    (SIMPLEQ_FIRST(head) == SIMPLEQ_END(head))
 #endif
 
-#endif /* HTSQ_H */
