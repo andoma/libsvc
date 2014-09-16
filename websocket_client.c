@@ -16,7 +16,7 @@
 /**
  *
  */
-struct websocket_client {
+struct ws_client {
   pthread_t wsc_tid;
   tcp_stream_t *wsc_ts;
 
@@ -37,7 +37,7 @@ struct websocket_client {
  *
  */
 static void
-wsc_append_header(websocket_client_t *wsc, int opcode, size_t len)
+wsc_append_header(ws_client_t *wsc, int opcode, size_t len)
 {
   uint8_t hdr[14]; // max header length
   int hlen;
@@ -67,7 +67,7 @@ wsc_append_header(websocket_client_t *wsc, int opcode, size_t len)
  *
  */
 static void
-wsc_write_buf(websocket_client_t *wsc, int opcode, const void *data, size_t len)
+wsc_write_buf(ws_client_t *wsc, int opcode, const void *data, size_t len)
 {
   pthread_mutex_lock(&wsc->wsc_sendq_mutex);
   if(!wsc->wsc_zombie) {
@@ -82,7 +82,7 @@ wsc_write_buf(websocket_client_t *wsc, int opcode, const void *data, size_t len)
  *
  */
 static void
-wsc_read(websocket_client_t *wsc, struct htsbuf_queue *hq)
+wsc_read(ws_client_t *wsc, struct htsbuf_queue *hq)
 {
   uint8_t hdr[14]; // max header length
   const uint8_t *m;
@@ -151,7 +151,7 @@ wsc_read(websocket_client_t *wsc, struct htsbuf_queue *hq)
  *
  */
 static void
-wsc_sendq(websocket_client_t *wsc)
+wsc_sendq(ws_client_t *wsc)
 {
   pthread_mutex_lock(&wsc->wsc_sendq_mutex);
   tcp_write_queue(wsc->wsc_ts, &wsc->wsc_sendq);
@@ -163,7 +163,7 @@ wsc_sendq(websocket_client_t *wsc)
  *
  */
 static void
-wsc_release(websocket_client_t *wsc)
+wsc_release(ws_client_t *wsc)
 {
   if(__sync_add_and_fetch(&wsc->wsc_refcount, -1))
     return;
@@ -179,7 +179,7 @@ wsc_release(websocket_client_t *wsc)
 static void *
 wsc_thread(void *aux)
 {
-  websocket_client_t *wsc = aux;
+  ws_client_t *wsc = aux;
 
   struct pollfd fds[2];
 
@@ -246,7 +246,7 @@ wsc_thread(void *aux)
  *
  */
 void
-websocket_close(websocket_client_t *wsc)
+ws_client_close(ws_client_t *wsc)
 {
   close(wsc->wsc_pipe[1]);
   wsc->wsc_pipe[1] = -1;
@@ -258,7 +258,7 @@ websocket_close(websocket_client_t *wsc)
  *
  */
 void
-websocket_write(websocket_client_t *wsc, int opcode, const void *data, size_t len)
+ws_client_send(ws_client_t *wsc, int opcode, const void *data, size_t len)
 {
   char c = 1;
   if(wsc->wsc_pipe[1] == -1)
@@ -274,8 +274,8 @@ websocket_write(websocket_client_t *wsc, int opcode, const void *data, size_t le
 /**
  *
  */
-websocket_client_t *
-websocket_connect(const char *hostname, int port, const char *path, int ssl,
+ws_client_t *
+ws_client_connect(const char *hostname, int port, const char *path, int ssl,
                   void (*input)(void *aux, int opcode, const void *buf, size_t len),
                   void *aux)
 {
@@ -323,7 +323,7 @@ websocket_connect(const char *hostname, int port, const char *path, int ssl,
   }
 
 
-  websocket_client_t *wsc = calloc(1, sizeof(websocket_client_t));
+  ws_client_t *wsc = calloc(1, sizeof(ws_client_t));
 
   wsc->wsc_ts = ts;
   wsc->wsc_input = input;
