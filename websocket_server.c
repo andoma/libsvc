@@ -73,7 +73,7 @@ struct ws_server_connection {
   int wsc_thread_running;
 
   struct htsmsg *wsc_session;
-
+  char *wsc_peeraddr;
 };
 
 
@@ -95,6 +95,7 @@ wsc_destroy(ws_server_connection_t *wsc)
   pthread_cond_destroy(&wsc->wsc_cond);
   pthread_mutex_destroy(&wsc->wsc_mutex);
   asyncio_close(wsc->wsc_af);
+  free(wsc->wsc_peeraddr);
   if(wsc->wsc_session != NULL)
     htsmsg_destroy(wsc->wsc_session);
   free(wsc);
@@ -376,10 +377,15 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 
   wsc->wsc_af = af;
   wsc->wsc_path = wsp;
+
+  wsc->wsc_peeraddr = strdup(hc->hc_representative);
+
+  // Steal session information
   wsc->wsc_session = hc->hc_session_received;
+  hc->hc_session_received = NULL;
+
   wsc->wsc_opaque = wsp->wsp_connected(wsc);
 
-  hc->hc_session_received = NULL;
 
   asyncio_enable_read(af);
 
