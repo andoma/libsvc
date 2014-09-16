@@ -84,6 +84,17 @@ CFLAGS += -DWITH_WS_SERVER
 endif
 
 ##############################################################
+# Websocket client
+##############################################################
+
+ifeq (${WITH_WS_CLIENT},yes)
+libsvc_SRCS    +=  websocket_client.c
+libsvc_INCS    +=  websocket_client.h
+WITH_ASYNCIO := yes
+CFLAGS += -DWITH_WS_CLIENT
+endif
+
+##############################################################
 # HTTP Server
 ##############################################################
 

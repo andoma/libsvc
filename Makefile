@@ -10,9 +10,10 @@ FULL_VERSION := ${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}
 
 prefix ?= /usr/local
 
-WITH_CURL := yes
-WITH_HTTP_SERVER := yes
-WITH_WS_SERVER := yes
+WITH_CURL        ?= yes
+WITH_HTTP_SERVER ?= yes
+WITH_WS_SERVER   ?= yes
+WITH_WS_CLIENT   ?= yes
 
 include sources.mk
 
