@@ -82,6 +82,7 @@ get_ts(void)
   return (int64_t)tv.tv_sec * 1000000LL + tv.tv_usec;
 }
 
+void strset(char **p, const char *s);
 
 int str_tokenize(char *buf, char **vec, int vecsize, int delimiter);
 

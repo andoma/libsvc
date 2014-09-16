@@ -574,6 +574,17 @@ bin2hex(char *dst, size_t dstlen, const uint8_t *src, size_t srclen)
 }
 
 
+/**
+ *
+ */
+void
+strset(char **p, const char *s)
+{
+  free(*p);
+  *p = s ? strdup(s) : NULL;
+}
+
+
 
 static const char *days[7] = {
   "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
