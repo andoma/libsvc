@@ -6,7 +6,7 @@ prefix ?= /usr/local
 CFLAGS  += -Wall -Werror -Wwrite-strings -Wno-deprecated-declarations 
 CFLAGS  += -Wmissing-prototypes -std=gnu99 -DPROGNAME=\"${PROGNAME}\"
 
-include sources.mk
+include libsvc/sources.mk
 
 SRCS += ${libsvc_SRCS:%.c=libsvc/%.c}
 
