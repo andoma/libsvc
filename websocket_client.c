@@ -12,6 +12,7 @@
 
 #include "dial.h"
 #include "websocket_client.h"
+#include "atomic.h"
 
 /**
  *
@@ -25,7 +26,7 @@ struct ws_client {
   void (*wsc_input)(void *aux, int opcode, const void *buf, size_t len);
   void *wsc_aux;
 
-  int wsc_refcount;
+  atomic_t wsc_refcount;
 
   pthread_mutex_t wsc_sendq_mutex;
   htsbuf_queue_t wsc_sendq;
@@ -165,7 +166,7 @@ wsc_sendq(ws_client_t *wsc)
 static void
 wsc_release(ws_client_t *wsc)
 {
-  if(__sync_add_and_fetch(&wsc->wsc_refcount, -1))
+  if(atomic_dec(&wsc->wsc_refcount))
     return;
   htsbuf_queue_flush(&wsc->wsc_sendq);
   pthread_mutex_destroy(&wsc->wsc_sendq_mutex);
@@ -338,13 +339,22 @@ ws_client_connect(const char *hostname, int port, const char *path, int ssl,
   pthread_mutex_init(&wsc->wsc_sendq_mutex, NULL);
   htsbuf_queue_init(&wsc->wsc_sendq, 0);
 
-  wsc->wsc_refcount = 2; // One for thread, one for caller
+  atomic_set(&wsc->wsc_refcount, 1);
+  return wsc;
+}
+
+
+/**
+ *
+ */
+void
+ws_client_start(ws_client_t *wsc)
+{
+  atomic_inc(&wsc->wsc_refcount);
 
   pthread_attr_t attr;
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
   pthread_create(&wsc->wsc_tid, &attr, wsc_thread, wsc);
   pthread_attr_destroy(&attr);
-
-  return wsc;
 }
