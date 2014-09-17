@@ -396,6 +396,15 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 }
 
 
+/**
+ *
+ */
+const char *
+websocket_get_peeraddr(ws_server_connection_t *wsc)
+{
+  return wsc->wsc_peeraddr;
+}
+
 
 void
 websocket_route_add(const char *path,
