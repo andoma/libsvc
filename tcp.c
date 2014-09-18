@@ -590,6 +590,7 @@ tcp_read_buffered(tcp_stream_t *ts)
 static int
 verify_hostname(const char *hostname, X509 *cert, char *errbuf, size_t errlen)
 {
+  int i;
 
   /* domainname is the "domain" we wan't to access (actually hostname
    * with first part of the DNS name removed) */
@@ -623,7 +624,7 @@ verify_hostname(const char *hostname, X509 *cert, char *errbuf, size_t errlen)
 
   const int num_names = sk_GENERAL_NAME_num(names);
 
-  for(int i = 0; i < num_names; ++i ) {
+  for(i = 0; i < num_names; ++i ) {
     GENERAL_NAME *name = sk_GENERAL_NAME_value(names, i);
     unsigned char *dns;
     int match;
