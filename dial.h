@@ -25,4 +25,5 @@
 
 #include "tcp.h"
 
-tcp_stream_t *dial(const char *hostname, int port, int timeout, int ssl);
+tcp_stream_t *dial(const char *hostname, int port, int timeout,
+                   const tcp_ssl_info_t *tsi, char *errbuf, size_t errlen);

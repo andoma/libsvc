@@ -43,6 +43,7 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/x509v3.h>
 
 #include "tcp.h"
 
@@ -383,46 +384,6 @@ tcp_stream_create_from_fd(int fd)
 /**
  *
  */
-tcp_stream_t *
-tcp_stream_create_ssl_from_fd(int fd)
-{
-  char errmsg[120];
-
-  tcp_stream_t *ts = calloc(1, sizeof(tcp_stream_t));
-  ts->ts_fd = fd;
-
-  if((ts->ts_ssl = SSL_new(ssl_ctx)) == NULL)
-    goto bad;
-
-  if(SSL_set_fd(ts->ts_ssl, fd) == 0)
-    goto bad;
-
-  if(SSL_connect(ts->ts_ssl) <= 0)
-    goto bad;
-
-  SSL_set_mode(ts->ts_ssl, SSL_MODE_AUTO_RETRY);
-
-  ts->ts_fd = fd;
-  htsbuf_queue_init(&ts->ts_spill, INT32_MAX);
-  htsbuf_queue_init(&ts->ts_sendq, INT32_MAX);
-
-  ts->ts_write = ssl_write;
-  ts->ts_read  = ssl_read;
-  return ts;
-
- bad:
-  ERR_error_string(ERR_get_error(), errmsg);
-  fprintf(stderr, "SSL: %s\n", errmsg);
-
-  tcp_close(ts);
-  errno = EBADMSG;
-  return NULL;
-}
-
-
-/**
- *
- */
 int
 tcp_sendfile(tcp_stream_t *ts, int fd, int64_t bytes)
 {
@@ -626,6 +587,161 @@ tcp_read_buffered(tcp_stream_t *ts)
 /**
  *
  */
+static int
+verify_hostname(const char *hostname, X509 *cert, char *errbuf, size_t errlen)
+{
+
+  /* domainname is the "domain" we wan't to access (actually hostname
+   * with first part of the DNS name removed) */
+  const char *domainname = strchr(hostname, '.');
+  if(domainname != NULL) {
+      domainname++;
+      if(strlen(domainname) == 0)
+        domainname = NULL;
+  }
+
+
+  // First check commonName
+
+  X509_NAME *subjectName;
+  char commonName[256];
+
+  subjectName = X509_get_subject_name(cert);
+  if(X509_NAME_get_text_by_NID(subjectName, NID_commonName,
+                               commonName, sizeof(commonName)) != -1) {
+    if(!strcmp(commonName, hostname))
+      return 0;
+  }
+
+  // Then check altNames
+
+  GENERAL_NAMES *names = X509_get_ext_d2i( cert, NID_subject_alt_name, 0, 0);
+  if(names == NULL) {
+    snprintf(errbuf, errlen, "SSL: No subjectAltName extension");
+    return -1;
+  }
+
+  const int num_names = sk_GENERAL_NAME_num(names);
+
+  for(int i = 0; i < num_names; ++i ) {
+    GENERAL_NAME *name = sk_GENERAL_NAME_value(names, i);
+    unsigned char *dns;
+    int match;
+
+    if(name->type != GEN_DNS)
+      continue;
+
+    ASN1_STRING_to_UTF8(&dns, name->d.dNSName);
+    if(dns[0] == '*' && dns[1] == '.') {
+      match = domainname != NULL && !strcasecmp((char *)dns+2, domainname);
+    } else {
+      match = !strcasecmp((char *)dns, hostname);
+    }
+
+    OPENSSL_free(dns);
+    if(match)
+      return 0;
+  }
+  snprintf(errbuf, errlen, "SSL: Hostname mismatch");
+  return -1;
+}
+
+
+/**
+ *
+ */
+tcp_stream_t *
+tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
+                              const tcp_ssl_info_t *tsi,
+                              char *errbuf, size_t errlen)
+{
+  char errmsg[120];
+
+  tcp_stream_t *ts = calloc(1, sizeof(tcp_stream_t));
+  ts->ts_fd = fd;
+
+  if((ts->ts_ssl = SSL_new(ssl_ctx)) == NULL)
+    goto bad_ssl;
+
+
+  if(SSL_set_fd(ts->ts_ssl, fd) == 0)
+    goto bad_ssl;
+
+  if(tsi->key != NULL) {
+    BIO *cbio = BIO_new_mem_buf((char *)tsi->key, -1);
+    EVP_PKEY *key = PEM_read_bio_PrivateKey(cbio, NULL, NULL, NULL);
+    BIO_free(cbio);
+    if(key == NULL) {
+      snprintf(errbuf, errlen, "Unable to load private key");
+      goto bad;
+    }
+
+    SSL_use_PrivateKey(ts->ts_ssl, key);
+    EVP_PKEY_free(key);
+  }
+
+  if(tsi->cert != NULL) {
+    BIO *cbio = BIO_new_mem_buf((char *)tsi->cert, -1);
+    X509 *cert = PEM_read_bio_X509(cbio, NULL, 0, NULL);
+    BIO_free(cbio);
+
+    if(cert == NULL) {
+      snprintf(errbuf, errlen, "Unable to load certificate");
+      goto bad;
+    }
+
+    SSL_use_certificate(ts->ts_ssl, cert);
+    X509_free(cert);
+  }
+
+  if(SSL_connect(ts->ts_ssl) <= 0) {
+    goto bad_ssl;
+  }
+
+  SSL_set_mode(ts->ts_ssl, SSL_MODE_AUTO_RETRY);
+
+  X509 *peer = SSL_get_peer_certificate(ts->ts_ssl);
+  if(peer == NULL) {
+    goto bad_ssl;
+  }
+
+  int err = SSL_get_verify_result(ts->ts_ssl);
+  if(err != X509_V_OK) {
+    snprintf(errbuf, errlen, "Certificate error: %s",
+             X509_verify_cert_error_string(err));
+    X509_free(peer);
+    goto bad;
+  }
+
+  if(verify_hostname(hostname, peer, errbuf, errlen)) {
+    X509_free(peer);
+    goto bad;
+  }
+
+  X509_free(peer);
+
+  ts->ts_fd = fd;
+  htsbuf_queue_init(&ts->ts_spill, INT32_MAX);
+  htsbuf_queue_init(&ts->ts_sendq, INT32_MAX);
+
+  ts->ts_write = ssl_write;
+  ts->ts_read  = ssl_read;
+  return ts;
+
+ bad_ssl:
+  ERR_error_string(ERR_get_error(), errmsg);
+  snprintf(errbuf, errlen, "SSL: %s", errmsg);
+ bad:
+  tcp_close(ts);
+  return NULL;
+}
+
+
+
+
+/**
+ *
+ */
 static unsigned long
 ssl_tid_fn(void)
 {
@@ -642,12 +758,11 @@ ssl_lock_fn(int mode, int n, const char *file, int line)
 }
 
 
-
 /**
  *
  */
 void
-tcp_init(void)
+tcp_init1(const char *extra_ca)
 {
   SSL_library_init();
   SSL_load_error_strings();
@@ -660,4 +775,34 @@ tcp_init(void)
 
   CRYPTO_set_locking_callback(ssl_lock_fn);
   CRYPTO_set_id_callback(ssl_tid_fn);
+
+
+  if(!SSL_CTX_load_verify_locations(ssl_ctx, NULL, "/etc/ssl/certs"))
+    exit(1);
+
+  if(extra_ca != NULL) {
+    BIO *cbio = BIO_new_mem_buf((char *)extra_ca, -1);
+    X509 *cert = PEM_read_bio_X509(cbio, NULL, 0, NULL);
+    BIO_free(cbio);
+
+    if(cert == NULL) {
+      fprintf(stderr, "Unable to load extra cert\n");
+      exit(1);
+    }
+
+    X509_STORE *store = SSL_CTX_get_cert_store(ssl_ctx);
+    X509_STORE_add_cert(store, cert);
+  }
+
+  SSL_CTX_set_verify_depth(ssl_ctx, 3);
+}
+
+
+/**
+ *
+ */
+void
+tcp_init(void)
+{
+  tcp_init1(NULL);
 }

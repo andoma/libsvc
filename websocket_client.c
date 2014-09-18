@@ -276,20 +276,19 @@ ws_client_send(ws_client_t *wsc, int opcode, const void *data, size_t len)
  *
  */
 ws_client_t *
-ws_client_connect(const char *hostname, int port, const char *path, int ssl,
+ws_client_connect(const char *hostname, int port, const char *path,
+                  const tcp_ssl_info_t *tsi,
                   void (*input)(void *aux, int opcode, const void *buf, size_t len),
-                  void *aux)
+                  void *aux, int timeout, char *errbuf, size_t errlen)
 {
   char buf[1024];
-  tcp_stream_t *ts = dial(hostname, port, 20, ssl);
+  tcp_stream_t *ts = dial(hostname, port, timeout, tsi, errbuf, errlen);
 
-  if(ts == NULL) {
-    perror("dial");
+  if(ts == NULL)
     return NULL;
-  }
 
   snprintf(buf, sizeof(buf),
-           "GET %s HTTP/1.0\r\n"
+           "GET %s HTTP/1.1\r\n"
            "Host: %s\r\n"
            "Connection: Upgrade\r\n"
            "Upgrade: websocket\r\n"
@@ -307,7 +306,7 @@ ws_client_connect(const char *hostname, int port, const char *path, int ssl,
       break;
 
     if(code == -1) {
-      if(!strncmp(buf, "HTTP/1.0 ", 9) || !strncmp(buf, "HTTP/1.1 ", 9)) {
+      if(!strncmp(buf, "HTTP/1.1 ", 9)) {
         code = atoi(buf + 9);
       } else {
         code = 0;

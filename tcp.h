@@ -31,6 +31,8 @@ typedef struct tcp_stream tcp_stream_t;
 
 void tcp_init(void);
 
+void tcp_init1(const char *extra_ca);
+
 void tcp_server_init(void);
 
 
@@ -43,7 +45,15 @@ void *tcp_server_create(int port, const char *bindaddr,
 
 tcp_stream_t *tcp_stream_create_from_fd(int fd);
 
-tcp_stream_t *tcp_stream_create_ssl_from_fd(int fd);
+
+typedef struct tcp_ssl_info {
+  const char *key;
+  const char *cert;
+} tcp_ssl_info_t;
+
+tcp_stream_t *tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
+                                            const tcp_ssl_info_t *tsi,
+                                            char *errbuf, size_t errlen);
 
 void tcp_close(tcp_stream_t *ts);
 

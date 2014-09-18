@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <stdio.h>
 #include <poll.h>
 #include <stdint.h>
 #include <netdb.h>
@@ -60,7 +61,8 @@ getstreamsocket(int family)
  *
  */
 tcp_stream_t *
-dial(const char *hostname, int port, int timeout, int ssl)
+dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
+     char *errbuf, size_t errlen)
 {
   struct hostent *hp;
   char *tmphstbuf;
@@ -72,11 +74,11 @@ dial(const char *hostname, int port, int timeout, int ssl)
 #endif
   struct sockaddr_in6 in6;
   struct sockaddr_in in;
-  socklen_t errlen = sizeof(int);
+  socklen_t sockerrlen = sizeof(int);
 
   if(!strcmp(hostname, "localhost")) {
     if((fd = getstreamsocket(AF_INET)) < 0) {
-      errno = -fd;
+      snprintf(errbuf, errlen, "%s", strerror(-fd));
       return NULL;
     }
 
@@ -109,24 +111,24 @@ dial(const char *hostname, int port, int timeout, int ssl)
       free(tmphstbuf);
       switch(herr) {
       case HOST_NOT_FOUND: {
-        errno = ENOENT;
+        snprintf(errbuf, errlen, "Host not found");
         return NULL;
       }
 
       default:
-        errno = ENXIO;
+        snprintf(errbuf, errlen, "Resolver error");
         return NULL;
       }
 
     } else if(hp == NULL) {
       free(tmphstbuf);
-      errno = EIO;
+      snprintf(errbuf, errlen, "Resolver error");
       return NULL;
     }
 
     if((fd = getstreamsocket(hp->h_addrtype)) < 0) {
       free(tmphstbuf);
-      errno = -fd;
+      snprintf(errbuf, errlen, "%s", strerror(-fd));
       return NULL;
     }
 
@@ -149,7 +151,7 @@ dial(const char *hostname, int port, int timeout, int ssl)
 
     default:
       free(tmphstbuf);
-      errno = EPROTONOSUPPORT;
+      snprintf(errbuf, errlen, "Address family not supported");
       return NULL;
     }
 
@@ -168,18 +170,17 @@ dial(const char *hostname, int port, int timeout, int ssl)
       if(r == 0) {
         /* Timeout */
         close(fd);
-        errno = ETIMEDOUT;
+        snprintf(errbuf, errlen, "Connection timed out");
         return NULL;
       }
 
       if(r == -1) {
-        int r = errno;
+        snprintf(errbuf, errlen, "Connection failed -- %s", strerror(errno));
         close(fd);
-        errno = r;
         return NULL;
       }
 
-      getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *)&err, &errlen);
+      getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *)&err, &sockerrlen);
     } else {
       err = errno;
     }
@@ -189,7 +190,7 @@ dial(const char *hostname, int port, int timeout, int ssl)
 
   if(err != 0) {
     close(fd);
-    errno = err;
+    snprintf(errbuf, errlen, "Connection failed -- %s", strerror(err));
     return NULL;
   }
 
@@ -216,8 +217,9 @@ dial(const char *hostname, int port, int timeout, int ssl)
   setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof(val));
 #endif
 
-  if(ssl)
-    return tcp_stream_create_ssl_from_fd(fd);
+  if(tsi != NULL)
+    return tcp_stream_create_ssl_from_fd(fd, hostname, tsi,
+                                         errbuf, errlen);
 
   return tcp_stream_create_from_fd(fd);
 }

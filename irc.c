@@ -609,7 +609,9 @@ irc_do_connect(irc_client_t *ic)
     cfg_get_int(root, CFG("ircbot", "trace"), 0) ||
     cfg_get_int(root, CFG("ircbot", ic->ic_server, "trace"), 0);
 
-  return dial(host, port, timo * 1000, ssl);
+  tcp_ssl_info_t tsi = {};
+
+  return dial(host, port, timo * 1000, &tsi, NULL, 0);
 }
 
 
