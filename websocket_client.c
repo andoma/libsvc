@@ -224,9 +224,9 @@ wsc_thread(void *aux)
 
     if(tcp_can_read(wsc->wsc_ts, &fds[1])) {
       htsbuf_queue_t *hq = tcp_read_buffered(wsc->wsc_ts);
-      if(hq == NULL)
-        break;
-      wsc_read(wsc, hq);
+      if(hq != NULL) {
+        wsc_read(wsc, hq);
+      }
     }
   }
 
