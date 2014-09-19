@@ -31,6 +31,7 @@ struct ws_client {
   pthread_mutex_t wsc_sendq_mutex;
   htsbuf_queue_t wsc_sendq;
   int wsc_zombie;
+  uint8_t wsc_pending_ping;
 };
 
 
@@ -140,6 +141,9 @@ wsc_read(ws_client_t *wsc, struct htsbuf_queue *hq)
     if(opcode == 9) {
       // PING
       wsc_write_buf(wsc, 10, d, len);
+    } else if(opcode == 10) {
+      wsc->wsc_pending_ping = 0;
+
     } else {
       wsc->wsc_input(wsc->wsc_aux, opcode, d, len);
     }
@@ -174,6 +178,18 @@ wsc_release(ws_client_t *wsc)
 }
 
 
+
+/**
+ *
+ */
+static void
+wsc_send_ping(ws_client_t *wsc)
+{
+  uint8_t data = 0;
+  wsc->wsc_pending_ping = 1;
+  wsc_write_buf(wsc, 9 /* PING */, &data, 1); // Just some data
+}
+
 /**
  *
  */
@@ -194,14 +210,21 @@ wsc_thread(void *aux)
     wsc_sendq(wsc);
 
     tcp_prepare_poll(wsc->wsc_ts, &fds[1]);
-    int r = poll(fds, 2, -1);
+    int r = poll(fds, 2, 30000);
+
+    if(r == 0) {
+      if(wsc->wsc_pending_ping)
+        break;
+
+      wsc_send_ping(wsc);
+      continue;
+    }
 
     if(r == -1) {
       if(errno == EINTR)
         continue;
       break;
     }
-
 
     if(fds[0].revents & (POLLERR | POLLHUP)) {
       // Pipe closed, bye bye
@@ -224,9 +247,9 @@ wsc_thread(void *aux)
 
     if(tcp_can_read(wsc->wsc_ts, &fds[1])) {
       htsbuf_queue_t *hq = tcp_read_buffered(wsc->wsc_ts);
-      if(hq != NULL) {
-        wsc_read(wsc, hq);
-      }
+      if(hq == NULL)
+        break; // Read error
+      wsc_read(wsc, hq);
     }
   }
 
@@ -319,6 +342,7 @@ ws_client_connect(const char *hostname, int port, const char *path,
 
   if(code != 101) {
     tcp_close(ts);
+    snprintf(errbuf, errlen, "HTTP Error %d", code);
     return NULL;
   }
 

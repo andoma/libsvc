@@ -577,8 +577,12 @@ tcp_read(tcp_stream_t *ts, void *buf, size_t len)
 htsbuf_queue_t *
 tcp_read_buffered(tcp_stream_t *ts)
 {
-  if(tcp_fill_htsbuf_from_fd(ts, &ts->ts_spill) < 0)
+  if(tcp_fill_htsbuf_from_fd(ts, &ts->ts_spill) < 0) {
+    if(errno == EAGAIN)
+      return &ts->ts_spill;
+
     return NULL;
+  }
 
   return &ts->ts_spill;
 }
