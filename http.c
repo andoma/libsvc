@@ -51,7 +51,11 @@
 
 
 
-static void *http_server;
+typedef struct http_server {
+  const char *hs_config_prefix;
+  int hs_reverse_proxy;  // Set if we sit behind a reverse proxy
+
+} http_server_t;
 
 typedef struct http_path {
   LIST_ENTRY(http_path) hp_link;
@@ -592,12 +596,13 @@ http_process_request(http_connection_t *hc)
  * clean up
  */
 static int
-process_request(http_connection_t *hc)
+process_request(http_connection_t *hc, const http_server_t *hs)
 {
   char *v, *argv[2];
   int n, rval = -1;
   uint8_t authbuf[150];
-  
+  char tmpbuf[128];
+
   hc->hc_path_orig = strdup(hc->hc_path);
 
   /* Set keep-alive status */
@@ -612,7 +617,7 @@ process_request(http_connection_t *hc)
     /* Keep-alive is default off, but can be enabled */
     hc->hc_keep_alive = v != NULL && !strcasecmp(v, "keep-alive");
     break;
-    
+
   case HTTP_VERSION_1_1:
     /* Keep-alive is default on, but can be disabled */
     hc->hc_keep_alive = !(v != NULL && !strcasecmp(v, "close"));
@@ -635,15 +640,18 @@ process_request(http_connection_t *hc)
     }
   }
 
-  if(hc->hc_username != NULL) {
-    hc->hc_representative = strdup(hc->hc_username);
-  } else {
-    hc->hc_representative = malloc(30);
-    /* Not threadsafe ? */
-    snprintf(hc->hc_representative, 30,
-	     "%s", inet_ntoa(hc->hc_peer->sin_addr));
-
+  if(hs->hs_reverse_proxy &&
+     (v = http_arg_get(&hc->hc_args, "X-Real-IP")) != NULL) {
+    hc->hc_peer_addr = strdup(v);
   }
+
+  if(hc->hc_peer_addr == NULL) {
+    if(inet_ntop(AF_INET, &hc->hc_peer->sin_addr, tmpbuf, sizeof(tmpbuf)) != NULL)
+      hc->hc_peer_addr = strdup(tmpbuf);
+  }
+
+  if(hc->hc_peer_addr == NULL)
+    hc->hc_peer_addr = strdup("<unknown>");
 
   assert(hc->hc_session == NULL);
   assert(hc->hc_session_received == NULL);
@@ -674,8 +682,9 @@ process_request(http_connection_t *hc)
     rval = http_process_request(hc);
     break;
   }
-  free(hc->hc_representative);
+  free(hc->hc_peer_addr);
   free(hc->hc_path_orig);
+  hc->hc_peer_addr = NULL;
   return rval;
 }
 
@@ -886,7 +895,7 @@ http_parse_query_args(http_connection_t *hc, char *args)
  *
  */
 static void
-http_serve_requests(http_connection_t *hc)
+http_serve_requests(http_connection_t *hc, const http_server_t *hs)
 {
   char cmdline[4096];
   char hdrline[4096];
@@ -900,7 +909,7 @@ http_serve_requests(http_connection_t *hc)
     talloc_cleanup();
 
     cfg_root(cr);
-    int tracehttp = cfg_get_int(cr, CFG("http", "trace"), 0);
+    int tracehttp = cfg_get_int(cr, CFG(hs->hs_config_prefix, "trace"), 0);
 
     hc->hc_no_output  = 0;
 
@@ -947,7 +956,7 @@ http_serve_requests(http_connection_t *hc)
       http_arg_set(&hc->hc_args, argv[0], argv[1]);
     }
 
-    if(process_request(hc)) {
+    if(process_request(hc, hs)) {
       break;
     }
 
@@ -995,7 +1004,8 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
 	   struct sockaddr_in *self)
 {
   http_connection_t hc;
-  
+  http_server_t *hs = opaque;
+
   memset(&hc, 0, sizeof(http_connection_t));
 
   TAILQ_INIT(&hc.hc_args);
@@ -1006,7 +1016,7 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
   hc.hc_peer = peer;
   hc.hc_self = self;
 
-  http_serve_requests(&hc);
+  http_serve_requests(&hc, hs);
 
   free(hc.hc_post_data);
   free(hc.hc_username);
@@ -1034,10 +1044,23 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
  *  Fire up HTTP server
  */
 int
-http_server_init(int port, const char *bindaddr)
+http_server_init(const char *config_prefix)
 {
-  http_server = tcp_server_create(port, bindaddr, http_serve, NULL);
-  if(http_server == NULL)
+  cfg_root(cr);
+
+  if(config_prefix == NULL)
+    config_prefix = "http";
+
+  int port = cfg_get_int(cr, CFG(config_prefix, "port"), 9000);
+  const char *bindaddr = cfg_get_str(cr, CFG(config_prefix, "bindAddress"),
+                                     "127.0.0.1");
+
+  http_server_t *hs = calloc(1, sizeof(http_server_t));
+  hs->hs_config_prefix = strdup(config_prefix);
+  hs->hs_reverse_proxy = cfg_get_int(cr, CFG(config_prefix, "reverseProxy"), 0);
+
+  void *ts = tcp_server_create(port, bindaddr, http_serve, hs);
+  if(ts == NULL)
     return errno;
   return 0;
 }

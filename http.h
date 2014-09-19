@@ -50,7 +50,7 @@ typedef struct http_connection {
 
   struct sockaddr_in *hc_peer;
   struct sockaddr_in *hc_self;
-  char *hc_representative;
+  char *hc_peer_addr;
 
   char *hc_path;
   char *hc_path_orig;
@@ -156,7 +156,7 @@ typedef int (http_callback2_t)(http_connection_t *hc, int argc, char **argv,
 
 void http_route_add(const char *path, http_callback2_t *callback, int flags);
 
-int http_server_init(int port, const char *bindaddr);
+int http_server_init(const char *config);
 
 int http_access_verify(http_connection_t *hc);
 

@@ -378,7 +378,7 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
   wsc->wsc_af = af;
   wsc->wsc_path = wsp;
 
-  wsc->wsc_peeraddr = strdup(hc->hc_representative);
+  wsc->wsc_peeraddr = strdup(hc->hc_peer_addr);
 
   // Steal session information
   wsc->wsc_session = hc->hc_session_received;
