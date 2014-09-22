@@ -758,7 +758,7 @@ ssl_lock_fn(int mode, int n, const char *file, int line)
 {
   if(mode & CRYPTO_LOCK)
     pthread_mutex_lock(&ssl_locks[n]);
-  else
+  else if(mode & CRYPTO_UNLOCK)
     pthread_mutex_unlock(&ssl_locks[n]);
 }
 
