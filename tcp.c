@@ -767,20 +767,22 @@ ssl_lock_fn(int mode, int n, const char *file, int line)
  *
  */
 void
-tcp_init1(const char *extra_ca)
+tcp_init1(const char *extra_ca, int init_ssl)
 {
-  SSL_library_init();
-  SSL_load_error_strings();
+  if(init_ssl) {
+    SSL_library_init();
+    SSL_load_error_strings();
+
+    int i, n = CRYPTO_num_locks();
+    ssl_locks = malloc(sizeof(pthread_mutex_t) * n);
+    for(i = 0; i < n; i++)
+      pthread_mutex_init(&ssl_locks[i], NULL);
+
+    CRYPTO_set_locking_callback(ssl_lock_fn);
+    CRYPTO_set_id_callback(ssl_tid_fn);
+  }
+
   ssl_ctx = SSL_CTX_new(SSLv23_client_method());
-
-  int i, n = CRYPTO_num_locks();
-  ssl_locks = malloc(sizeof(pthread_mutex_t) * n);
-  for(i = 0; i < n; i++)
-    pthread_mutex_init(&ssl_locks[i], NULL);
-
-  CRYPTO_set_locking_callback(ssl_lock_fn);
-  CRYPTO_set_id_callback(ssl_tid_fn);
-
 
   if(!SSL_CTX_load_verify_locations(ssl_ctx, NULL, "/etc/ssl/certs"))
     exit(1);
@@ -809,5 +811,5 @@ tcp_init1(const char *extra_ca)
 void
 tcp_init(void)
 {
-  tcp_init1(NULL);
+  tcp_init1(NULL, 1);
 }
