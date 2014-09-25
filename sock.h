@@ -27,3 +27,4 @@ int libsvc_accept(int fd, struct sockaddr *sa, socklen_t *addrlen);
 
 int libsvc_socket(int domain, int type, int protocol);
 
+int libsvc_pipe(int pipefd[2]);

@@ -47,7 +47,7 @@ libsvc_INCS += \
 ifeq (${WITH_CURL},yes)
 
 ifeq ($(shell uname),Darwin)
-LDFLAGS += -lcurl -lssh2 -lz -liconv
+LDFLAGS += -lcurl -lz -liconv
 endif
 
 ifeq ($(shell uname),Linux)
@@ -92,7 +92,6 @@ endif
 ifeq (${WITH_WS_CLIENT},yes)
 libsvc_SRCS    +=  websocket_client.c
 libsvc_INCS    +=  websocket_client.h
-WITH_ASYNCIO := yes
 CFLAGS += -DWITH_WS_CLIENT
 endif
 

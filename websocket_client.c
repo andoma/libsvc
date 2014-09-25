@@ -13,6 +13,7 @@
 #include "dial.h"
 #include "websocket_client.h"
 #include "atomic.h"
+#include "sock.h"
 
 /**
  *
@@ -353,7 +354,7 @@ ws_client_connect(const char *hostname, int port, const char *path,
   wsc->wsc_input = input;
   wsc->wsc_aux = aux;
 
-  if(pipe2(wsc->wsc_pipe, O_CLOEXEC)) {
+  if(libsvc_pipe(wsc->wsc_pipe)) {
     free(wsc);
     tcp_close(ts);
     return NULL;

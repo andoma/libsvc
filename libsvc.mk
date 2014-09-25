@@ -22,7 +22,7 @@ endif
 
 ##############################################################
 
-ALLDEPS += libsvc/libsvc.mk Makefile
+ALLDEPS += libsvc/libsvc.mk Makefile libsvc/sources.mk
 
 OBJS=    $(SRCS:%.c=$(BUILDDIR)/%.o)
 DEPS=    ${OBJS:%.o=%.d}

@@ -27,6 +27,8 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "sock.h"
 
@@ -63,5 +65,22 @@ libsvc_socket(int domain, int type, int protocol)
     fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
 #endif
   return fd;
+}
+
+/**
+ *
+ */
+int
+libsvc_pipe(int pipefd[2])
+{
+#ifdef linux
+  return pipe2(pipefd, O_CLOEXEC);
+#else
+  if(pipe(pipefd) == -1)
+    return -1;
+  fcntl(pipefd[0], F_SETFD, fcntl(pipefd[0], F_GETFD) | FD_CLOEXEC);
+  fcntl(pipefd[1], F_SETFD, fcntl(pipefd[1], F_GETFD) | FD_CLOEXEC);
+  return 0;
+#endif
 }
 
