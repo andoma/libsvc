@@ -141,6 +141,9 @@ wsc_dispatch_thread(void *aux)
     default:
       wsp->wsp_receive(wsc->wsc_opaque,
                        wsd->wsd_opcode, wsd->wsd_data, wsd->wsd_arg);
+      free(wsd->wsd_data);
+      free(wsd);
+      break;
     }
 
     pthread_mutex_lock(&wsc->wsc_mutex);
