@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "trace.h"
 #include "misc.h"
@@ -47,6 +48,18 @@ tracev(int level, const char *fmt, va_list ap)
 
   if(!isatty(2))
     return;
+
+  struct timeval tv;
+  struct tm tm;
+  gettimeofday(&tv, NULL);
+  time_t tim = tv.tv_sec;
+  localtime_r(&tim, &tm);
+
+  fprintf(stderr, "%02d:%02d:%02d.%03d ",
+          tm.tm_hour,
+          tm.tm_min,
+          tm.tm_sec,
+          (int)tv.tv_usec / 1000);
 
   vfprintf(stderr, fmt, ap);
   fputc('\n', stderr);
