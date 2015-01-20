@@ -126,23 +126,6 @@ CFLAGS +=  -DWITH_ASYNCIO
 endif
 
 ##############################################################
-# libgit2
-##############################################################
-
-ifeq (${WITH_LIBGIT2},yes)
-CFLAGS +=  -DWITH_LIBGIT2
-ALLDEPS += ${BUILDDIR}/libgit2/include/git2.h
-CFLAGS  += -I${BUILDDIR}/libgit2/include/
-LDFLAGS += -L${BUILDDIR}/libgit2/lib -lgit2 -lssh2 -lz
-
-${BUILDDIR}/libgit2/include/git2.h:
-	mkdir -p ${BUILDDIR}/libgit2/build
-	cd ${BUILDDIR}/libgit2/build && cmake ${CURDIR}/libgit2 -DCMAKE_INSTALL_PREFIX=${BUILDDIR}/libgit2 -DBUILD_SHARED_LIBS=OFF -DTHREADSAFE=ON -DUSE_SSH=ON
-	cd ${BUILDDIR}/libgit2/build && cmake --build . --target install
-endif
-
-
-##############################################################
 # Control socket
 ##############################################################
 ifeq (${WITH_CTRLSOCK},yes)
