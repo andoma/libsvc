@@ -69,7 +69,7 @@ endif
 ifeq (${WITH_MYSQL},yes)
 libsvc_SRCS    +=  db.c
 libsvc_INCS    +=  db.h
-FLAGS  += $(shell mysql_config --cflags) -DWITH_MYSQL
+CFLAGS  += $(shell mysql_config --cflags) -DWITH_MYSQL
 LDFLAGS += $(shell mysql_config --libs_r)
 endif
 
