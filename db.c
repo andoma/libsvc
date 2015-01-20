@@ -798,7 +798,8 @@ db_upgrade_schema(const char *schema_bundle)
   }
 
   if(ver > n) {
-    trace(LOG_INFO, "Current DB version is greater than we support, giving up");
+    trace(LOG_INFO, "Current DB version (%d) is greater than we support (%d), giving up",
+          ver, n);
     db_rollback(c);
     return -1;
   }
