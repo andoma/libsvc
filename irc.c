@@ -590,7 +590,7 @@ iom_write(irc_client_t *ic, struct irc_out_msg_queue *q)
  *
  */
 static tcp_stream_t *
-irc_do_connect(irc_client_t *ic)
+irc_do_connect(irc_client_t *ic, char *errbuf, size_t errlen)
 {
   cfg_root(root);
 
@@ -611,7 +611,7 @@ irc_do_connect(irc_client_t *ic)
 
   tcp_ssl_info_t tsi = {};
 
-  return dial(host, port, timo * 1000, &tsi, NULL, 0);
+  return dial(host, port, timo * 1000, ssl ? &tsi : NULL, errbuf, errlen);
 }
 
 
@@ -644,6 +644,7 @@ irc_thread(void *aux)
   irc_client_t *ic = aux;
   int backoff = 5;
   int run = 1;
+  char errbuf[256];
 
   ic->ic_ts = NULL;
   ic->ic_disconnect_sleep = 1;
@@ -654,12 +655,12 @@ irc_thread(void *aux)
     if(ic->ic_ts != NULL)
       tcp_close(ic->ic_ts);
 
-    ic->ic_ts = irc_do_connect(ic);
+    ic->ic_ts = irc_do_connect(ic, errbuf, sizeof(errbuf));
 
     if(ic->ic_ts == NULL) {
       backoff = MIN(backoff * 2, 120);
       trace(LOG_ERR, "IRC: %s: Unable to connect -- %s -- Retry in %d seconds",
-            ic->ic_server, strerror(errno), backoff);
+            ic->ic_server, errbuf, backoff);
       sleep(backoff);
       continue;
     }
