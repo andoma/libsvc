@@ -298,7 +298,6 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
     htsbuf_qprintf(&hdrs, "Cache-Control: no-cache\r\n");
   } else {
     htsbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", http_mktime(t, 0));
-    htsbuf_qprintf(&hdrs, "Expires: %s\r\n", http_mktime(t, maxage));
     htsbuf_qprintf(&hdrs, "Cache-Control: public, max-age=%d\r\n", maxage);
   }
 
