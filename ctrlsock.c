@@ -92,6 +92,10 @@ parse_line(int fd, const char *str, const char *user)
     rval = cmd_complete(str + 1, user, &output_callback, &fd);
     break;
 
+  case 'c': // Advanced completion
+    rval = cmd_complete2(str + 1, user, &output_callback, &fd);
+    break;
+
   default:
     return 1;
   }

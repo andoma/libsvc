@@ -70,11 +70,12 @@ cmd_exec(const char *line, const char *user,
 
       switch(cn->cn_token->type) {
       case CMD_TOKEN_LITERAL:
-        if(!strcasecmp(cn->cn_token->str, input[i]))
+        if(!strcmp(cn->cn_token->str, input[i]))
           goto found;
         break;
 
       case CMD_TOKEN_VARSTR:
+      case CMD_TOKEN_OPTSTR:
         argv[argc++] = input[i];
         goto found;
 
@@ -128,13 +129,14 @@ cmd_complete(const char *line, const char *user,
 
       switch(cn->cn_token->type) {
       case CMD_TOKEN_LITERAL:
-        if(!strcasecmp(cn->cn_token->str, input[i])) {
+        if(!strcmp(cn->cn_token->str, input[i])) {
           token = cn->cn_token->str;
           goto found;
         }
         break;
 
       case CMD_TOKEN_VARSTR:
+      case CMD_TOKEN_OPTSTR:
         token = input[i];
         goto found;
 
@@ -154,7 +156,7 @@ cmd_complete(const char *line, const char *user,
 
       switch(cn->cn_token->type) {
       case CMD_TOKEN_LITERAL:
-        if(!strncasecmp(cn->cn_token->str, input[i], l)) {
+        if(!strncmp(cn->cn_token->str, input[i], l)) {
           snprintf(response + resp_len, sizeof(response) - resp_len,
                    "%s%s ", resp_len == 0 ? "" : " ", cn->cn_token->str);
           msg(opaque, "%s", response);
@@ -183,6 +185,121 @@ cmd_complete(const char *line, const char *user,
       snprintf(response + resp_len, sizeof(response) - resp_len,
                "%s%s ", resp_len == 0 ? "" : " ", cn->cn_token->str);
       msg(opaque, "%s", response);
+      break;
+    }
+  }
+  return 0;
+}
+
+
+/**
+ *
+ */
+int
+cmd_complete2(const char *line, const char *user,
+              void (*msg)(void *opaque, const char *fmt, ...),
+              void *opaque)
+{
+  char *str = mystrdupa(line);
+  char *input[64];
+  int inputlen = str_tokenize(str, input, 64, -1);
+
+  cmd_node_t *cur = &cmd_root, *cn;
+  int i;
+  char **options;
+
+  for(i = 0; i < inputlen; i++) {
+
+    LIST_FOREACH(cn, &cur->cn_childs, cn_parent_link) {
+
+      switch(cn->cn_token->type) {
+      case CMD_TOKEN_LITERAL:
+        if(!strcmp(cn->cn_token->str, input[i])) {
+          goto found;
+        }
+        break;
+
+      case CMD_TOKEN_VARSTR:
+        goto found;
+
+      case CMD_TOKEN_ROL:
+        i = inputlen;
+        goto found;
+
+      case CMD_TOKEN_OPTSTR:
+        options = cn->cn_token->lister(user);
+        if(options != NULL) {
+          for(int j = 0; options[j] != NULL; j++) {
+            if(!strcmp(options[j], input[i])) {
+              strvec_free(options);
+              goto found;
+            }
+          }
+          strvec_free(options);
+        }
+        break;
+      }
+    }
+
+
+    // Check if we can find partials and stop here
+
+    LIST_FOREACH(cn, &cur->cn_childs, cn_parent_link) {
+
+      int l = strlen(input[i]);
+
+      switch(cn->cn_token->type) {
+      case CMD_TOKEN_LITERAL:
+        if(!strncmp(cn->cn_token->str, input[i], l)) {
+          msg(opaque, "1 %zd %s", input[i] - str, cn->cn_token->str + l);
+        }
+        break;
+
+      case CMD_TOKEN_OPTSTR:
+        options = cn->cn_token->lister(user);
+        if(options != NULL) {
+          printf("Got options\n");
+          for(int j = 0; options[j] != NULL; j++) {
+            printf("\t%s\n", options[j]);
+            if(!strncmp(options[j], input[i], l)) {
+              msg(opaque, "1 %d %s", input[i] - str, options[j] + l);
+            }
+          }
+          strvec_free(options);
+        }
+        break;
+      }
+    }
+    return 0;
+
+  found:
+    cur = cn;
+    continue;
+  }
+
+
+  if(cur->cn_invoke != NULL) {
+    return 0;
+  }
+
+  int slen = strlen(line);
+  LIST_FOREACH(cn, &cur->cn_childs, cn_parent_link) {
+
+    switch(cn->cn_token->type) {
+    case CMD_TOKEN_LITERAL:
+      msg(opaque, "1 %d %s", slen, cn->cn_token->str);
+      break;
+    case CMD_TOKEN_VARSTR:
+    case CMD_TOKEN_ROL:
+      break;
+
+    case CMD_TOKEN_OPTSTR:
+      options = cn->cn_token->lister(user);
+      if(options != NULL) {
+        for(int j = 0; options[j] != NULL; j++)
+          msg(opaque, "1 %d %s", slen, options[j]);
+        strvec_free(options);
+      }
       break;
     }
   }

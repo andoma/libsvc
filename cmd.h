@@ -8,13 +8,21 @@ int cmd_complete(const char *line, const char *user,
                  void (*msg)(void *opaque, const char *fmt, ...),
                  void *opaque);
 
+int cmd_complete2(const char *line, const char *user,
+                  void (*msg)(void *opaque, const char *fmt, ...),
+                  void *opaque);
+
 #define CMD_TOKEN_LITERAL 1
 #define CMD_TOKEN_VARSTR  2
 #define CMD_TOKEN_ROL     3  // Rest of line
+#define CMD_TOKEN_OPTSTR  4
+
+typedef char **(cmd_list_options_t)(const char *user);
 
 typedef struct cmd_token {
   int type;
   const char *str;
+  cmd_list_options_t *lister;
 } cmd_token_t;
 
 typedef int (cmd_invoke_t)(const char *user,
@@ -33,6 +41,10 @@ typedef int (cmd_invoke_t)(const char *user,
 #define CMD_ROL(s) {                            \
     .type = CMD_TOKEN_ROL,                      \
     .str = s }
+
+#define CMD_OPTSTR(l) {                         \
+    .type = CMD_TOKEN_OPTSTR,                   \
+    .lister = l }
 
 typedef struct cmd {
   cmd_invoke_t *invoker;
