@@ -258,9 +258,7 @@ cmd_complete2(const char *line, const char *user,
       case CMD_TOKEN_OPTSTR:
         options = cn->cn_token->lister(user);
         if(options != NULL) {
-          printf("Got options\n");
           for(int j = 0; options[j] != NULL; j++) {
-            printf("\t%s\n", options[j]);
             if(!strncmp(options[j], input[i], l)) {
               msg(opaque, "1 %d %s", input[i] - str, options[j] + l);
             }
