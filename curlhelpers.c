@@ -192,7 +192,6 @@ libsvc_http_json_get(const char *url, const char *auth,
   curl_easy_setopt(curl, CURLOPT_USERAGENT, "libsvc");
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, hdrfunc);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, ce);
-  curl_easy_setopt(curl, CURLOPT_VERBOSE, 1l);
 
   slist = curl_slist_append(slist, "Accept: application/json");
 
