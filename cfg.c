@@ -34,10 +34,45 @@
 #include "trace.h"
 
 #include "cfg.h"
+#include "cmd.h"
 
+LIST_HEAD(reload_cb_list, reload_cb);
+static struct reload_cb_list reload_cbs;
 static pthread_mutex_t cfg_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t reload_mutex = PTHREAD_MUTEX_INITIALIZER;
 static cfg_t *cfgroot;
 
+
+typedef struct reload_cb {
+  void (*fn)(void);
+  LIST_ENTRY(reload_cb) link;
+} reload_cb_t;
+
+/**
+ *
+ */
+void
+cfg_add_reload_cb(void (*fn)(void))
+{
+  reload_cb_t *rc = malloc(sizeof(reload_cb_t));
+  rc->fn = fn;
+  pthread_mutex_lock(&reload_mutex);
+  LIST_INSERT_HEAD(&reload_cbs, rc, link);
+  pthread_mutex_unlock(&reload_mutex);
+}
+
+/**
+ *
+ */
+static void
+cfg_call_reload_callbacks(void)
+{
+  reload_cb_t *rc;
+  pthread_mutex_lock(&reload_mutex);
+  LIST_FOREACH(rc, &reload_cbs, link)
+    rc->fn();
+  pthread_mutex_unlock(&reload_mutex);
+}
 
 
 /**
@@ -65,37 +100,44 @@ cfg_releasep(cfg_t **p)
  *
  */
 int
-cfg_load(const char *filename, const char *defconf)
+cfg_load(const char *filename, char *errbuf, size_t errlen)
 {
   int err;
   static char *lastfilename;
 
+  pthread_mutex_lock(&cfg_mutex);
+
   if(filename == NULL) {
-    filename = lastfilename;
-
+    if(lastfilename == NULL) {
+      snprintf(errbuf, errlen, "No path for config");
+      trace(LOG_ERR, "No path for config");
+      pthread_mutex_unlock(&cfg_mutex);
+      return -1;
+    }
+    filename = mystrdupa(lastfilename);
   } else {
-
     free(lastfilename);
     lastfilename = strdup(filename);
   }
 
-  if(filename == NULL)
-    filename = defconf;
+  pthread_mutex_unlock(&cfg_mutex);
 
   trace(LOG_NOTICE, "About to load config form %s", filename);
 
   char *cfgtxt = readfile(filename, &err, NULL);
   if(cfgtxt == NULL) {
+    snprintf(errbuf, errlen, "Unable to read file %s -- %s", filename, strerror(err));
     trace(LOG_ERR, "Unable to read file %s -- %s", filename, strerror(err));
     trace(LOG_ERR, "Config not updated");
     return -1;
   }
 
-  char errbuf[256];
-  htsmsg_t *m = htsmsg_json_deserialize(cfgtxt, errbuf, sizeof(errbuf));
+  char errbuf2[256];
+  htsmsg_t *m = htsmsg_json_deserialize(cfgtxt, errbuf2, sizeof(errbuf2));
   free(cfgtxt);
   if(m == NULL) {
-    trace(LOG_ERR, "Unable to parse file %s -- %s", filename, errbuf);
+    snprintf(errbuf, errlen, "Unable to parse file %s -- %s", filename, errbuf2);
+    trace(LOG_ERR, "Unable to parse file %s -- %s", filename, errbuf2);
     trace(LOG_ERR, "Config not updated");
     return -1;
   }
@@ -108,6 +150,7 @@ cfg_load(const char *filename, const char *defconf)
   htsmsg_retain(m);
   pthread_mutex_unlock(&cfg_mutex);
   trace(LOG_NOTICE, "Config updated");
+  cfg_call_reload_callbacks();
   return 0;
 }
 
@@ -256,3 +299,25 @@ cfg_find_map(cfg_t *c, const char *key, const char *value)
   }
   return NULL;
 }
+
+
+
+static int
+reload_configuration(const char *user,
+                     int argc, const char **argv, int *intv,
+                     void (*msg)(void *opaque, const char *fmt, ...),
+                     void *opaque)
+{
+  char errbuf[512];
+  if(cfg_load(NULL, errbuf, sizeof(errbuf))) {
+    msg(opaque, "Unable to load configuration -- %s", errbuf);
+    return 1;
+  } else {
+    msg(opaque, "Config reloaded OK");
+    return 0;
+  }
+}
+
+CMD(reload_configuration,
+    CMD_LITERAL("reload"),
+    CMD_LITERAL("configuration"));

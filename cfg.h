@@ -27,7 +27,7 @@
 
 typedef htsmsg_t cfg_t;
 
-int cfg_load(const char *filename, const char *defconf);
+int cfg_load(const char *filename, char *errbuf, size_t errlen);
 
 cfg_t *cfg_get_root(void);
 
@@ -52,3 +52,5 @@ cfg_t *cfg_get_list(cfg_t *c, const char *id);
 cfg_t *cfg_find_map(cfg_t *c, const char *key, const char *value);
 
 int cfg_list_length(cfg_t *c);
+
+void cfg_add_reload_cb(void (*fn)(void));
