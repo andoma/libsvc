@@ -55,15 +55,6 @@ doreload(int x)
 }
 
 
-/**
- *
- */
-static void
-refresh_subsystems(void)
-{
-}
-
-
 #ifdef WITH_HTTP_SERVER
 /**
  *
@@ -71,12 +62,7 @@ refresh_subsystems(void)
 static void
 http_init(void)
 {
-  cfg_root(cr);
-
-  int port = cfg_get_int(cr, CFG("http", "port"), 9000);
-  const char *bindaddr = cfg_get_str(cr, CFG("http", "bindAddress"),
-                                     "127.0.0.1");
-  if(http_server_init(port, bindaddr))
+  if(http_server_init(NULL))
     exit(1);
 }
 #endif
@@ -88,13 +74,13 @@ http_init(void)
 int
 main(int argc, char **argv)
 {
+  char errbuf[512];
   int c;
   sigset_t set;
-  const char *cfgfile = NULL;
 #ifdef WITH_CTRLSOCK
   const char *ctrlsockpath = "/tmp/"PROGNAME"ctrl";
 #endif
-  const char *defconf = PROGNAME".json";
+  const char *cfgfile = PROGNAME".json";
 
   signal(SIGPIPE, handle_sigpipe);
 
@@ -114,8 +100,9 @@ main(int argc, char **argv)
 
   srand48(getpid() ^ time(NULL));
 
-  if(cfg_load(cfgfile, defconf)) {
-    fprintf(stderr, "Unable to load config (check -c option). Giving up\n");
+  if(cfg_load(cfgfile, errbuf, sizeof(errbuf))) {
+    fprintf(stderr, "Unable to load config -- %s "
+            "(check -c option). Giving up\n", errbuf);
     exit(1);
   }
 
@@ -144,9 +131,7 @@ main(int argc, char **argv)
   while(running) {
     if(reload) {
       reload = 0;
-      if(!cfg_load(NULL, defconf)) {
-        refresh_subsystems();
-      }
+      cfg_load(NULL, NULL, 0);
     }
     pause();
   }
