@@ -595,7 +595,6 @@ static int
 verify_hostname(const char *hostname, X509 *cert, char *errbuf, size_t errlen)
 {
   int i;
-
   /* domainname is the "domain" we wan't to access (actually hostname
    * with first part of the DNS name removed) */
   const char *domainname = strchr(hostname, '.');
@@ -705,25 +704,28 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
 
   SSL_set_mode(ts->ts_ssl, SSL_MODE_AUTO_RETRY);
 
-  X509 *peer = SSL_get_peer_certificate(ts->ts_ssl);
-  if(peer == NULL) {
-    goto bad_ssl;
-  }
+  if(!tsi->no_verify) {
 
-  int err = SSL_get_verify_result(ts->ts_ssl);
-  if(err != X509_V_OK) {
-    snprintf(errbuf, errlen, "Certificate error: %s",
-             X509_verify_cert_error_string(err));
+    X509 *peer = SSL_get_peer_certificate(ts->ts_ssl);
+    if(peer == NULL) {
+      goto bad_ssl;
+    }
+
+    int err = SSL_get_verify_result(ts->ts_ssl);
+    if(err != X509_V_OK) {
+      snprintf(errbuf, errlen, "Certificate error: %s",
+               X509_verify_cert_error_string(err));
+      X509_free(peer);
+      goto bad;
+    }
+
+    if(verify_hostname(hostname, peer, errbuf, errlen)) {
+      X509_free(peer);
+      goto bad;
+    }
+
     X509_free(peer);
-    goto bad;
   }
-
-  if(verify_hostname(hostname, peer, errbuf, errlen)) {
-    X509_free(peer);
-    goto bad;
-  }
-
-  X509_free(peer);
 
   ts->ts_fd = fd;
   htsbuf_queue_init(&ts->ts_spill, INT32_MAX);

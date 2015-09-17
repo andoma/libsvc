@@ -49,6 +49,7 @@ tcp_stream_t *tcp_stream_create_from_fd(int fd);
 typedef struct tcp_ssl_info {
   const char *key;
   const char *cert;
+  int no_verify;
 } tcp_ssl_info_t;
 
 tcp_stream_t *tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
