@@ -1,6 +1,6 @@
 #pragma once
 
-#if (__GNUC__ >= 4 && __GNUC_MINOR__ >=3) || defined(__APPLE__)
+#if (__GNUC__ >= 4 && __GNUC_MINOR__ >=3) || (__GNUC__ >= 5) || defined(__APPLE__) || defined(__native_client__)
 
 typedef struct atomic {
   int v;
