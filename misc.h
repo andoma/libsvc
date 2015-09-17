@@ -65,6 +65,8 @@ int get_random_bytes(void *out, size_t len);
   char *my_b = alloca(my_l + 1); \
   memcpy(my_b, n, my_l + 1); })
 
+
+// Check if s1 begins with s2
 static inline const char *mystrbegins(const char *s1, const char *s2)
 {
   while(*s2)
@@ -105,3 +107,7 @@ void strvec_free(char **s);
 int strvec_len(char **s);
 
 char **strvec_dup(char **s);
+
+char *lp_get(char **lp);
+
+#define LINEPARSE(out, src) for(char *lp = src, *out; (out = lp_get(&lp)) != NULL; )
