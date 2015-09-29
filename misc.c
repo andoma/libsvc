@@ -35,6 +35,7 @@
 #include <string.h>
 #include <sys/param.h>
 #include <pthread.h>
+#include <dirent.h>
 
 #include "misc.h"
 #include "utf8.h"
@@ -427,6 +428,37 @@ url_split(char *proto, int proto_size,
     } else
       snprintf(hostname, MIN(ls + 1 - p, hostname_size), "%s", p);
   }
+}
+
+
+/**
+ *
+ */
+int
+rm_rf(const char *path)
+{
+  struct dirent **namelist;
+  char fullpath[PATH_MAX];
+  int n = scandir(path, &namelist, NULL, alphasort);
+  if(n < 0)
+    return -1;
+
+  while(n--) {
+    const char *name = namelist[n]->d_name;
+    if(strcmp(name, ".") && strcmp(name, "..")) {
+      snprintf(fullpath, sizeof(fullpath), "%s/%s", path, name);
+      int type = namelist[n]->d_type;
+      if(type == DT_FIFO || type == DT_LNK || type == DT_REG || type == DT_SOCK) {
+        unlink(fullpath);
+      }
+      if(type == DT_DIR)
+        rm_rf(fullpath);
+    }
+    free(namelist[n]);
+  }
+  free(namelist);
+  rmdir(path);
+  return 0;
 }
 
 
