@@ -544,6 +544,16 @@ refresh_cfg(irc_client_t *ic)
 /**
  *
  */
+static void
+reconnect(irc_client_t *ic)
+{
+  irc_send(ic, "QUIT");
+}
+
+
+/**
+ *
+ */
 static int
 irc_handle_pipe_command(irc_client_t *ic, char cmd)
 {
@@ -559,6 +569,10 @@ irc_handle_pipe_command(irc_client_t *ic, char cmd)
 
   case 'o':
     refresh_cfg(ic);
+    return 0;
+
+  case 'r':
+    reconnect(ic);
     return 0;
 
   default:
@@ -978,6 +992,23 @@ irc_join_channel(const char *server, const char *channel)
 }
 
 
+
+/**
+ *
+ */
+static void
+irc_reconnect_server(const char *server)
+{
+  pthread_mutex_lock(&irc_mutex);
+
+  irc_client_t *ic = irc_get_server(server);
+  if(ic != NULL) {
+    irc_client_notify(ic, 'r');
+  }
+  pthread_mutex_unlock(&irc_mutex);
+}
+
+
 /**
  *
  */
@@ -1032,3 +1063,22 @@ CMD(irc_join,
     CMD_LITERAL("join"),
     CMD_VARSTR("server"),
     CMD_VARSTR("channel"));
+
+
+
+
+static int
+irc_reconnect(const char *user,
+              int argc, const char **argv, int *intv,
+              void (*msg)(void *opaque, const char *fmt, ...),
+              void *opaque)
+{
+
+  irc_reconnect_server(argv[0]);
+  return 0;
+}
+
+CMD(irc_reconnect,
+    CMD_LITERAL("irc"),
+    CMD_LITERAL("reconnect"),
+    CMD_VARSTR("server"));
