@@ -21,11 +21,9 @@
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 
-#include <sys/sendfile.h>
 #include <sys/param.h>
 #include <pthread.h>
 #include <netdb.h>
-#include <sys/epoll.h>
 #include <poll.h>
 #include <assert.h>
 #include <stdio.h>
@@ -50,11 +48,16 @@
 /**
  *
  */
-static int tcp_server_epoll_fd;
+static int tcp_server_pipe[2];
+
+LIST_HEAD(tcp_server_list, tcp_server);
+static struct tcp_server_list tcp_servers;
+static pthread_mutex_t tcp_servers_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct tcp_server {
   tcp_server_callback_t *start;
   void *opaque;
+  LIST_ENTRY(tcp_server) link;
   int serverfd;
 } tcp_server_t;
 
@@ -211,36 +214,54 @@ tcp_server_start(tcp_server_launch_t *tsl)
 static void *
 tcp_server_loop(void *aux)
 {
-  int r, i;
-  struct epoll_event ev[1];
-  tcp_server_t *ts;
-  tcp_server_launch_t *tsl;
-  socklen_t slen;
+  struct pollfd *fds;
+  const tcp_server_t **vec = NULL;
+  int num_fds = 0;
+
+  fds = calloc(1, sizeof(poll));
 
   while(1) {
 
     talloc_cleanup();
 
-    r = epoll_wait(tcp_server_epoll_fd, ev, sizeof(ev) / sizeof(ev[0]), -1);
-    if(r == -1) {
-      perror("tcp_server: epoll_wait");
+    fds[num_fds].fd = tcp_server_pipe[0];
+    fds[num_fds].events = POLLIN;
+
+    int r = poll(fds, num_fds + 1, -1);
+    printf("poll=%d\n", r);
+    if(r < 1)
+      continue;
+
+    if(fds[num_fds].revents & POLLIN) {
+      // Update fdlist
+      char dummy;
+      if(read(tcp_server_pipe[0], &dummy, 1)) {}
+      int i = 0;
+      const tcp_server_t *ts;
+      num_fds = 0;
+      pthread_mutex_lock(&tcp_servers_mutex);
+      LIST_FOREACH(ts, &tcp_servers, link)
+        num_fds++;
+
+      fds = realloc(fds, sizeof(struct pollfd) * (num_fds + 1));
+      vec = realloc(vec, sizeof(tcp_server_t *) * num_fds);
+      LIST_FOREACH(ts, &tcp_servers, link) {
+        fds[i].events = POLLIN;
+        fds[i].fd = ts->serverfd;
+        vec[i] = ts;
+        i++;
+      }
+      pthread_mutex_unlock(&tcp_servers_mutex);
       continue;
     }
 
-    for(i = 0; i < r; i++) {
-      ts = ev[i].data.ptr;
-
-      if(ev[i].events & EPOLLHUP) {
-	close(ts->serverfd);
-	free(ts);
-	continue;
-      }
-
-      if(ev[i].events & EPOLLIN) {
-	tsl = malloc(sizeof(tcp_server_launch_t));
+    for(int i = 0; i < num_fds; i++) {
+      if(fds[i].revents & POLLIN) {
+        const tcp_server_t *ts = vec[i];
+        tcp_server_launch_t *tsl = malloc(sizeof(tcp_server_launch_t));
+        socklen_t slen = sizeof(struct sockaddr_in);
 	tsl->start  = ts->start;
 	tsl->opaque = ts->opaque;
-	slen = sizeof(struct sockaddr_in);
 
         tsl->fd = libsvc_accept(ts->serverfd,
                                 (struct sockaddr *)&tsl->peer, &slen);
@@ -275,11 +296,9 @@ tcp_server_create(int port, const char *bindaddr,
                   tcp_server_callback_t *start, void *opaque)
 {
   int fd, x;
-  struct epoll_event e;
   tcp_server_t *ts;
   struct sockaddr_in s;
   int one = 1;
-  memset(&e, 0, sizeof(e));
   fd = libsvc_socket(AF_INET, SOCK_STREAM, 0);
   if(fd == -1)
     return NULL;
@@ -308,12 +327,11 @@ tcp_server_create(int port, const char *bindaddr,
   ts->serverfd = fd;
   ts->start = start;
   ts->opaque = opaque;
+  pthread_mutex_lock(&tcp_servers_mutex);
+  LIST_INSERT_HEAD(&tcp_servers, ts, link);
+  pthread_mutex_unlock(&tcp_servers_mutex);
 
-  
-  e.events = EPOLLIN;
-  e.data.ptr = ts;
-
-  epoll_ctl(tcp_server_epoll_fd, EPOLL_CTL_ADD, fd, &e);
+  if(write(tcp_server_pipe[1], "", 1)) {}
   return ts;
 }
 
@@ -325,8 +343,8 @@ void
 tcp_server_init(void)
 {
   pthread_t tid;
-  tcp_server_epoll_fd = epoll_create(10);
+  if(pipe(tcp_server_pipe))
+    abort();
+
   pthread_create(&tid, NULL, tcp_server_loop, NULL);
 }
-
-
