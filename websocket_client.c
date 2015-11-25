@@ -14,6 +14,7 @@
 #include "websocket_client.h"
 #include "atomic.h"
 #include "sock.h"
+#include "misc.h"
 
 /**
  *
@@ -33,6 +34,14 @@ struct ws_client {
   htsbuf_queue_t wsc_sendq;
   int wsc_zombie;
   uint8_t wsc_pending_ping;
+
+  prng_t wsc_maskgenerator;
+
+  union {
+    uint8_t u8[4];
+    uint32_t u32;
+  } wsc_mask;
+
 };
 
 
@@ -62,7 +71,13 @@ wsc_append_header(ws_client_t *wsc, int opcode, size_t len)
     memcpy(hdr + 2, &u64, sizeof(uint64_t));
     hlen = 10;
   }
+
+  hdr[1] |= 0x80; // Set mask-bit
   htsbuf_append(&wsc->wsc_sendq, hdr, hlen);
+
+  // Append mask (not included in payload length)
+  wsc->wsc_mask.u32 = prng_get(&wsc->wsc_maskgenerator);
+  htsbuf_append(&wsc->wsc_sendq, &wsc->wsc_mask.u8, 4);
 }
 
 
@@ -72,10 +87,19 @@ wsc_append_header(ws_client_t *wsc, int opcode, size_t len)
 static void
 wsc_write_buf(ws_client_t *wsc, int opcode, const void *data, size_t len)
 {
+  uint8_t *buf = malloc(len);
+  memcpy(buf, data, len);
+
   pthread_mutex_lock(&wsc->wsc_sendq_mutex);
   if(!wsc->wsc_zombie) {
     wsc_append_header(wsc, opcode, len);
-    htsbuf_append(&wsc->wsc_sendq, data, len);
+
+    for(int i = 0; i < len; i++)
+      buf[i] ^= wsc->wsc_mask.u8[i & 3];
+
+    htsbuf_append_prealloc(&wsc->wsc_sendq, buf, len);
+  } else {
+    free(buf);
   }
   pthread_mutex_unlock(&wsc->wsc_sendq_mutex);
 }
@@ -89,7 +113,6 @@ wsc_read(ws_client_t *wsc, struct htsbuf_queue *hq)
 {
   uint8_t hdr[14]; // max header length
   const uint8_t *m;
-
   while(1) {
     int p = htsbuf_peek(hq, &hdr, 14);
 
@@ -311,14 +334,20 @@ ws_client_connect(const char *hostname, int port, const char *path,
   if(ts == NULL)
     return NULL;
 
+  uint8_t nonce[16];
+  get_random_bytes(nonce, sizeof(nonce));
+  char key[32];
+  base64_encode(key, sizeof(key), nonce, sizeof(nonce));
+  
   snprintf(buf, sizeof(buf),
            "GET %s HTTP/1.1\r\n"
            "Host: %s\r\n"
            "Connection: Upgrade\r\n"
            "Upgrade: websocket\r\n"
-           "Sec-WebSocket-Key: 123\r\n"
+           "Sec-WebSocket-Version: 13\r\n"
+           "Sec-WebSocket-Key: %s\r\n"
            "\r\n",
-           path, hostname);
+           path, hostname, key);
 
   tcp_write(ts, buf, strlen(buf));
 
@@ -328,7 +357,6 @@ ws_client_connect(const char *hostname, int port, const char *path,
     int l = tcp_read_line(ts, buf, sizeof(buf));
     if(l < 0)
       break;
-
     if(code == -1) {
       if(!strncmp(buf, "HTTP/1.1 ", 9)) {
         code = atoi(buf + 9);
@@ -353,6 +381,8 @@ ws_client_connect(const char *hostname, int port, const char *path,
   wsc->wsc_ts = ts;
   wsc->wsc_input = input;
   wsc->wsc_aux = aux;
+
+  prng_init(&wsc->wsc_maskgenerator);
 
   if(libsvc_pipe(wsc->wsc_pipe)) {
     free(wsc);
