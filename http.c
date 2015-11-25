@@ -923,12 +923,12 @@ http_serve_requests(http_connection_t *hc, const http_server_t *hs)
       return;
     }
 
-    if((hc->hc_cmd = str2val(argv[0], HTTP_cmdtab)) == -1) {
+    if((int)(hc->hc_cmd = str2val(argv[0], HTTP_cmdtab)) == -1) {
       return;
     }
 
     hc->hc_path = argv[1];
-    if((hc->hc_version = str2val(argv[2], HTTP_versiontab)) == -1) {
+    if((int)(hc->hc_version = str2val(argv[2], HTTP_versiontab)) == -1) {
       return;
     }
 
