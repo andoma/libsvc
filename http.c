@@ -374,19 +374,21 @@ http_err(http_connection_t *hc, int error, const char *str)
   const char *errtxt = http_rc2str(error);
   htsbuf_queue_flush(&hc->hc_reply);
 
-  htsbuf_qprintf(&hc->hc_reply, 
-		 "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n"
-		 "<HTML><HEAD>\r\n"
-		 "<TITLE>%d %s</TITLE>\r\n"
-		 "</HEAD><BODY>\r\n"
-		 "<H1>%d %s</H1>\r\n",
-		 error, errtxt, error, errtxt);
+  if(error != 304) {
 
-  if(str != NULL)
-    htsbuf_qprintf(&hc->hc_reply, "<p>%s</p>\r\n", str);
+    htsbuf_qprintf(&hc->hc_reply, 
+                   "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n"
+                   "<HTML><HEAD>\r\n"
+                   "<TITLE>%d %s</TITLE>\r\n"
+                   "</HEAD><BODY>\r\n"
+                   "<H1>%d %s</H1>\r\n",
+                   error, errtxt, error, errtxt);
 
-  htsbuf_qprintf(&hc->hc_reply, "</BODY></HTML>\r\n");
+    if(str != NULL)
+      htsbuf_qprintf(&hc->hc_reply, "<p>%s</p>\r\n", str);
 
+    htsbuf_qprintf(&hc->hc_reply, "</BODY></HTML>\r\n");
+  }
   http_send_reply(hc, error, "text/html", NULL, NULL, 0);
   return 0;
 }
