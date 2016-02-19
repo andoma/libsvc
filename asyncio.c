@@ -52,6 +52,7 @@ static int asyncio_pipe[2];
 static int epfd;
 
 static int asyncio_dns_worker;
+static int asyncio_task_worker;
 static struct asyncio_worker_list asyncio_workers;
 
 
@@ -68,6 +69,18 @@ typedef struct asyncio_worker {
 } asyncio_worker_t;
 
 static pthread_mutex_t asyncio_worker_mutex;
+
+/**
+ *
+ */
+typedef struct asyncio_task {
+  TAILQ_ENTRY(asyncio_task) at_link;
+  void (*at_fn)(void *aux);
+  void *at_aux;
+} asyncio_task_t;
+
+static pthread_mutex_t asyncio_task_mutex;
+static TAILQ_HEAD(, asyncio_task) asyncio_tasks;
 
 /**
  *
@@ -1096,6 +1109,26 @@ asyncio_add_worker(void (*fn)(void))
 }
 
 
+/**
+ *
+ */
+static void
+task_cb(void)
+{
+  while(1) {
+    asyncio_task_t *at;
+    pthread_mutex_lock(&asyncio_task_mutex);
+    at = TAILQ_FIRST(&asyncio_tasks);
+    if(at != NULL)
+      TAILQ_REMOVE(&asyncio_tasks, at, at_link);
+    pthread_mutex_unlock(&asyncio_task_mutex);
+    if(at == NULL)
+      break;
+    at->at_fn(at->at_aux);
+    free(at);
+  }
+}
+
 
 /**
  *
@@ -1110,12 +1143,15 @@ asyncio_init(void)
 
   TAILQ_INIT(&asyncio_dns_pending);
   TAILQ_INIT(&asyncio_dns_completed);
+  TAILQ_INIT(&asyncio_tasks);
 
   epfd = epoll_create1(EPOLL_CLOEXEC);
 
   pthread_mutex_init(&asyncio_worker_mutex, NULL);
+  pthread_mutex_init(&asyncio_task_mutex, NULL);
 
   asyncio_dns_worker = asyncio_add_worker(adr_deliver_cb);
+  asyncio_task_worker = asyncio_add_worker(task_cb);
 
   async_fd_t *af = async_fd_create(asyncio_pipe[0], EPOLLIN);
   af->af_pollin = &asyncio_handle_pipe;
@@ -1133,4 +1169,20 @@ asyncio_now(void)
   struct timeval tv;
   gettimeofday(&tv, NULL);
   return (int64_t)tv.tv_sec * 1000000LL + tv.tv_usec;
+}
+
+
+/**
+ *
+ */
+void
+asyncio_run_task(void (*fn)(void *aux), void *aux)
+{
+  asyncio_task_t *at = malloc(sizeof(asyncio_task_t));
+  at->at_fn = fn;
+  at->at_aux = aux;
+  pthread_mutex_lock(&asyncio_task_mutex);
+  TAILQ_INSERT_TAIL(&asyncio_tasks, at, at_link);
+  pthread_mutex_unlock(&asyncio_task_mutex);
+  asyncio_wakeup_worker(asyncio_task_worker);
 }

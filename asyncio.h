@@ -149,6 +149,8 @@ int asyncio_add_worker(void (*fn)(void));
 
 void asyncio_wakeup_worker(int id);
 
+void asyncio_run_task(void (*fn)(void *aux), void *aux);
+
 /************************************************************************
  * Async DNS
  ************************************************************************/
