@@ -78,7 +78,7 @@ endif
 ##############################################################
 
 ifeq (${WITH_WS_SERVER},yes)
-libsvc_SRCS    +=  websocket_server.c
+libsvc_SRCS    +=  websocket_server.c websocket.c
 libsvc_INCS    +=  websocket_server.h
 WITH_HTTP_SERVER := yes
 WITH_ASYNCIO := yes
@@ -90,7 +90,7 @@ endif
 ##############################################################
 
 ifeq (${WITH_WS_CLIENT},yes)
-libsvc_SRCS    +=  websocket_client.c
+libsvc_SRCS    +=  websocket_client.c websocket.c
 libsvc_INCS    +=  websocket_client.h
 CFLAGS += -DWITH_WS_CLIENT
 endif

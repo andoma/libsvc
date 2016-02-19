@@ -28,6 +28,7 @@
 #include <openssl/sha.h>
 #include <pthread.h>
 #include <errno.h>
+#include "websocket.h"
 #include "websocket_server.h"
 #include "http.h"
 #include "misc.h"
@@ -80,6 +81,8 @@ struct ws_server_connection {
   struct htsmsg *wsc_session;
   char *wsc_peeraddr;
   int wsc_ping_wait;
+
+  websocket_state_t wsc_state;
 };
 
 
@@ -104,6 +107,7 @@ wsc_destroy(ws_server_connection_t *wsc)
   free(wsc->wsc_peeraddr);
   if(wsc->wsc_session != NULL)
     htsmsg_destroy(wsc->wsc_session);
+  websocket_free(&wsc->wsc_state);
   free(wsc);
 }
 
@@ -195,27 +199,10 @@ ws_enq_data(ws_server_connection_t *wsc, int opcode, void *data, int arg)
 static void
 websocket_send_hdr(ws_server_connection_t *wsc, int opcode, size_t len)
 {
-  uint8_t hdr[14]; // max header length
-  int hlen;
-  hdr[0] = 0x80 | (opcode & 0xf);
-  if(len <= 125) {
-    hdr[1] = len;
-    hlen = 2;
-  } else if(len < 65536) {
-    hdr[1] = 126;
-    hdr[2] = len >> 8;
-    hdr[3] = len;
-    hlen = 4;
-  } else {
-    hdr[1] = 127;
-    uint64_t u64 = len;
-#if defined(__LITTLE_ENDIAN__)
-    u64 = __builtin_bswap64(u64);
-#endif
-    memcpy(hdr + 2, &u64, sizeof(uint64_t));
-    hlen = 10;
-  }
-  asyncio_send(wsc->wsc_af, hdr, hlen, 1);
+  htsbuf_queue_t q;
+  htsbuf_queue_init(&q, 0);
+  websocket_append_hdr(&q, opcode, len);
+  asyncio_sendq(wsc->wsc_af, &q, 1);
 }
 
 
@@ -264,6 +251,35 @@ websocket_err_cb(void *opaque, int error)
   ws_enq_data(wsc, WSD_OPCODE_DISCONNECT, NULL, error);
 }
 
+/**
+ *
+ */
+static int
+websocket_packet(void *opaque, int opcode, uint8_t **data, int len)
+{
+  ws_server_connection_t *wsc = opaque;
+
+
+  wsc->wsc_ping_wait = 0;
+
+  switch(opcode) {
+  case 8:
+    return 1;
+
+  case 9:
+    websocket_send(wsc, 10, *data, len);
+    return 0;
+
+  case 10:
+    return 0;
+
+  default:
+    ws_enq_data(wsc, opcode, *data, len);
+    *data = NULL;
+    return 0;
+  }
+}
+
 
 /**
  *
@@ -272,69 +288,9 @@ static void
 websocket_read_cb(void *opaque, struct htsbuf_queue *hq)
 {
   ws_server_connection_t *wsc = opaque;
-  uint8_t hdr[14]; // max header length
-  while(1) {
-    int p = htsbuf_peek(hq, &hdr, 14);
-    const uint8_t *m;
-    if(p < 2)
-      return;
 
-    int opcode  = hdr[0] & 0xf;
-    int64_t len = hdr[1] & 0x7f;
-    int hoff = 2;
-    if(len == 126) {
-      if(p < 4)
-        return;
-      len = hdr[2] << 8 | hdr[3];
-      hoff = 4;
-    } else if(len == 127) {
-      if(p < 10)
-        return;
-      memcpy(&len, hdr + 2, sizeof(uint64_t));
-#if defined(__LITTLE_ENDIAN__)
-      len = __builtin_bswap64(len);
-#endif
-      hoff = 10;
-    }
-
-    if(hdr[1] & 0x80) {
-      if(p < hoff + 4)
-        return;
-      m = hdr + hoff;
-
-      hoff += 4;
-    } else {
-      m = NULL;
-    }
-
-    if(hq->hq_size < hoff + len)
-      return;
-
-    uint8_t *d = malloc(len+1);
-    htsbuf_drop(hq, hoff);
-    htsbuf_read(hq, d, len);
-    d[len] = 0;
-
-    if(m != NULL) {
-      int i;
-      for(i = 0; i < len; i++)
-        d[i] ^= m[i&3];
-    }
-
-    wsc->wsc_ping_wait = 0;
-    if(opcode == 8) {
-      websocket_err_cb(wsc, 0);
-      free(d);
-      return;
-    } else if(opcode == 9) {
-      websocket_send(wsc, 10, d, len);
-      free(d);
-    } else if(opcode == 10) {
-      free(d);
-    } else {
-      ws_enq_data(wsc, opcode, d, len);
-    }
-  }
+  if(websocket_parse(hq, websocket_packet, wsc, &wsc->wsc_state))
+    websocket_err_cb(wsc, 0);
 }
 
 static void
