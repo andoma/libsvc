@@ -21,6 +21,7 @@
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -35,6 +36,8 @@
 TAILQ_HEAD(ws_server_data_queue, ws_server_data);
 
 #define WSGUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+#define PING_INTERVAL 5
 
 typedef struct ws_server_path {
   websocket_connected_t *wsp_connected;
@@ -72,8 +75,11 @@ struct ws_server_connection {
   pthread_cond_t wsc_cond;
   int wsc_thread_running;
 
+  asyncio_timer_t wsc_timer;
+
   struct htsmsg *wsc_session;
   char *wsc_peeraddr;
+  int wsc_ping_wait;
 };
 
 
@@ -246,6 +252,18 @@ websocket_send_json(ws_server_connection_t *wsc, htsmsg_t *msg)
   websocket_sendq(wsc, 1, &hq);
 }
 
+/**
+ *
+ */
+static void
+websocket_err_cb(void *opaque, int error)
+{
+  ws_server_connection_t *wsc = opaque;
+  asyncio_shutdown(wsc->wsc_af);
+  asyncio_timer_disarm(&wsc->wsc_timer);
+  ws_enq_data(wsc, WSD_OPCODE_DISCONNECT, NULL, error);
+}
+
 
 /**
  *
@@ -303,9 +321,15 @@ websocket_read_cb(void *opaque, struct htsbuf_queue *hq)
         d[i] ^= m[i&3];
     }
 
-    if(opcode == 9) {
-      // PING
+    wsc->wsc_ping_wait = 0;
+    if(opcode == 8) {
+      websocket_err_cb(wsc, 0);
+      free(d);
+      return;
+    } else if(opcode == 9) {
       websocket_send(wsc, 10, d, len);
+      free(d);
+    } else if(opcode == 10) {
       free(d);
     } else {
       ws_enq_data(wsc, opcode, d, len);
@@ -313,17 +337,33 @@ websocket_read_cb(void *opaque, struct htsbuf_queue *hq)
   }
 }
 
-
-/**
- *
- */
 static void
-websocket_err_cb(void *opaque, int error)
+timer_cb(void *aux)
 {
-  ws_server_connection_t *wsc = opaque;
-  asyncio_shutdown(wsc->wsc_af);
-  ws_enq_data(wsc, WSD_OPCODE_DISCONNECT, NULL, error);
+  ws_server_connection_t *wsc = aux;
+
+  if(wsc->wsc_ping_wait == 2) {
+    websocket_err_cb(wsc, ETIMEDOUT);
+    return;
+  }
+  uint32_t ping = 0;
+  websocket_send(wsc, 9, &ping, 4);
+  wsc->wsc_ping_wait++;
+  asyncio_timer_arm(&wsc->wsc_timer, asyncio_now() + PING_INTERVAL * 1000000);
 }
+
+
+static void
+start_websocket(void *aux)
+{
+  ws_server_connection_t *wsc = aux;
+
+  asyncio_enable_read(wsc->wsc_af);
+
+  asyncio_timer_init(&wsc->wsc_timer, timer_cb, wsc);
+  asyncio_timer_arm(&wsc->wsc_timer, asyncio_now() + PING_INTERVAL * 1000000);
+}
+
 
 
 static int
@@ -371,14 +411,14 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
   int fd = tcp_steal_fd(hc->hc_ts);
 
   ws_server_connection_t *wsc = calloc(1, sizeof(ws_server_connection_t));
-  async_fd_t *af = asyncio_stream_mt(fd, websocket_read_cb,
-                                     websocket_err_cb, wsc);
+
+  wsc->wsc_af = asyncio_stream_mt(fd, websocket_read_cb,
+                                  websocket_err_cb, wsc);
 
   TAILQ_INIT(&wsc->wsc_queue);
   pthread_mutex_init(&wsc->wsc_mutex, NULL);
   pthread_cond_init(&wsc->wsc_cond, NULL);
 
-  wsc->wsc_af = af;
   wsc->wsc_path = wsp;
 
   wsc->wsc_peeraddr = strdup(hc->hc_peer_addr);
@@ -389,8 +429,7 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 
   wsc->wsc_opaque = wsp->wsp_connected(wsc);
 
-
-  asyncio_enable_read(af);
+  asyncio_run_task(start_websocket, wsc);
 
   /* Returning -1 will just terminate the session. However the socket
      will still stay alive since we stole it above
