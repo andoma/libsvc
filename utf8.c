@@ -166,6 +166,19 @@ utf8_get(const char **s)
     return r;
 }
 
+/**
+ *
+ */
+int
+utf8_len(const char *s)
+{
+  int l = 0;
+  while(utf8_get(&s))
+    l++;
+  return l;
+}
+
+
 
 /**
  *
