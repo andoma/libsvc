@@ -228,7 +228,6 @@ tcp_server_loop(void *aux)
     fds[num_fds].events = POLLIN;
 
     int r = poll(fds, num_fds + 1, -1);
-    printf("poll=%d\n", r);
     if(r < 1)
       continue;
 
