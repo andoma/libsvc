@@ -38,6 +38,9 @@
 #include "dial.h"
 #include "sock.h"
 
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 /**
  *
  */
@@ -137,7 +140,18 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
       memset(&in, 0, sizeof(in));
       in.sin_family = AF_INET;
       in.sin_port = htons(port);
-      memcpy(&in.sin_addr, hp->h_addr_list[0], sizeof(struct in_addr));
+      int num_addr = 0;
+      while(hp->h_addr_list[num_addr])
+        num_addr++;
+
+      if(num_addr == 0) {
+        close(fd);
+        free(tmphstbuf);
+        snprintf(errbuf, errlen, "No address");
+        return NULL;
+      }
+      int a = rand() % num_addr;
+      memcpy(&in.sin_addr, hp->h_addr_list[a], sizeof(struct in_addr));
       r = connect(fd, (struct sockaddr *)&in, sizeof(struct sockaddr_in));
       break;
 
@@ -150,6 +164,7 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
       break;
 
     default:
+      close(fd);
       free(tmphstbuf);
       snprintf(errbuf, errlen, "Address family not supported");
       return NULL;
