@@ -672,7 +672,7 @@ irc_thread(void *aux)
     ic->ic_ts = irc_do_connect(ic, errbuf, sizeof(errbuf));
 
     if(ic->ic_ts == NULL) {
-      backoff = MIN(backoff * 2, 120);
+      backoff = MIN(backoff * 2, 30);
       trace(LOG_ERR, "IRC: %s: Unable to connect -- %s -- Retry in %d seconds",
             ic->ic_server, errbuf, backoff);
       sleep(backoff);
