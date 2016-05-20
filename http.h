@@ -144,6 +144,9 @@ int http_send_header(http_connection_t *hc, int rc, const char *content,
                      const char *location, int maxage, const char *range,
                      const char *disposition, const char *transfer_encoding);
 
+int http_send_reply(http_connection_t *hc, int rc, const char *content,
+                    const char *encoding, const char *location, int maxage);
+
 typedef int (http_callback_t)(http_connection_t *hc,
 			      const char *remain, void *opaque);
 

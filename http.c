@@ -350,7 +350,7 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
 /**
  * Transmit a HTTP reply
  */
-static int
+int
 http_send_reply(http_connection_t *hc, int rc, const char *content, 
 		const char *encoding, const char *location, int maxage)
 {
