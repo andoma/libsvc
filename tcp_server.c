@@ -218,7 +218,7 @@ tcp_server_loop(void *aux)
   const tcp_server_t **vec = NULL;
   int num_fds = 0;
 
-  fds = calloc(1, sizeof(poll));
+  fds = calloc(1, sizeof(struct pollfd));
 
   while(1) {
 
