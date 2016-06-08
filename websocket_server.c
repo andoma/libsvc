@@ -41,6 +41,7 @@ TAILQ_HEAD(ws_server_data_queue, ws_server_data);
 #define PING_INTERVAL 5
 
 typedef struct ws_server_path {
+  websocket_prepare_t *wsp_prepare;
   websocket_connected_t *wsp_connected;
   websocket_receive_t *wsp_receive;
   websocket_disconnected_t *wsp_disconnected;
@@ -239,6 +240,22 @@ websocket_send_json(ws_server_connection_t *wsc, htsmsg_t *msg)
   websocket_sendq(wsc, 1, &hq);
 }
 
+
+void
+websocket_send_close(ws_server_connection_t *wsc, int code,
+                     const char *reason)
+{
+  htsbuf_queue_t hq;
+  htsbuf_queue_init(&hq, 0);
+  uint16_t code16 = htons(code);
+  htsbuf_append(&hq, &code16, 2);
+  if(reason)
+    htsbuf_append(&hq, reason, strlen(reason));
+
+  websocket_sendq(wsc, 8, &hq);
+}
+
+
 /**
  *
  */
@@ -330,6 +347,7 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 
   const char *c = http_arg_get(&hc->hc_args, "Connection");
   const char *u = http_arg_get(&hc->hc_args, "Upgrade");
+  char selected_protocol[512];
 
   if(strcasecmp(c?:"", "Upgrade") || strcasecmp(u?:"", "websocket"))
     return 405;
@@ -341,6 +359,19 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 
   if(k == NULL)
     return 400;
+
+  selected_protocol[0] = 0;
+  int prep_result = 0;
+
+  const char *p = http_arg_get(&hc->hc_args, "Sec-WebSocket-Protocol");
+
+  if(wsp->wsp_prepare != NULL) {
+    prep_result = wsp->wsp_prepare(p, remain, selected_protocol,
+                                   sizeof(selected_protocol));
+    if(prep_result < 0)
+      return -prep_result;
+  }
+
 
   SHA1_Init(&shactx);
   SHA1_Update(&shactx, (const void *)k, strlen(k));
@@ -356,10 +387,16 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
                  "HTTP/1.%d 101 Switching Protocols\r\n"
                  "Connection: Upgrade\r\n"
                  "Upgrade: websocket\r\n"
-                 "Sec-WebSocket-Accept: %s\r\n"
-                 "\r\n",
+                 "Sec-WebSocket-Accept: %s\r\n",
                  hc->hc_version,
                  sig);
+
+  if(selected_protocol[0]) {
+    htsbuf_qprintf(&out, "Sec-WebSocket-Protocol: %s\r\n",
+                   selected_protocol);
+  }
+
+  htsbuf_qprintf(&out, "\r\n");
 
   tcp_write_queue(hc->hc_ts, &out);
 
@@ -383,7 +420,7 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
   wsc->wsc_session = hc->hc_session_received;
   hc->hc_session_received = NULL;
 
-  wsc->wsc_opaque = wsp->wsp_connected(wsc);
+  wsc->wsc_opaque = wsp->wsp_connected(wsc, remain, prep_result);
 
   asyncio_run_task(start_websocket, wsc);
 
@@ -406,11 +443,13 @@ websocket_get_peeraddr(ws_server_connection_t *wsc)
 
 void
 websocket_route_add(const char *path,
+                    websocket_prepare_t *prepare,
                     websocket_connected_t *connected,
                     websocket_receive_t *receive,
                     websocket_disconnected_t *disconnected)
 {
   ws_server_path_t *wsp = calloc(1, sizeof(ws_server_path_t));
+  wsp->wsp_prepare      = prepare;
   wsp->wsp_connected    = connected;
   wsp->wsp_receive      = receive;
   wsp->wsp_disconnected = disconnected;
