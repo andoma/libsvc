@@ -305,18 +305,19 @@ ws_client_close(ws_client_t *wsc)
 /**
  *
  */
-void
+int
 ws_client_send(ws_client_t *wsc, int opcode, const void *data, size_t len)
 {
   char c = 1;
   if(wsc->wsc_pipe[1] == -1)
-    return;
+    return -1;
 
   wsc_write_buf(wsc, opcode, data, len);
 
   if(write(wsc->wsc_pipe[1], &c, 1) != 1) {
-    perror("write");
+    return -1;
   }
+  return 0;
 }
 
 /**

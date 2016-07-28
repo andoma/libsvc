@@ -12,8 +12,8 @@ extern ws_client_t *ws_client_connect(const char *hostname, int port,
                                       void *aux, int timeout,
                                       char *errbuf, size_t errlen);
 
-extern void ws_client_send(ws_client_t *wsc, int opcode,
-                           const void *data, size_t len);
+extern int ws_client_send(ws_client_t *wsc, int opcode,
+                          const void *data, size_t len);
 
 
 extern void ws_client_start(ws_client_t *wsc);
