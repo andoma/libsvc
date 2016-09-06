@@ -350,7 +350,7 @@ static inline void htsmsg_retain(htsmsg_t *m)
 
 static inline void htsmsg_release(htsmsg_t *m)
 {
-  if(__sync_fetch_and_add(&m->hm_refcount, -1) == 1)
+  if(m != NULL && __sync_fetch_and_add(&m->hm_refcount, -1) == 1)
     htsmsg_destroy(m);
 }
 
