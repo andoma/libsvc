@@ -273,7 +273,7 @@ writefile(const char *path, const void *buf, int size)
 {
   int r, fd;
 
-  fd = open(path, O_RDONLY);
+  fd = open(path, O_RDONLY | O_CLOEXEC);
   if(fd != -1) {
     struct stat st;
     if(!fstat(fd, &st)) {
@@ -294,7 +294,7 @@ writefile(const char *path, const void *buf, int size)
   char pathtmp[PATH_MAX];
   snprintf(pathtmp, sizeof(pathtmp), "%s.tmp", path);
 
-  fd = open(pathtmp, O_TRUNC | O_CREAT | O_WRONLY, 0664);
+  fd = open(pathtmp, O_TRUNC | O_CREAT | O_WRONLY | O_CLOEXEC, 0664);
   if(fd == -1)
     return errno;
 
@@ -322,7 +322,7 @@ readfile(const char *path, int *errptr, time_t *tsp)
 {
   struct stat st;
 
-  int fd = open(path, O_RDONLY);
+  int fd = open(path, O_RDONLY | O_CLOEXEC);
   if(fd == -1) {
     if(errptr)
       *errptr = errno;
@@ -358,13 +358,14 @@ readfile(const char *path, int *errptr, time_t *tsp)
 int
 get_random_bytes(void *out, size_t len)
 {
-  int fd = open("/dev/urandom", O_RDONLY);
-  if(fd == -1)
-    return -1;
+  static int fd = -1;
+  if(fd == -1) {
+    fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if(fd == -1)
+      return -1;
+  }
 
-  int r = read(fd, out, len);
-  close(fd);
-  if(r != len)
+  if(read(fd, out, len) != len)
     return -1;
   return 0;
 }
