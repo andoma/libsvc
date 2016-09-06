@@ -26,13 +26,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include <openssl/sha.h>
-#include <pthread.h>
 #include <errno.h>
 #include "websocket.h"
 #include "websocket_server.h"
 #include "http.h"
 #include "misc.h"
 #include "asyncio.h"
+#include "task.h"
 
 TAILQ_HEAD(ws_server_data_queue, ws_server_data);
 
@@ -53,6 +53,7 @@ typedef struct ws_server_path {
  */
 typedef struct ws_server_data {
   TAILQ_ENTRY(ws_server_data) wsd_link;
+  ws_server_connection_t *wsd_wsc;
   void *wsd_data;
   int wsd_opcode;
   int wsd_arg;
@@ -73,9 +74,7 @@ struct ws_server_connection {
 
   struct ws_server_data_queue wsc_queue;
 
-  pthread_mutex_t wsc_mutex;
-  pthread_cond_t wsc_cond;
-  int wsc_thread_running;
+  task_group_t *wsc_task_group;
 
   asyncio_timer_t wsc_timer;
 
@@ -102,13 +101,12 @@ websocket_http_session(ws_server_connection_t *wsc)
 static void
 wsc_destroy(ws_server_connection_t *wsc)
 {
-  pthread_cond_destroy(&wsc->wsc_cond);
-  pthread_mutex_destroy(&wsc->wsc_mutex);
   asyncio_close(wsc->wsc_af);
   free(wsc->wsc_peeraddr);
   if(wsc->wsc_session != NULL)
     htsmsg_destroy(wsc->wsc_session);
   websocket_free(&wsc->wsc_state);
+  task_group_destroy(wsc->wsc_task_group);
   free(wsc);
 }
 
@@ -116,54 +114,27 @@ wsc_destroy(ws_server_connection_t *wsc)
 /**
  *
  */
-static void *
-wsc_dispatch_thread(void *aux)
+static void
+ws_dispatch_data(void *aux)
 {
-  ws_server_connection_t *wsc = aux;
-  ws_server_data_t *wsd;
+  ws_server_data_t *wsd = aux;
+  ws_server_connection_t *wsc = wsd->wsd_wsc;
   const ws_server_path_t *wsp = wsc->wsc_path;
 
-  pthread_mutex_lock(&wsc->wsc_mutex);
+  switch(wsd->wsd_opcode) {
+  case WSD_OPCODE_DISCONNECT:
+    wsp->wsp_disconnected(wsc->wsc_opaque, wsd->wsd_arg);
+    wsc_destroy(wsc);
+    break;
 
-  while(1) {
-    wsd = TAILQ_FIRST(&wsc->wsc_queue);
-    if(wsd == NULL) {
-      struct timespec t;
-      t.tv_sec = time(NULL) + 5;
-      t.tv_nsec = 0;
-      if(pthread_cond_timedwait(&wsc->wsc_cond,
-                                &wsc->wsc_mutex, &t) == ETIMEDOUT) {
-        break;
-      }
-      continue;
-    }
-
-    TAILQ_REMOVE(&wsc->wsc_queue, wsd, wsd_link);
-    pthread_mutex_unlock(&wsc->wsc_mutex);
-
-
-    switch(wsd->wsd_opcode) {
-    case WSD_OPCODE_DISCONNECT:
-      wsp->wsp_disconnected(wsc->wsc_opaque, wsd->wsd_arg);
-      free(wsd);
-      wsc_destroy(wsc);
-      return NULL;
-
-    default:
-      wsp->wsp_receive(wsc->wsc_opaque,
-                       wsd->wsd_opcode, wsd->wsd_data, wsd->wsd_arg);
-      free(wsd->wsd_data);
-      free(wsd);
-      break;
-    }
-
-    pthread_mutex_lock(&wsc->wsc_mutex);
+  default:
+    wsp->wsp_receive(wsc->wsc_opaque,
+                     wsd->wsd_opcode, wsd->wsd_data, wsd->wsd_arg);
+    free(wsd->wsd_data);
+    break;
   }
-  wsc->wsc_thread_running = 0;
-  pthread_mutex_unlock(&wsc->wsc_mutex);
-  return NULL;
+  free(wsd);
 }
-
 
 
 /**
@@ -176,21 +147,8 @@ ws_enq_data(ws_server_connection_t *wsc, int opcode, void *data, int arg)
   wsd->wsd_data = data;
   wsd->wsd_opcode = opcode;
   wsd->wsd_arg = arg;
-
-  pthread_mutex_lock(&wsc->wsc_mutex);
-  TAILQ_INSERT_TAIL(&wsc->wsc_queue, wsd, wsd_link);
-  if(!wsc->wsc_thread_running) {
-    pthread_t id;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    pthread_create(&id, &attr, wsc_dispatch_thread, wsc);
-    pthread_attr_destroy(&attr);
-    wsc->wsc_thread_running = 1;
-  } else {
-    pthread_cond_signal(&wsc->wsc_cond);
-  }
-  pthread_mutex_unlock(&wsc->wsc_mutex);
+  wsd->wsd_wsc = wsc;
+  task_run_in_group(ws_dispatch_data, wsd, wsc->wsc_task_group);
 }
 
 
@@ -405,13 +363,12 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 
   ws_server_connection_t *wsc = calloc(1, sizeof(ws_server_connection_t));
 
+  wsc->wsc_task_group = task_group_create();
+
   wsc->wsc_af = asyncio_stream_mt(fd, websocket_read_cb,
                                   websocket_err_cb, wsc);
 
   TAILQ_INIT(&wsc->wsc_queue);
-  pthread_mutex_init(&wsc->wsc_mutex, NULL);
-  pthread_cond_init(&wsc->wsc_cond, NULL);
-
   wsc->wsc_path = wsp;
 
   wsc->wsc_peeraddr = strdup(hc->hc_peer_addr);
