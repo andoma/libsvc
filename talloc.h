@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <stddef.h>
+
 void *talloc_malloc(size_t s);
 
 void *talloc_zalloc(size_t s);
