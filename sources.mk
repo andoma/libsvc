@@ -19,6 +19,7 @@ libsvc_SRCS += \
 	talloc.c \
 	memstream.c \
 	sock.c \
+	ntv.c \
 
 libsvc_INCS += \
 	libsvc.h \
