@@ -20,6 +20,7 @@
 * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
+#define _GNU_SOURCE
 
 #include <assert.h>
 #include <sys/types.h>
@@ -287,9 +288,28 @@ htsmsg_add_comment(htsmsg_t *msg, const char *comment)
 void
 htsmsg_add_str(htsmsg_t *msg, const char *name, const char *str)
 {
+  if(str == NULL)
+    return;
+
   htsmsg_field_t *f = htsmsg_field_add(msg, name, HMF_STR, 
 				        HMF_ALLOCED | HMF_NAME_ALLOCED);
   f->hmf_str = strdup(str);
+}
+
+
+/*
+ *
+ */
+void
+htsmsg_add_strf(htsmsg_t *msg, const char *name, const char *fmt, ...)
+{
+  va_list ap;
+  htsmsg_field_t *f = htsmsg_field_add(msg, name, HMF_STR,
+				        HMF_ALLOCED | HMF_NAME_ALLOCED);
+  va_start(ap, fmt);
+  if(vasprintf((char **)&f->hmf_str, fmt, ap) == -1)
+    f->hmf_str = NULL;
+  va_end(ap);
 }
 
 
