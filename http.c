@@ -63,6 +63,7 @@ typedef struct http_path {
   void *hp_opaque;
   http_callback_t *hp_callback;
   int hp_len;
+  int hp_depth;
 } http_path_t;
 
 
@@ -167,7 +168,7 @@ http_resolve_route(http_connection_t *hc, int cont)
   int argc;
 
   LIST_FOREACH(hr, &http_routes, hr_link)
-    if(!regexec(&hr->hr_reg, hc->hc_path, 32, match, 0))
+    if(!regexec(&hr->hr_reg, hc->hc_path, MAX_ROUTE_MATCHES, match, 0))
       break;
 
   if(hr == NULL)
@@ -795,6 +796,13 @@ http_route_add(const char *path, http_callback2_t *callback, int flags)
   LIST_INSERT_SORTED(&http_routes, hr, hr_link, route_cmp);
 }
 
+/**
+ *
+ */
+static int path_cmp(const http_path_t *a, const http_path_t *b)
+{
+  return b->hp_depth - a->hp_depth;
+}
 
 /**
  * Add a callback for a given "virtual path" on our HTTP server
@@ -802,13 +810,18 @@ http_route_add(const char *path, http_callback2_t *callback, int flags)
 void
 http_path_add(const char *path, void *opaque, http_callback_t *callback)
 {
-  http_path_t *hp = malloc(sizeof(http_path_t));
+  http_path_t *hp = calloc(1, sizeof(http_path_t));
 
   hp->hp_len      = strlen(path);
+
+  for(int i = 0; i < hp->hp_len; i++)
+    if(path[i] == '/')
+      hp->hp_depth++;
+
   hp->hp_path     = strdup(path);
   hp->hp_opaque   = opaque;
   hp->hp_callback = callback;
-  LIST_INSERT_HEAD(&http_paths, hp, hp_link);
+  LIST_INSERT_SORTED(&http_paths, hp, hp_link, path_cmp);
 }
 
 
