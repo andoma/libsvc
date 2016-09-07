@@ -59,12 +59,13 @@ typedef struct ntv {
 } ntv;
 
 
-// Creation
+// Misc toplevel functions
 
 ntv *ntv_create_map(void);
 ntv *ntv_create_list(void);
 
 void ntv_release(ntv *ntv);
+void ntv_print(ntv *ntv);
 
 // Get operations on maps
 

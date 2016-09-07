@@ -124,7 +124,7 @@ ntv_field_name_prep(ntv *parent, const char *fieldname, ntv_type type)
 }
 
 
-int64_t
+static int64_t
 ntv_ret_int64(const ntv *f, int64_t default_value)
 {
   if(f == NULL)
@@ -145,7 +145,7 @@ ntv_ret_int64(const ntv *f, int64_t default_value)
 }
 
 
-double
+static double
 ntv_ret_double(const ntv *f, double default_value)
 {
   if(f == NULL)
@@ -305,7 +305,7 @@ ntv_print0(FILE *fp, struct ntv_queue *q, int indent)
 }
 
 
-static void
+void
 ntv_print(ntv *ntv)
 {
   ntv_print0(stdout, &ntv->ntv_children, 0);
