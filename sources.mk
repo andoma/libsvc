@@ -20,6 +20,7 @@ libsvc_SRCS += \
 	memstream.c \
 	sock.c \
 	ntv.c \
+	ntv_json.c \
 
 libsvc_INCS += \
 	libsvc.h \

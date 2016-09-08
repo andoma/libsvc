@@ -92,6 +92,8 @@ const ntv  *ntv_idx_list(const ntv *ntv, int idx);
 void ntv_set_int(ntv *ntv, const char *key, int value);
 void ntv_set_int64(ntv *ntv, const char *key, int64_t value);
 void ntv_set_double(ntv *ntv, const char *key, double value);
+void ntv_set_null(ntv *ntv, const char *key);
+void ntv_set_boolean(ntv *ntv, const char *key, bool value);
 void ntv_set_str(ntv *ntv, const char *key, const char *value);
 void ntv_set_ntv(ntv *ntv, const char *key, struct ntv *sub);
 
@@ -100,9 +102,18 @@ void ntv_set_ntv(ntv *ntv, const char *key, struct ntv *sub);
 void ntv_set_idx_int(ntv *ntv, int key, int value);
 void ntv_set_idx_int64(ntv *ntv, int key, int64_t value);
 void ntv_set_idx_double(ntv *ntv, int key, double value);
+void ntv_set_idx_null(ntv *ntv, int key);
+void ntv_set_idx_boolean(ntv *ntv, int key, bool value);
 void ntv_set_idx_str(ntv *ntv, int key, const char *value);
 void ntv_set_idx_ntv(ntv *ntv, int key, struct ntv *sub);
 
+
+
+struct htsbuf_queue;
+void ntv_json_serialize(ntv *msg, struct htsbuf_queue *hq, int pretty);
+char *ntv_json_serialize_to_str(ntv *msg, int pretty);
+
+ntv *ntv_json_deserialize(const char *src, char *errbuf, size_t errlen);
 
 
 #if __STDC_VERSION__ >= 201112L

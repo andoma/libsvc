@@ -71,6 +71,13 @@ ntv_destroy(ntv *n)
 }
 
 
+void
+ntv_release(ntv *n)
+{
+  ntv_destroy(n);
+}
+
+
 static ntv *
 ntv_field_name_find(const ntv *parent, const char *fieldname)
 {
@@ -111,12 +118,12 @@ ntv_field_nametype_find(const ntv *parent, const char *fieldname,
 static ntv *
 ntv_field_name_prep(ntv *parent, const char *fieldname, ntv_type type)
 {
-  ntv *f = ntv_field_name_find(parent, fieldname);
+  ntv *f = fieldname != NULL ? ntv_field_name_find(parent, fieldname) : NULL;
   if(f != NULL) {
     ntv_field_clear(f, type);
   } else {
     f = ntv_create(type);
-    f->ntv_name = strdup(fieldname);
+    f->ntv_name = fieldname != NULL ? strdup(fieldname) : NULL;
     TAILQ_INSERT_TAIL(&parent->ntv_children, f, ntv_link);
     f->ntv_parent = parent;
   }
@@ -228,6 +235,18 @@ ntv_set_double(ntv *ntv, const char *key, double value)
 }
 
 void
+ntv_set_null(ntv *ntv, const char *key)
+{
+  ntv_field_name_prep(ntv, key, NTV_NULL);
+}
+
+void
+ntv_set_boolean(ntv *ntv, const char *key, bool value)
+{
+  ntv_field_name_prep(ntv, key, NTV_NULL)->ntv_boolean = value;
+}
+
+void
 ntv_set_str(ntv *ntv, const char *key, const char *value)
 {
   ntv_field_name_prep(ntv, key, NTV_STRING)->ntv_string = strdup(value);
@@ -287,10 +306,10 @@ ntv_print0(FILE *fp, struct ntv_queue *q, int indent)
       break;
 
     case NTV_BINARY:
-      fprintf(fp, "(binary) = [");
+      fprintf(fp, "(binary) = <");
       for(i = 0; i < f->ntv_binsize - 1; i++)
 	fprintf(fp, "%02x.", ((uint8_t *)f->ntv_bin)[i]);
-      fprintf(fp, "%02x]\n", ((uint8_t *)f->ntv_bin)[i]);
+      fprintf(fp, "%02x>\n", ((uint8_t *)f->ntv_bin)[i]);
       break;
 
     case NTV_INT:
