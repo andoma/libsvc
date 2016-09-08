@@ -26,6 +26,8 @@
 #include "htsbuf.h"
 #include "htsmsg_json.h"
 
+struct ntv;
+
 typedef struct ws_server_connection ws_server_connection_t;
 
 typedef int (websocket_prepare_t)(const char *protocols,
@@ -54,7 +56,9 @@ void websocket_send(ws_server_connection_t *wss, int opcode,
 void websocket_sendq(ws_server_connection_t *wss,
                      int opcode, htsbuf_queue_t *hq);
 
-void websocket_send_json(ws_server_connection_t *wss, htsmsg_t *msg);
+void websocket_send_json(ws_server_connection_t *wss, struct htsmsg *msg);
+
+void websocket_send_json_ntv(ws_server_connection_t *wss, struct ntv *msg);
 
 void websocket_send_close(ws_server_connection_t *wss, int code,
                           const char *reason);

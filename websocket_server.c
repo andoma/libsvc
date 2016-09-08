@@ -33,6 +33,7 @@
 #include "misc.h"
 #include "asyncio.h"
 #include "task.h"
+#include "ntv.h"
 
 TAILQ_HEAD(ws_server_data_queue, ws_server_data);
 
@@ -195,6 +196,16 @@ websocket_send_json(ws_server_connection_t *wsc, htsmsg_t *msg)
   htsbuf_queue_init(&hq, 0);
 
   htsmsg_json_serialize(msg, &hq, 0);
+  websocket_sendq(wsc, 1, &hq);
+}
+
+void
+websocket_send_json_ntv(ws_server_connection_t *wsc, ntv_t *msg)
+{
+  htsbuf_queue_t hq;
+  htsbuf_queue_init(&hq, 0);
+
+  ntv_json_serialize(msg, &hq, 0);
   websocket_sendq(wsc, 1, &hq);
 }
 

@@ -1,3 +1,26 @@
+/******************************************************************************
+* Copyright (C) 2008 - 2016 Andreas Smas
+*
+* Permission is hereby granted, free of charge, to any person obtaining
+* a copy of this software and associated documentation files (the
+* "Software"), to deal in the Software without restriction, including
+* without limitation the rights to use, copy, modify, merge, publish,
+* distribute, sublicense, and/or sell copies of the Software, and to
+* permit persons to whom the Software is furnished to do so, subject to
+* the following conditions:
+*
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+******************************************************************************/
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -12,9 +35,9 @@
  *
  */
 static void
-ntv_json_write(const ntv *msg, htsbuf_queue_t *hq, int indent, int pretty)
+ntv_json_write(const ntv_t *msg, htsbuf_queue_t *hq, int indent, int pretty)
 {
-  ntv *f;
+  ntv_t *f;
   char buf[100];
   const bool isarray = msg->ntv_type == NTV_LIST;
 
@@ -85,7 +108,7 @@ ntv_json_write(const ntv *msg, htsbuf_queue_t *hq, int indent, int pretty)
  *
  */
 void
-ntv_json_serialize(ntv *msg, htsbuf_queue_t *hq, int pretty)
+ntv_json_serialize(ntv_t *msg, htsbuf_queue_t *hq, int pretty)
 {
   ntv_json_write(msg, hq, 0, pretty);
   if(pretty)
@@ -97,7 +120,7 @@ ntv_json_serialize(ntv *msg, htsbuf_queue_t *hq, int pretty)
  *
  */
 char *
-ntv_json_serialize_to_str(ntv *msg, int pretty)
+ntv_json_serialize_to_str(ntv_t *msg, int pretty)
 {
   htsbuf_queue_t hq;
   char *str;
@@ -193,7 +216,7 @@ static const json_deserializer_t json_to_ntv = {
 /**
  *
  */
-ntv *
+ntv_t *
 ntv_json_deserialize(const char *src, char *errbuf, size_t errlen)
 {
   return json_deserialize(src, &json_to_ntv, NULL, errbuf, errlen);

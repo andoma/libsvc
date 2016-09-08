@@ -1,3 +1,29 @@
+/******************************************************************************
+* Copyright (C) 2008 - 2016 Andreas Smas
+*
+* Permission is hereby granted, free of charge, to any person obtaining
+* a copy of this software and associated documentation files (the
+* "Software"), to deal in the Software without restriction, including
+* without limitation the rights to use, copy, modify, merge, publish,
+* distribute, sublicense, and/or sell copies of the Software, and to
+* permit persons to whom the Software is furnished to do so, subject to
+* the following conditions:
+*
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+******************************************************************************/
+
+#define _GNU_SOURCE
+
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -6,24 +32,24 @@
 
 #include "ntv.h"
 
-static ntv *
+static ntv_t *
 ntv_create(ntv_type type)
 {
-  ntv *n = calloc(1, sizeof(struct ntv));
+  ntv_t *n = calloc(1, sizeof(struct ntv));
   n->ntv_type = type;
   TAILQ_INIT(&n->ntv_children);
   return n;
 }
 
 
-ntv *
+ntv_t *
 ntv_create_map(void)
 {
   return ntv_create(NTV_MAP);
 }
 
 
-ntv *
+ntv_t *
 ntv_create_list(void)
 {
   return ntv_create(NTV_LIST);
@@ -31,7 +57,7 @@ ntv_create_list(void)
 
 
 static void
-ntv_field_clear(ntv *f, ntv_type newtype)
+ntv_field_clear(ntv_t *f, ntv_type newtype)
 {
   switch(f->ntv_type) {
   case NTV_NULL:
@@ -57,7 +83,7 @@ ntv_field_clear(ntv *f, ntv_type newtype)
 
 
 static void
-ntv_destroy(ntv *n)
+ntv_destroy(ntv_t *n)
 {
   if(n->ntv_parent != NULL)
     TAILQ_REMOVE(&n->ntv_parent->ntv_children, n, ntv_link);
@@ -65,23 +91,27 @@ ntv_destroy(ntv *n)
   free(n->ntv_name);
   ntv_field_clear(n, NTV_NULL);
 
-  ntv *c;
+  ntv_t *c;
   while((c = TAILQ_FIRST(&n->ntv_children)) != NULL)
-    ntv_destroy(n);
+    ntv_destroy(c);
+  free(n);
 }
 
 
 void
-ntv_release(ntv *n)
+ntv_release(ntv_t *n)
 {
   ntv_destroy(n);
 }
 
 
-static ntv *
-ntv_field_name_find(const ntv *parent, const char *fieldname)
+static ntv_t *
+ntv_field_name_find(const ntv_t *parent, const char *fieldname)
 {
-  ntv *sub;
+  ntv_t *sub;
+  if(parent == NULL || fieldname == NULL)
+    return NULL;
+
   TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
     if(!strcmp(sub->ntv_name, fieldname))
       return sub;
@@ -91,9 +121,9 @@ ntv_field_name_find(const ntv *parent, const char *fieldname)
 
 
 static void
-ntv_field_name_destroy(const ntv *parent, const char *fieldname)
+ntv_field_name_destroy(const ntv_t *parent, const char *fieldname)
 {
-  ntv *f = ntv_field_name_find(parent, fieldname);
+  ntv_t *f = ntv_field_name_find(parent, fieldname);
   if(f != NULL)
     ntv_destroy(f);
 }
@@ -101,11 +131,11 @@ ntv_field_name_destroy(const ntv *parent, const char *fieldname)
 
 
 
-static ntv *
-ntv_field_nametype_find(const ntv *parent, const char *fieldname,
+static ntv_t *
+ntv_field_nametype_find(const ntv_t *parent, const char *fieldname,
                         ntv_type type)
 {
-  ntv *sub;
+  ntv_t *sub;
   TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
     if(sub->ntv_type == type && !strcmp(sub->ntv_name, fieldname))
       return sub;
@@ -115,10 +145,10 @@ ntv_field_nametype_find(const ntv *parent, const char *fieldname,
 
 
 
-static ntv *
-ntv_field_name_prep(ntv *parent, const char *fieldname, ntv_type type)
+static ntv_t *
+ntv_field_name_prep(ntv_t *parent, const char *fieldname, ntv_type type)
 {
-  ntv *f = fieldname != NULL ? ntv_field_name_find(parent, fieldname) : NULL;
+  ntv_t *f = fieldname != NULL ? ntv_field_name_find(parent, fieldname) : NULL;
   if(f != NULL) {
     ntv_field_clear(f, type);
   } else {
@@ -132,7 +162,7 @@ ntv_field_name_prep(ntv *parent, const char *fieldname, ntv_type type)
 
 
 static int64_t
-ntv_ret_int64(const ntv *f, int64_t default_value)
+ntv_ret_int64(const ntv_t *f, int64_t default_value)
 {
   if(f == NULL)
     return default_value;
@@ -153,7 +183,7 @@ ntv_ret_int64(const ntv *f, int64_t default_value)
 
 
 static double
-ntv_ret_double(const ntv *f, double default_value)
+ntv_ret_double(const ntv_t *f, double default_value)
 {
   if(f == NULL)
     return default_value;
@@ -175,102 +205,159 @@ ntv_ret_double(const ntv *f, double default_value)
 }
 
 int64_t
-ntv_get_int64(const ntv *n, const char *key, int64_t default_value)
+ntv_get_int64(const ntv_t *n, const char *key, int64_t default_value)
 {
   return ntv_ret_int64(ntv_field_name_find(n, key), default_value);
 }
 
 
 int
-ntv_get_int(const ntv *n, const char *key, int default_value)
+ntv_get_int(const ntv_t *n, const char *key, int default_value)
 {
   return ntv_ret_int64(ntv_field_name_find(n, key), default_value);
 }
 
 
 double
-ntv_get_double(const ntv *n, const char *key, double default_value)
+ntv_get_double(const ntv_t *n, const char *key, double default_value)
 {
   return ntv_ret_double(ntv_field_name_find(n, key), default_value);
 }
 
 
 const char *
-ntv_get_str(const ntv *n, const char *key)
+ntv_get_str(const ntv_t *n, const char *key)
 {
-  ntv *f = ntv_field_nametype_find(n, key, NTV_STRING);
+  ntv_t *f = ntv_field_nametype_find(n, key, NTV_STRING);
   return f ? f->ntv_string : NULL;
 }
 
 
-const ntv *
-ntv_get_map(const ntv *n, const char *key)
+const ntv_t *
+ntv_get_map(const ntv_t *n, const char *key)
 {
   return ntv_field_nametype_find(n, key, NTV_MAP);
 }
 
-const ntv *
-ntv_get_list(const ntv *n, const char *key)
+const ntv_t *
+ntv_get_list(const ntv_t *n, const char *key)
 {
   return ntv_field_nametype_find(n, key, NTV_LIST);
 }
 
 
 void
-ntv_set_int(ntv *ntv, const char *key, int value)
+ntv_set_int(ntv_t *ntv, const char *key, int value)
 {
   ntv_field_name_prep(ntv, key, NTV_INT)->ntv_s64 = value;
 }
 
 void
-ntv_set_int64(ntv *ntv, const char *key, int64_t value)
+ntv_set_int64(ntv_t *ntv, const char *key, int64_t value)
 {
   ntv_field_name_prep(ntv, key, NTV_INT)->ntv_s64 = value;
 }
 
 void
-ntv_set_double(ntv *ntv, const char *key, double value)
+ntv_set_double(ntv_t *ntv, const char *key, double value)
 {
   ntv_field_name_prep(ntv, key, NTV_DOUBLE)->ntv_double = value;
 }
 
 void
-ntv_set_null(ntv *ntv, const char *key)
+ntv_set_null(ntv_t *ntv, const char *key)
 {
   ntv_field_name_prep(ntv, key, NTV_NULL);
 }
 
 void
-ntv_set_boolean(ntv *ntv, const char *key, bool value)
+ntv_set_boolean(ntv_t *ntv, const char *key, bool value)
 {
-  ntv_field_name_prep(ntv, key, NTV_NULL)->ntv_boolean = value;
+  ntv_field_name_prep(ntv, key, NTV_BOOLEAN)->ntv_boolean = value;
 }
 
 void
-ntv_set_str(ntv *ntv, const char *key, const char *value)
+ntv_set_str(ntv_t *ntv, const char *key, const char *value)
 {
-  ntv_field_name_prep(ntv, key, NTV_STRING)->ntv_string = strdup(value);
+  if(value == NULL)
+    ntv_field_name_destroy(ntv, key);
+  else
+    ntv_field_name_prep(ntv, key, NTV_STRING)->ntv_string = strdup(value);
+}
+
+void
+ntv_set_strf(ntv_t *m, const char *key, const char *fmt, ...)
+{
+  va_list ap;
+  ntv_t *f = ntv_field_name_prep(m, key, NTV_STRING);
+  va_start(ap, fmt);
+  if(vasprintf(&f->ntv_string, fmt, ap) == -1)
+    f->ntv_type = NTV_NULL;
+  va_end(ap);
 }
 
 
 void
-ntv_set_ntv(ntv *n, const char *key, ntv *sub)
+ntv_set_ntv(ntv_t *n, const char *key, ntv_t *sub)
 {
   ntv_field_name_destroy(n, key);
 
   free(sub->ntv_name);
-  sub->ntv_name = strdup(key);
+  sub->ntv_name = key ? strdup(key) : NULL;
 
   TAILQ_INSERT_TAIL(&n->ntv_children, sub, ntv_link);
   sub->ntv_parent = n;
 }
 
 
+ntv_t *
+ntv_copy(const ntv_t *src)
+{
+  const ntv_t *f;
+  ntv_t *dst = ntv_create(src->ntv_type);
+
+  TAILQ_FOREACH(f, &src->ntv_children, ntv_link) {
+    switch(f->ntv_type) {
+    case NTV_NULL:
+      ntv_set_null(dst, f->ntv_name);
+      break;
+    case NTV_BOOLEAN:
+      ntv_set_boolean(dst, f->ntv_name, f->ntv_boolean);
+      break;
+
+    case NTV_MAP:
+    case NTV_LIST:
+      ntv_set_ntv(dst, f->ntv_name, ntv_copy(f));
+      break;
+
+    case NTV_STRING:
+      ntv_set_str(dst, f->ntv_name, f->ntv_string);
+      break;
+
+    case NTV_BINARY:
+      abort();
+      break;
+
+    case NTV_INT:
+      ntv_set_int64(dst, f->ntv_name, f->ntv_s64);
+      break;
+
+    case NTV_DOUBLE:
+      ntv_set_double(dst, f->ntv_name, f->ntv_double);
+      break;
+    }
+  }
+  return dst;
+}
+
+
+
+
 
 static void
 ntv_print0(FILE *fp, struct ntv_queue *q, int indent)
 {
-  ntv *f;
+  ntv_t *f;
   int i;
 
   TAILQ_FOREACH(f, q, ntv_link) {
@@ -325,7 +412,7 @@ ntv_print0(FILE *fp, struct ntv_queue *q, int indent)
 
 
 void
-ntv_print(ntv *ntv)
+ntv_print(ntv_t *ntv)
 {
   ntv_print0(stdout, &ntv->ntv_children, 0);
 }
@@ -335,13 +422,13 @@ ntv_print(ntv *ntv)
 int
 main(void)
 {
-  ntv *x = ntv_create_map();
+  ntv_t *x = ntv_create_map();
   ntv_set_str(x, "hej", "alpha");
   ntv_set_double(x, "hej", 4.5);
   ntv_set_str(x, "wat", "lol");
 
 
-  ntv *sub = ntv_create_map();
+  ntv_t *sub = ntv_create_map();
   ntv_set_str(sub, "particleStream", "protons");
   ntv_set_double(sub, "effect", 2000000.0);
   ntv_set_ntv(x, "configuration", sub);

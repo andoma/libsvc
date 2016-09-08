@@ -2,9 +2,10 @@
 
 prefix ?= /usr/local
 
+CSTANDARD ?= gnu99
 
 CFLAGS  += -Wall -Werror -Wwrite-strings -Wno-deprecated-declarations 
-CFLAGS  += -Wmissing-prototypes -std=gnu99 -DPROGNAME=\"${PROGNAME}\"
+CFLAGS  += -Wmissing-prototypes -std=${CSTANDARD} -DPROGNAME=\"${PROGNAME}\"
 
 include libsvc/sources.mk
 
