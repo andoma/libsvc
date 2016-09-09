@@ -355,7 +355,7 @@ ntv_copy(const ntv_t *src)
 
 
 static void
-ntv_print0(FILE *fp, struct ntv_queue *q, int indent)
+ntv_print0(FILE *fp, const struct ntv_queue *q, int indent)
 {
   ntv_t *f;
   int i;
@@ -412,7 +412,7 @@ ntv_print0(FILE *fp, struct ntv_queue *q, int indent)
 
 
 void
-ntv_print(ntv_t *ntv)
+ntv_print(const ntv_t *ntv)
 {
   ntv_print0(stdout, &ntv->ntv_children, 0);
 }

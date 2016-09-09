@@ -103,7 +103,7 @@ ntv_t *ntv_create_map(void);
 ntv_t *ntv_create_list(void);
 
 void ntv_release(ntv_t *ntv);
-void ntv_print(ntv_t *ntv);
+void ntv_print(const ntv_t *ntv);
 ntv_t *ntv_copy(const ntv_t *src);
 
 // Get operations on maps
