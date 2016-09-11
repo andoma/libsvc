@@ -23,6 +23,7 @@
 
 #include "libsvc.h"
 #include "tcp.h"
+#include <openssl/rand.h>
 
 #ifdef WITH_MYSQL
 #include "db.h"
@@ -32,10 +33,16 @@
 #include "asyncio.h"
 #endif
 
+#include "misc.h"
 
 void
 libsvc_init(void)
 {
+  uint8_t randomness[32];
+  if(get_random_bytes(randomness, sizeof(randomness)))
+    exit(1);
+  RAND_seed(randomness, sizeof(randomness));
+
 #ifdef WITH_MYSQL
   db_init();
 #endif
