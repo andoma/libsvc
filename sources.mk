@@ -21,6 +21,7 @@ libsvc_SRCS += \
 	sock.c \
 	ntv.c \
 	ntv_json.c \
+	ntv_binary.c \
 
 libsvc_INCS += \
 	libsvc.h \

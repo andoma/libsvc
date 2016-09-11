@@ -32,7 +32,7 @@
 
 #include "ntv.h"
 
-static ntv_t *
+ntv_t *
 ntv_create(ntv_type type)
 {
   ntv_t *n = calloc(1, sizeof(struct ntv));

@@ -99,6 +99,7 @@ typedef struct ntv {
 
 // Misc toplevel functions
 
+ntv_t *ntv_create(ntv_type type);
 ntv_t *ntv_create_map(void);
 ntv_t *ntv_create_list(void);
 
@@ -154,6 +155,9 @@ void ntv_json_serialize(ntv_t *msg, struct htsbuf_queue *hq, int pretty);
 char *ntv_json_serialize_to_str(ntv_t *msg, int pretty);
 
 ntv_t *ntv_json_deserialize(const char *src, char *errbuf, size_t errlen);
+
+void ntv_binary_serialize(const ntv_t *msg, struct htsbuf_queue *hq);
+ntv_t *ntv_binary_deserialize(const void *data, size_t length);
 
 
 #if __STDC_VERSION__ >= 201112L
