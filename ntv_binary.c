@@ -171,7 +171,7 @@ ntv_read_varint(const uint8_t *data, const uint8_t *dataend, uint64_t *vptr)
 
 
 static const uint8_t *
-ntv_read_string(const uint8_t *data, const uint8_t *dataend, char **res)
+ntv_read_length(const uint8_t *data, const uint8_t *dataend, uint64_t *len)
 {
   uint64_t u64;
   data = ntv_read_varint(data, dataend, &u64);
@@ -183,6 +183,17 @@ ntv_read_string(const uint8_t *data, const uint8_t *dataend, char **res)
     return NULL;
 
   if(u64 > dataend - data)
+    return NULL;
+  *len = u64;
+  return data;
+}
+
+static const uint8_t *
+ntv_read_string(const uint8_t *data, const uint8_t *dataend, char **res)
+{
+  uint64_t u64;
+  data = ntv_read_length(data, dataend, &u64);
+  if(data == NULL)
     return NULL;
 
   char *r = *res = malloc(u64 + 1);
@@ -200,15 +211,8 @@ ntv_read_binary(const uint8_t *data, const uint8_t *dataend, void **res,
                 size_t *lenp)
 {
   uint64_t u64;
-  data = ntv_read_varint(data, dataend, &u64);
+  data = ntv_read_length(data, dataend, &u64);
   if(data == NULL)
-    return NULL;
-
-  // Avoid 'insane' string lengths
-  if(u64 > (24 * 1024 * 1024))
-    return NULL;
-
-  if(u64 > dataend - data)
     return NULL;
 
   char *r = *res = malloc(u64);
