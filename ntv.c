@@ -301,7 +301,8 @@ void
 ntv_set_ntv(ntv_t *n, const char *key, ntv_t *sub)
 {
   ntv_field_name_destroy(n, key);
-
+  if(sub == NULL)
+    return;
   free(sub->ntv_name);
   sub->ntv_name = key ? strdup(key) : NULL;
 
