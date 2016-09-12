@@ -23,6 +23,8 @@
 
 #include "libsvc.h"
 #include "tcp.h"
+#include "misc.h"
+
 #include <openssl/rand.h>
 
 #ifdef WITH_MYSQL
@@ -33,7 +35,9 @@
 #include "asyncio.h"
 #endif
 
-#include "misc.h"
+#ifdef WITH_CURL
+#include <curl/curl.h>
+#endif
 
 void
 libsvc_init(void)
@@ -51,7 +55,12 @@ libsvc_init(void)
   asyncio_init();
 #endif
 
-  tcp_init();
+  tcp_init();  // Also does OpenSSL init
+
+#ifdef WITH_CURL
+  curl_global_init(0);
+#endif
+
 #ifdef WITH_TCP_SERVER
   tcp_server_init();
 #endif

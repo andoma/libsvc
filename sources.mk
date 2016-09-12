@@ -44,10 +44,15 @@ libsvc_INCS += \
 	memstream.h \
 	sock.h \
 
+CFLAGS  += $(shell pkg-config --cflags openssl)
+LDFLAGS += $(shell pkg-config --libs openssl)
+
 ##############################################################
 # Curl
 ##############################################################
 ifeq (${WITH_CURL},yes)
+
+CFLAGS  += -DWITH_CURL
 
 ifeq ($(shell uname),Darwin)
 LDFLAGS += -lcurl -lz -liconv
@@ -59,9 +64,11 @@ LDFLAGS += $(shell pkg-config --libs libcurl)
 endif
 
 libsvc_SRCS += urlshorten.c
+libsvc_SRCS += http_client.c
 libsvc_SRCS += curlhelpers.c
 
 libsvc_INCS += urlshorten.h
+libsvc_INCS += http_client.h
 libsvc_INCS += curlhelpers.h
 endif
 

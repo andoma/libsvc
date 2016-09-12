@@ -101,6 +101,8 @@ ntv_destroy(ntv_t *n)
 void
 ntv_release(ntv_t *n)
 {
+  if(n == NULL)
+    return;
   ntv_destroy(n);
 }
 
