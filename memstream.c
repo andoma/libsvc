@@ -55,7 +55,7 @@ buf_write(void *aux, const char *data, int len)
   bufhelper_t *bh = aux;
   int needlen = *bh->outlen + len;
   *bh->out = realloc(*bh->out, needlen);
-  memcpy(*bh->out, data, len);
+  memcpy(*bh->out + *bh->outlen, data, len);
   *bh->outlen = needlen;
   return len;
 }
