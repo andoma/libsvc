@@ -21,6 +21,7 @@
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 
+#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <alloca.h>
@@ -103,10 +104,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
       if(a != NULL && b != NULL) {
         char *r = NULL;
-        asprintf(&r, "%s: %s", a, b);
-        if(r != NULL)
+        if(asprintf(&r, "%s: %s", a, b) != -1) {
           slist = curl_slist_append(slist, r);
-        free(r);
+          free(r);
+        }
       }
       break;
     }
