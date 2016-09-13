@@ -119,3 +119,8 @@ char **strvec_dup(char **s);
 char *lp_get(char **lp);
 
 #define LINEPARSE(out, src) for(char *lp = src, *out; (out = lp_get(&lp)) != NULL; )
+
+#ifndef ARRAYSIZE
+#define ARRAYSIZE(x) (sizeof(x) / sizeof(x[0]))
+#endif
+
