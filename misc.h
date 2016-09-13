@@ -116,6 +116,8 @@ int strvec_len(char **s);
 
 char **strvec_dup(char **s);
 
+void http_deescape(char *s);
+
 char *lp_get(char **lp);
 
 #define LINEPARSE(out, src) for(char *lp = src, *out; (out = lp_get(&lp)) != NULL; )

@@ -827,3 +827,59 @@ prng_init(prng_t *x)
     prng_get(x);
   }
 }
+
+
+/**
+ * De-escape HTTP query args
+ */
+void
+http_deescape(char *s)
+{
+  char v, *d = s;
+
+  while(*s) {
+    if(*s == '+') {
+      *d++ = ' ';
+      s++;
+    } else if(*s == '%') {
+      s++;
+      switch(*s) {
+      case '0' ... '9':
+	v = (*s - '0') << 4;
+	break;
+      case 'a' ... 'f':
+	v = (*s - 'a' + 10) << 4;
+	break;
+      case 'A' ... 'F':
+	v = (*s - 'A' + 10) << 4;
+	break;
+      default:
+	*d = 0;
+	return;
+      }
+      s++;
+      switch(*s) {
+      case '0' ... '9':
+	v |= (*s - '0');
+	break;
+      case 'a' ... 'f':
+	v |= (*s - 'a' + 10);
+	break;
+      case 'A' ... 'F':
+	v |= (*s - 'A' + 10);
+	break;
+      default:
+	*d = 0;
+	return;
+      }
+      s++;
+
+      *d++ = v;
+    } else {
+      *d++ = *s++;
+    }
+  }
+  *d = 0;
+}
+
+
