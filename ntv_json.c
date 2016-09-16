@@ -108,7 +108,7 @@ ntv_json_write(const ntv_t *msg, htsbuf_queue_t *hq, int indent, int pretty)
  *
  */
 void
-ntv_json_serialize(ntv_t *msg, htsbuf_queue_t *hq, int pretty)
+ntv_json_serialize(const ntv_t *msg, htsbuf_queue_t *hq, int pretty)
 {
   ntv_json_write(msg, hq, 0, pretty);
   if(pretty)
@@ -120,7 +120,7 @@ ntv_json_serialize(ntv_t *msg, htsbuf_queue_t *hq, int pretty)
  *
  */
 char *
-ntv_json_serialize_to_str(ntv_t *msg, int pretty)
+ntv_json_serialize_to_str(const ntv_t *msg, int pretty)
 {
   htsbuf_queue_t hq;
   char *str;

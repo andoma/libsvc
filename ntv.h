@@ -151,8 +151,8 @@ void ntv_set_idx_ntv(ntv_t *ntv, int key, struct ntv *sub);
 
 
 struct htsbuf_queue;
-void ntv_json_serialize(ntv_t *msg, struct htsbuf_queue *hq, int pretty);
-char *ntv_json_serialize_to_str(ntv_t *msg, int pretty);
+void ntv_json_serialize(const ntv_t *msg, struct htsbuf_queue *hq, int pretty);
+char *ntv_json_serialize_to_str(const ntv_t *msg, int pretty);
 
 ntv_t *ntv_json_deserialize(const char *src, char *errbuf, size_t errlen);
 
