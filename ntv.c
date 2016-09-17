@@ -122,15 +122,13 @@ ntv_field_name_find(const ntv_t *parent, const char *fieldname)
 }
 
 
-static void
-ntv_field_name_destroy(const ntv_t *parent, const char *fieldname)
+void
+ntv_delete_field(const ntv_t *parent, const char *fieldname)
 {
   ntv_t *f = ntv_field_name_find(parent, fieldname);
   if(f != NULL)
     ntv_destroy(f);
 }
-
-
 
 
 static ntv_t *
@@ -282,7 +280,7 @@ void
 ntv_set_str(ntv_t *ntv, const char *key, const char *value)
 {
   if(value == NULL)
-    ntv_field_name_destroy(ntv, key);
+    ntv_delete_field(ntv, key);
   else
     ntv_field_name_prep(ntv, key, NTV_STRING)->ntv_string = strdup(value);
 }
@@ -302,7 +300,7 @@ ntv_set_strf(ntv_t *m, const char *key, const char *fmt, ...)
 void
 ntv_set_ntv(ntv_t *n, const char *key, ntv_t *sub)
 {
-  ntv_field_name_destroy(n, key);
+  ntv_delete_field(n, key);
   if(sub == NULL)
     return;
   free(sub->ntv_name);
@@ -351,6 +349,69 @@ ntv_copy(const ntv_t *src)
     }
   }
   return dst;
+}
+
+
+int
+ntv_cmp(const ntv_t *src, const ntv_t *dst)
+{
+  const ntv_t *s, *d;
+
+  if(src == NULL && dst == NULL)
+    return 0;
+  if(src == NULL || dst == NULL)
+    return 1;
+
+  if(src->ntv_type != dst->ntv_type)
+    return 1;
+
+  switch(src->ntv_type) {
+  case NTV_NULL:
+    return 0;
+
+  case NTV_BOOLEAN:
+    return src->ntv_boolean != dst->ntv_boolean;
+
+  case NTV_MAP:
+    // Map check should work differently than this
+    // but is enuf for now
+  case NTV_LIST:
+    s = TAILQ_FIRST(&src->ntv_children);
+    d = TAILQ_FIRST(&dst->ntv_children);
+
+    while(!s == !d) {
+      if(s == NULL)
+        return 0;
+
+      if(src->ntv_type == NTV_MAP) {
+        if(!s->ntv_name != !d->ntv_name ||
+           strcmp(s->ntv_name, d->ntv_name))
+          return 1;
+      }
+
+      if(ntv_cmp(s, d))
+        return 1;
+
+      s = TAILQ_NEXT(s, ntv_link);
+      d = TAILQ_NEXT(d, ntv_link);
+    }
+    return 1;
+
+  case NTV_STRING:
+    return strcmp(src->ntv_string, dst->ntv_string);
+
+  case NTV_BINARY:
+    return src->ntv_binsize != dst->ntv_binsize ||
+      memcmp(src->ntv_bin, dst->ntv_bin, src->ntv_binsize);
+
+  case NTV_INT:
+    return src->ntv_s64 != dst->ntv_s64;
+
+  case NTV_DOUBLE:
+    return src->ntv_double != dst->ntv_double;
+  default:
+    return 1;
+  }
 }
 
 
