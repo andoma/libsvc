@@ -111,8 +111,8 @@ typedef struct http_connection {
 
   /* Session management */
 
-  struct htsmsg *hc_session_received;
-  struct htsmsg *hc_session;
+  struct ntv *hc_session_received;
+  struct ntv *hc_session;
 
 } http_connection_t;
 

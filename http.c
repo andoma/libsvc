@@ -47,8 +47,7 @@
 #include "htsmsg_json.h"
 #include "talloc.h"
 #include "filebundle.h"
-#include "htsmsg_binary.h"
-
+#include "ntv.h"
 
 
 typedef struct http_server {
@@ -274,24 +273,25 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
 
   htsbuf_queue_init(&hdrs, 0);
 
-  htsbuf_qprintf(&hdrs, "%s %d %s\r\n", 
+  htsbuf_qprintf(&hdrs, "%s %d %s\r\n",
 		 val2str(hc->hc_version, HTTP_versiontab),
 		 rc, http_rc2str(rc));
 
-  htsbuf_qprintf(&hdrs, "Server: libsvc\r\n");
+  htsbuf_qprintf(&hdrs, "Server: %s\r\n", PROGNAME);
 
-  if(!htsmsg_cmp(hc->hc_session, hc->hc_session_received)) {
+  if(ntv_cmp(hc->hc_session, hc->hc_session_received)) {
     const char *cookie = generate_session_cookie(hc);
     if(cookie != NULL) {
       htsbuf_qprintf(&hdrs,
-                     "Set-Cookie: libsvc.session=%s; Path=/; "
+                     "Set-Cookie: %s.session=%s; Path=/; "
                      "expires=%s; HttpOnly\r\n",
-                     cookie,
+                     PROGNAME, cookie,
                      http_mktime(t, 365 * 86400));
     } else {
       htsbuf_qprintf(&hdrs,
-                     "Set-Cookie: libsvc.session=deleted; Path=/; "
-                     "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly\r\n");
+                     "Set-Cookie: %s.session=deleted; Path=/; "
+                     "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly\r\n",
+                     PROGNAME);
     }
   }
 
@@ -660,9 +660,12 @@ process_request(http_connection_t *hc, const http_server_t *hs)
 
   if((v = http_arg_get(&hc->hc_args, "Cookie")) != NULL) {
     v = mystrdupa(v);
-    char *x = strstr(v, "libsvc.session=");
+    printf("lol=%s\n", PROGNAME".session=");
+    char *x = strstr(v, PROGNAME".session=");
+    printf("x=%s\n", x);
     if(x != NULL) {
-      x += strlen("libsvc.session=");
+      x += strlen(PROGNAME".session=");
+      printf("x=%s\n", x);
       char *e = strchr(x, ';');
       if(e != NULL)
         *e = 0;
@@ -671,9 +674,9 @@ process_request(http_connection_t *hc, const http_server_t *hs)
   }
 
   if(hc->hc_session_received == NULL)
-    hc->hc_session_received = htsmsg_create_map();
+    hc->hc_session_received = ntv_create_map();
 
-  hc->hc_session = htsmsg_copy(hc->hc_session_received);
+  hc->hc_session = ntv_copy(hc->hc_session_received);
 
   switch(hc->hc_version) {
   case RTSP_VERSION_1_0:
@@ -927,12 +930,12 @@ http_serve_requests(http_connection_t *hc, const http_server_t *hs)
     }
 
     if(hc->hc_session_received != NULL) {
-      htsmsg_destroy(hc->hc_session_received);
+      ntv_release(hc->hc_session_received);
       hc->hc_session_received = NULL;
     }
 
     if(hc->hc_session != NULL) {
-      htsmsg_destroy(hc->hc_session);
+      ntv_release(hc->hc_session);
       hc->hc_session = NULL;
     }
 
@@ -986,10 +989,10 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
     htsmsg_destroy(hc.hc_post_message);
 
   if(hc.hc_session_received != NULL)
-    htsmsg_destroy(hc.hc_session_received);
+    ntv_release(hc.hc_session_received);
 
   if(hc.hc_session != NULL)
-    htsmsg_destroy(hc.hc_session);
+    ntv_release(hc.hc_session);
 
   http_arg_flush(&hc.hc_args);
   http_arg_flush(&hc.hc_req_args);
@@ -1112,8 +1115,6 @@ http_server_init_session_cookie(const char *password, uint8_t generation)
 static char *
 generate_session_cookie(http_connection_t *hc)
 {
-  void *data;
-  size_t len;
   EVP_CIPHER_CTX *ctx;
 
   char cookie[4000];
@@ -1126,19 +1127,21 @@ generate_session_cookie(http_connection_t *hc)
   if(get_random_bytes(cookiebin, COOKIE_NONCE_LEN))
     return NULL;
 
-  if(htsmsg_binary_serialize(hc->hc_session, &data, &len, 2500)) {
+  struct htsbuf_queue binary;
+  htsbuf_queue_init(&binary, 0);
+  ntv_binary_serialize(hc->hc_session, &binary);
+
+  if(binary.hq_size > 2500) {
     trace(LOG_ALERT, "Max cookie length exceeded");
+    htsbuf_queue_flush(&binary);
     return NULL;
   }
 
-  /* htsmsg_binary_serialize() puts four byte of length in front of
-     the message (will be skipped further down). Anyway, we don't
-     include that so make sure message at least contains something */
-
-  if(len <= 5) {
-    free(data);
-    return NULL;
-  }
+  uint8_t *plaintext = alloca(binary.hq_size + 2);
+  int plaintextsize = binary.hq_size + 2;
+  plaintext[0] = 0xa0;
+  plaintext[1] = cookie_generation;
+  htsbuf_read(&binary, plaintext + 2, binary.hq_size);
 
   ctx = EVP_CIPHER_CTX_new();
 
@@ -1150,12 +1153,9 @@ generate_session_cookie(http_connection_t *hc)
 
   EVP_EncryptInit_ex(ctx, NULL, NULL, ccm_key, cookiebin);
 
-  uint8_t *datau8 = data;
-  datau8[3] = cookie_generation;
   /* Encrypt plaintext: can only be called once */
   EVP_EncryptUpdate(ctx, cookiebin + COOKIE_NONCE_LEN + COOKIE_TAG_LEN,
-                    &outlen, data + 3, len - 3);
-  free(data);
+                    &outlen, plaintext, plaintextsize);
 
   EVP_EncryptFinal_ex(ctx, cookiebin + COOKIE_NONCE_LEN + COOKIE_TAG_LEN,
                       &tmplen);
@@ -1166,8 +1166,6 @@ generate_session_cookie(http_connection_t *hc)
   outlen += COOKIE_NONCE_LEN + COOKIE_TAG_LEN;
 
   EVP_CIPHER_CTX_free(ctx);
-
-  hexdump("COOKIEBIN", cookiebin, outlen);
 
   if(base64_encode(cookie, sizeof(cookie), cookiebin, outlen)) {
     trace(LOG_ALERT, "Max cookie length exceeded (base64 encoded)");
@@ -1190,11 +1188,12 @@ get_session_cookie(http_connection_t *hc, const char *str)
   if(!ccm_key_valid)
     return;
 
-  int l = strlen(str);
+  int len = strlen(str);
+  if(len > 4000)
+    return;
 
-  uint8_t *bin = talloc_malloc(l);
-
-  int binlen = base64_decode(bin, str, l);
+  uint8_t *bin = alloca(len);
+  int binlen = base64_decode(bin, str, len);
   if(binlen == -1)
     return;
 
@@ -1209,24 +1208,21 @@ get_session_cookie(http_connection_t *hc, const char *str)
 
   EVP_DecryptInit_ex(ctx, NULL, NULL, ccm_key, bin);
 
-  uint8_t *plaintext = malloc(l);
+  uint8_t *plaintext = alloca(len);
 
   rv = EVP_DecryptUpdate(ctx, plaintext, &outlen,
                          bin + COOKIE_NONCE_LEN + COOKIE_TAG_LEN,
                          binlen - COOKIE_NONCE_LEN - COOKIE_TAG_LEN);
 
   EVP_CIPHER_CTX_free(ctx);
-  if(rv <= 0) {
-    free(plaintext);
+  if(rv <= 0)
     return;
-  }
 
-  if(plaintext[0] != cookie_generation) {
-    free(plaintext);
+  if(outlen < 2)
     return;
-  }
 
-  // plaintext ownership is transfered to htsmsg
-  hc->hc_session_received =
-    htsmsg_binary_deserialize(plaintext + 1, outlen - 1, plaintext);
+  if(plaintext[0] != 0xa0 || plaintext[1] != cookie_generation)
+    return;
+
+  hc->hc_session_received = ntv_binary_deserialize(plaintext + 2, outlen - 2);
 }

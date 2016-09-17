@@ -63,6 +63,6 @@ void websocket_send_json_ntv(ws_server_connection_t *wss, struct ntv *msg);
 void websocket_send_close(ws_server_connection_t *wss, int code,
                           const char *reason);
 
-htsmsg_t *websocket_http_session(ws_server_connection_t *wsc);
+const struct ntv *websocket_http_session(ws_server_connection_t *wsc);
 
 const char *websocket_get_peeraddr(ws_server_connection_t *wsc);

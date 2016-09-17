@@ -79,7 +79,7 @@ struct ws_server_connection {
 
   asyncio_timer_t wsc_timer;
 
-  struct htsmsg *wsc_session;
+  struct ntv *wsc_session;
   char *wsc_peeraddr;
   int wsc_ping_wait;
 
@@ -90,7 +90,7 @@ struct ws_server_connection {
 /**
  *
  */
-htsmsg_t *
+const struct ntv *
 websocket_http_session(ws_server_connection_t *wsc)
 {
   return wsc->wsc_session;
@@ -104,8 +104,7 @@ wsc_destroy(ws_server_connection_t *wsc)
 {
   asyncio_close(wsc->wsc_af);
   free(wsc->wsc_peeraddr);
-  if(wsc->wsc_session != NULL)
-    htsmsg_destroy(wsc->wsc_session);
+  ntv_release(wsc->wsc_session);
   websocket_free(&wsc->wsc_state);
   task_group_destroy(wsc->wsc_task_group);
   free(wsc);
