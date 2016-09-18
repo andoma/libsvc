@@ -660,12 +660,9 @@ process_request(http_connection_t *hc, const http_server_t *hs)
 
   if((v = http_arg_get(&hc->hc_args, "Cookie")) != NULL) {
     v = mystrdupa(v);
-    printf("lol=%s\n", PROGNAME".session=");
     char *x = strstr(v, PROGNAME".session=");
-    printf("x=%s\n", x);
     if(x != NULL) {
       x += strlen(PROGNAME".session=");
-      printf("x=%s\n", x);
       char *e = strchr(x, ';');
       if(e != NULL)
         *e = 0;
