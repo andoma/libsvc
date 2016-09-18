@@ -549,7 +549,8 @@ http_cmd_post(http_connection_t *hc)
     http_parse_query_args(hc, hc->hc_post_data);
 
   assert(hc->hc_post_message == NULL);
-  if(!strcmp(argv[0], "application/json")) {
+  if(!strcmp(argv[0], "application/json") &&
+     http_arg_get(&hc->hc_args, "content-encoding") == NULL) {
     char errbuf[256];
     hc->hc_post_message = htsmsg_json_deserialize(hc->hc_post_data,
                                                   errbuf, sizeof(errbuf));
