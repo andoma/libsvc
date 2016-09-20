@@ -30,6 +30,7 @@
 #include <stdarg.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include <curl/curl.h>
 
@@ -39,6 +40,8 @@
 #include "http_client.h"
 #include "ntv.h"
 #include "curlhelpers.h"
+
+
 
 /**
  *
@@ -65,7 +68,7 @@ hdrfunc(void *ptr, size_t size, size_t nmemb, void *userdata)
   return len;
 }
 
-
+static __thread CURL *thread_persistent_session;
 
 int
 http_client_request(http_client_response_t *hcr, const char *url, ...)
@@ -119,7 +122,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   FILE *f = open_buffer(&hcr->hcr_body, &hcr->hcr_bodysize);
 
-  CURL *curl = curl_easy_init();
+  CURL *curl = thread_persistent_session;
+  if(curl == NULL)
+    curl = curl_easy_init();
+
   curl_easy_setopt(curl, CURLOPT_URL, url);
 
   if(!(flags & HCR_NO_FOLLOW_REDIRECT))
@@ -135,6 +141,9 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   if(flags & HCR_VERBOSE)
     curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+
+  if(flags & HCR_ACCEPT_GZIP)
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip");
 
   curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, &libsvc_curl_sock_fn);
   curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, NULL);
@@ -159,7 +168,11 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   int rval = 0;
   if(result) {
-    snprintf(errbuf, errsize, "%s", curl_easy_strerror(result));
+    if(result == CURLE_HTTP_RETURNED_ERROR) {
+      snprintf(errbuf, errsize, "HTTP Error %lu", long_http_code);
+    } else {
+      snprintf(errbuf, errsize, "%s", curl_easy_strerror(result));
+    }
     rval = 1;
   } else {
     rval = 0;
@@ -171,7 +184,11 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     }
   }
 
-  curl_easy_cleanup(curl);
+  if(thread_persistent_session) {
+    curl_easy_reset(curl);
+  } else {
+    curl_easy_cleanup(curl);
+  }
   return rval;
 }
 
@@ -182,5 +199,23 @@ http_client_response_free(http_client_response_t *hcr)
   ntv_release(hcr->hcr_headers);
   ntv_release(hcr->hcr_headers_listified);
   free(hcr->hcr_body);
+  memset(hcr, 0, sizeof(http_client_response_t));
+}
+
+
+void
+http_client_init_thread_session(void)
+{
+  assert(thread_persistent_session == NULL);
+  thread_persistent_session = curl_easy_init();
+}
+
+
+void
+http_client_stop_thread_session(void)
+{
+  assert(thread_persistent_session != NULL);
+  curl_easy_cleanup(thread_persistent_session);
+  thread_persistent_session = NULL;
 }
 
