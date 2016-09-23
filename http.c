@@ -1026,29 +1026,32 @@ http_server_init(const char *config_prefix)
   return 0;
 }
 
+struct bundleserve {
+  const char *filepath;
+  int send_index_html_on_404;
+};
+
+
+
 /**
  *
  */
 static int
 serve_file(http_connection_t *hc, const char *remain, void *opaque)
 {
+  const struct bundleserve *bs = opaque;
   char path[1024];
 
   if(remain == NULL)
     remain = "index.html";
 
   if(strstr(remain, ".."))
-    return 404;
+    return 400;
 
-  snprintf(path, sizeof(path), "%s/%s", (const char *)opaque, remain);
+  snprintf(path, sizeof(path), "%s/%s", bs->filepath, remain);
 
   void *data;
   int size;
-
-  if(filebundle_load(path, &data, &size))
-    return 404;
-
-  htsbuf_append(&hc->hc_reply, data, size);
 
   const char *ct = NULL;
   const char *postfix = strrchr(remain, '.');
@@ -1067,6 +1070,19 @@ serve_file(http_connection_t *hc, const char *remain, void *opaque)
     }
   }
 
+  if(filebundle_load(path, &data, &size)) {
+    if(!bs->send_index_html_on_404 || ct != NULL)
+      return 404;
+
+    remain = "index.html";
+    snprintf(path, sizeof(path), "%s/%s", bs->filepath, remain);
+    if(filebundle_load(path, &data, &size)) {
+      return 404;
+    }
+  }
+
+  htsbuf_append(&hc->hc_reply, data, size);
+
   http_output_content(hc, ct);
   filebundle_free(data);
   return 200;
@@ -1077,9 +1093,13 @@ serve_file(http_connection_t *hc, const char *remain, void *opaque)
  *
  */
 void
-http_serve_static(const char *path, const char *filebundle)
+http_serve_static(const char *path, const char *filebundle,
+                  int send_index_html_on_404)
 {
-  http_path_add(path, (void *)filebundle, serve_file);
+  struct bundleserve *bs = calloc(1, sizeof(struct bundleserve));
+  bs->filepath = strdup(filebundle);
+  bs->send_index_html_on_404 = send_index_html_on_404;
+  http_path_add(path, bs, serve_file);
 }
 
 
