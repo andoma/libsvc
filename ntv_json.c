@@ -46,7 +46,7 @@ ntv_json_write(const ntv_t *msg, htsbuf_queue_t *hq, int indent, int pretty)
   TAILQ_FOREACH(f, &msg->ntv_children, ntv_link) {
 
     if(pretty)
-      htsbuf_qprintf(hq, "%*.s", indent, "");
+      htsbuf_qprintf(hq, "\n%*.s", indent, "");
 
     if(!isarray) {
       htsbuf_append_and_escape_jsonstr(hq, f->ntv_name ?: "noname");
@@ -100,7 +100,7 @@ ntv_json_write(const ntv_t *msg, htsbuf_queue_t *hq, int indent, int pretty)
   }
 
   if(pretty)
-      htsbuf_qprintf(hq, "%*.s", indent-1, "");
+      htsbuf_qprintf(hq, "\n%*.s", indent-1, "");
   htsbuf_append(hq, isarray ? "]" : "}", 1);
 }
 
