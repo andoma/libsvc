@@ -34,7 +34,14 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#ifdef __linux__
 #include <sys/epoll.h>
+#elif defined(__APPLE__)
+#include <sys/event.h>
+#else
+#error Need poll mechanism
+#endif
+
 
 #include "queue.h"
 #include "asyncio.h"
@@ -206,7 +213,7 @@ asyncio_timer_disarm(asyncio_timer_t *at)
   }
 }
 
-
+#ifdef __linux__
 /**
  *
  */
@@ -243,7 +250,51 @@ mod_poll_flags(async_fd_t *af, int set, int clr)
 
   af->af_epoll_flags = f;
 }
+#endif
 
+#ifdef __APPLE__
+
+#define EPOLLIN  0x1
+#define EPOLLOUT 0x2
+#define MSG_NOSIGNAL 0
+/**
+ *
+ */
+static void
+mod_poll_flags(async_fd_t *af, int set, int clr)
+{
+  set &= ~af->af_epoll_flags;
+  clr &=  af->af_epoll_flags;
+
+  assert(af->af_fd != -1);
+
+  struct kevent changes[2];
+  int num_changes = 0;
+
+  if(set & EPOLLIN) {
+    EV_SET(&changes[0], af->af_fd, EVFILT_READ, EV_ADD, 0, 0, af);
+    num_changes++;
+  } else if(clr & EPOLLIN) {
+    EV_SET(&changes[0], af->af_fd, EVFILT_READ, EV_DELETE, 0, 0, af);
+    num_changes++;
+  }
+
+  if(set & EPOLLOUT) {
+    EV_SET(&changes[num_changes], af->af_fd, EVFILT_WRITE, EV_ADD, 0, 0, af);
+    num_changes++;
+  } else if(clr & EPOLLOUT) {
+    EV_SET(&changes[num_changes], af->af_fd, EVFILT_WRITE, EV_DELETE, 0, 0, af);
+    num_changes++;
+  }
+
+  struct timespec instant = {};
+  int r = kevent(epfd, changes, num_changes, NULL, 0, &instant);
+  if(r == -1)
+    perror("kevent() modify");
+
+  af->af_epoll_flags = (af->af_epoll_flags | set) & ~clr;
+}
+#endif
 
 
 /**
@@ -403,7 +454,6 @@ do_accept(async_fd_t *af)
 static void *
 asyncio_loop(void *aux)
 {
-  struct epoll_event ev[32];
   int r, i;
 
   while(1) {
@@ -419,12 +469,16 @@ asyncio_loop(void *aux)
     }
 
     int timeout = INT32_MAX;
-  
+
     if((at = LIST_FIRST(&asyncio_timers)) != NULL)
       timeout = MIN(timeout, (at->at_expire - now + 999) / 1000);
 
     if(timeout == INT32_MAX)
       timeout = -1;
+
+#ifdef __linux__
+
+    struct epoll_event ev[256];
 
     r = epoll_wait(epfd, ev, sizeof(ev) / sizeof(ev[0]), timeout);
     if(r == -1) {
@@ -469,12 +523,66 @@ asyncio_loop(void *aux)
 	af->af_pollin(af);
       }
     }
-
-
     for(i = 0; i < r; i++) {
       async_fd_t *af = ev[i].data.ptr;
       async_fd_release(af);
     }
+#endif
+
+
+#ifdef __APPLE__
+    struct kevent events[256];
+
+    struct timespec ts0, *ts = NULL;
+    if(timeout != -1) {
+      ts0.tv_sec = timeout / 1000;
+      ts0.tv_nsec = (timeout % 1000) * 1000000LL;
+      ts = &ts0;
+    }
+
+    r = kevent(epfd, NULL, 0, events, sizeof(events) / sizeof(events[0]), ts);
+    if(r == -1) {
+      if(errno == EINTR)
+        continue;
+      perror("kevent() poll");
+      usleep(100000);
+      continue;
+    }
+
+    for(i = 0; i < r; i++) {
+      async_fd_t *af = events[i].udata;
+      atomic_inc(&af->af_refcount);
+    }
+
+    for(i = 0; i < r; i++) {
+      async_fd_t *af = events[i].udata;
+      if(events[i].filter == EVFILT_READ) {
+        if(events[i].flags & EV_EOF) {
+          if(af->af_error != NULL) {
+            af->af_error(af->af_opaque, ECONNRESET);
+          }
+        } else {
+          af->af_pollin(af);
+        }
+      }
+
+      if(events[i].filter == EVFILT_WRITE) {
+        if(events[i].flags & EV_EOF) {
+          if(af->af_error != NULL) {
+            af->af_error(af->af_opaque, ECONNRESET);
+          }
+        } else {
+          af->af_pollout(af);
+        }
+      }
+    }
+
+    for(i = 0; i < r; i++) {
+      async_fd_t *af = events[i].udata;
+      async_fd_release(af);
+    }
+
+#endif
   }
   return NULL;
 }
@@ -1145,7 +1253,13 @@ asyncio_init(void)
   TAILQ_INIT(&asyncio_dns_completed);
   TAILQ_INIT(&asyncio_tasks);
 
+#ifdef __linux__
   epfd = epoll_create1(EPOLL_CLOEXEC);
+#endif
+
+#ifdef __APPLE__
+  epfd = kqueue();
+#endif
 
   pthread_mutex_init(&asyncio_worker_mutex, NULL);
   pthread_mutex_init(&asyncio_task_mutex, NULL);
