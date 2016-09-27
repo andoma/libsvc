@@ -22,6 +22,8 @@ libsvc_SRCS += \
 	ntv.c \
 	ntv_json.c \
 	ntv_binary.c \
+	intvec.c \
+	strvec.c \
 
 libsvc_INCS += \
 	libsvc.h \
@@ -43,6 +45,8 @@ libsvc_INCS += \
 	talloc.h \
 	memstream.h \
 	sock.h \
+	intvec.h \
+	strvec.h \
 
 CFLAGS  += $(shell pkg-config --cflags openssl)
 LDFLAGS += $(shell pkg-config --libs openssl)

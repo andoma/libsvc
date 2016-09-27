@@ -42,6 +42,15 @@ typedef struct cmd_node {
 static cmd_node_t cmd_root;
 
 
+static void
+freeoptions(char **options)
+{
+  for(int k = 0; options[k] != NULL; k++)
+    free(options[k]);
+  free(options);
+}
+
+
 /**
  *
  */
@@ -231,11 +240,11 @@ cmd_complete2(const char *line, const char *user,
         if(options != NULL) {
           for(int j = 0; options[j] != NULL; j++) {
             if(!strcmp(options[j], input[i])) {
-              strvec_free(options);
+              freeoptions(options);
               goto found;
             }
           }
-          strvec_free(options);
+          freeoptions(options);
         }
         break;
       }
@@ -263,7 +272,7 @@ cmd_complete2(const char *line, const char *user,
               msg(opaque, "1 %d %s", input[i] - str, options[j] + l);
             }
           }
-          strvec_free(options);
+          freeoptions(options);
         }
         break;
       }
@@ -296,7 +305,7 @@ cmd_complete2(const char *line, const char *user,
       if(options != NULL) {
         for(int j = 0; options[j] != NULL; j++)
           msg(opaque, "1 %d %s", slen, options[j]);
-        strvec_free(options);
+        freeoptions(options);
       }
       break;
     }

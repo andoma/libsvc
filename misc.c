@@ -663,7 +663,7 @@ url_escape_tmp(const char *src, int how)
   return r;
 }
 
-
+#if 0
 /**
  *
  */
@@ -772,7 +772,7 @@ strvec_dup(char **s)
   ret[i] = NULL;
   return ret;
 }
-
+#endif
 
 
 /**
