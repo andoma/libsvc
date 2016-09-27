@@ -42,6 +42,11 @@
 #include "threading.h"
 #include "talloc.h"
 
+#ifdef __linux__
+#include <sys/syscall.h>
+#include <linux/random.h>
+#endif
+
 static const char hexchars[16] = "0123456789ABCDEF";
 
 static const char url_escape_param[256] = {
@@ -355,19 +360,52 @@ readfile(const char *path, int *errptr, time_t *tsp)
 /**
  *
  */
-int
+void
 get_random_bytes(void *out, size_t len)
 {
   static int fd = -1;
+
+  int r;
+#ifdef __linux__
+  while(len > 0) {
+    r = syscall(SYS_getrandom, out, len, 0);
+    if(r == -1) {
+      if(errno == ENOSYS)
+        goto fallback;
+      if(errno == EINTR)
+        continue;
+      abort();
+    }
+    if(r == 0)
+      abort();
+
+    out += r;
+    len -= r;
+  }
+  return;
+ fallback:
+#endif
+
   if(fd == -1) {
     fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
     if(fd == -1)
-      return -1;
+      abort();
   }
 
-  if(read(fd, out, len) != len)
-    return -1;
-  return 0;
+  while(len > 0) {
+    r = read(fd, out, len);
+    if(r == -1) {
+      if(errno == EINTR || errno == EAGAIN)
+        continue;
+      abort();
+    }
+
+    if(r == 0)
+      abort();
+
+    out += r;
+    len -= r;
+  }
 }
 
 

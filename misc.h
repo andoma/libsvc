@@ -60,7 +60,7 @@ int makedirs(const char *path);
 
 int rm_rf(const char *path);
 
-int get_random_bytes(void *out, size_t len);
+void get_random_bytes(void *out, size_t len);
 
 typedef struct { uint32_t a; uint32_t b; uint32_t c; uint32_t d; } prng_t;
 

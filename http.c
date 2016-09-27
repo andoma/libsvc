@@ -1142,8 +1142,7 @@ generate_session_cookie(http_connection_t *hc)
   if(!ccm_key_valid)
     return NULL;
 
-  if(get_random_bytes(cookiebin, COOKIE_NONCE_LEN))
-    return NULL;
+  get_random_bytes(cookiebin, COOKIE_NONCE_LEN);
 
   struct htsbuf_queue binary;
   htsbuf_queue_init(&binary, 0);

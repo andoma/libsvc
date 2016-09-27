@@ -43,8 +43,7 @@ void
 libsvc_init(void)
 {
   uint8_t randomness[32];
-  if(get_random_bytes(randomness, sizeof(randomness)))
-    exit(1);
+  get_random_bytes(randomness, sizeof(randomness));
   RAND_seed(randomness, sizeof(randomness));
 
 #ifdef WITH_MYSQL
