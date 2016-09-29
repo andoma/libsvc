@@ -44,7 +44,6 @@
 #include "tcp.h"
 #include "http.h"
 #include "cfg.h"
-#include "htsmsg_json.h"
 #include "talloc.h"
 #include "filebundle.h"
 #include "ntv.h"
@@ -552,8 +551,8 @@ http_cmd_post(http_connection_t *hc)
   if(!strcmp(argv[0], "application/json") &&
      http_arg_get(&hc->hc_args, "content-encoding") == NULL) {
     char errbuf[256];
-    hc->hc_post_message = htsmsg_json_deserialize(hc->hc_post_data,
-                                                  errbuf, sizeof(errbuf));
+    hc->hc_post_message = ntv_json_deserialize(hc->hc_post_data,
+                                               errbuf, sizeof(errbuf));
 
     if(hc->hc_post_message == NULL)
       return 400;
@@ -923,7 +922,7 @@ http_serve_requests(http_connection_t *hc, const http_server_t *hs)
 
 
     if(hc->hc_post_message != NULL) {
-      htsmsg_destroy(hc->hc_post_message);
+      ntv_release(hc->hc_post_message);
       hc->hc_post_message = NULL;
     }
 
@@ -984,7 +983,7 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
   free(hc.hc_password);
 
   if(hc.hc_post_message != NULL)
-    htsmsg_destroy(hc.hc_post_message);
+    ntv_release(hc.hc_post_message);
 
   if(hc.hc_session_received != NULL)
     ntv_release(hc.hc_session_received);

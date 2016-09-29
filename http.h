@@ -107,7 +107,7 @@ typedef struct http_connection {
   char *hc_post_data;
   unsigned int hc_post_len;
 
-  struct htsmsg *hc_post_message; // For application/json
+  struct ntv *hc_post_message; // For application/json
 
   /* Session management */
 
