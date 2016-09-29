@@ -135,6 +135,9 @@ static ntv_t *
 ntv_field_nametype_find(const ntv_t *parent, const char *fieldname,
                         ntv_type type)
 {
+  if(parent == NULL || fieldname == NULL)
+    return NULL;
+
   ntv_t *sub;
   TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
     if(sub->ntv_type == type && !strcmp(sub->ntv_name, fieldname))
