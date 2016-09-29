@@ -73,7 +73,7 @@ strvec_find(const strvec_t *vec, const char *value)
   if(vec->count == 0)
     return -1;
   const int pos = strvec_search(vec, value);
-  return !strcmp(vec->v[pos], value) ? pos : -1;
+  return pos < vec->count && !strcmp(vec->v[pos], value) ? pos : -1;
 }
 
 void

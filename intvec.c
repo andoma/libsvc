@@ -73,7 +73,7 @@ intvec_find(const intvec_t *vec, int value)
   if(vec->count == 0)
     return -1;
   const int pos = intvec_search(vec, value);
-  return vec->v[pos] == value ? pos : -1;
+  return pos < vec->count && vec->v[pos] == value ? pos : -1;
 }
 
 void

@@ -19,3 +19,7 @@ int intvec_find(const intvec_t *vec, int value);
 
 void intvec_copy(intvec_t *dst, const intvec_t *src);
 
+#define intvec_get(x, i) (x)->v[i]
+
+#define scoped_intvec(x) intvec_t x __attribute__((cleanup(intvec_reset))) = {}
+

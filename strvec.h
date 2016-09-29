@@ -19,3 +19,7 @@ int strvec_find(const strvec_t *vec, const char *value);
 
 void strvec_copy(strvec_t *dst, const strvec_t *src);
 
+#define strvec_get(x, i) (x)->v[i]
+
+#define scoped_strvec(x) strvec_t x __attribute__((cleanup(strvec_reset))) = {}
+
