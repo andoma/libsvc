@@ -47,6 +47,7 @@ libsvc_INCS += \
 	sock.h \
 	intvec.h \
 	strvec.h \
+	init.h \
 
 CFLAGS  += $(shell pkg-config --cflags openssl)
 LDFLAGS += $(shell pkg-config --libs openssl)

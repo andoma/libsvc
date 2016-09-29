@@ -24,6 +24,8 @@
 #include "libsvc.h"
 #include "tcp.h"
 #include "misc.h"
+#include "init.h"
+#include "queue.h"
 
 #include <openssl/rand.h>
 
@@ -38,6 +40,38 @@
 #ifdef WITH_CURL
 #include <curl/curl.h>
 #endif
+
+
+static LIST_HEAD(, inithelper) inithelpers;
+
+typedef struct inithelper {
+  void (*init)(void);
+  void (*fini)(void);
+  int prio;
+  LIST_ENTRY(inithelper) link;
+} inithelper_t;
+
+/**
+ *
+ */
+static int
+ihcmp(const inithelper_t *a, const inithelper_t *b)
+{
+  return a->prio - b->prio;
+}
+
+
+void
+inithelper_register(void (*init)(void), void (*fini)(void), int prio)
+{
+  inithelper_t *ih = malloc(sizeof(inithelper_t));
+  ih->init = init;
+  ih->fini = fini;
+  ih->prio = prio;
+  LIST_INSERT_SORTED(&inithelpers, ih, link, ihcmp);
+}
+
+
 
 void
 libsvc_init(void)
@@ -63,4 +97,8 @@ libsvc_init(void)
 #ifdef WITH_TCP_SERVER
   tcp_server_init();
 #endif
+
+  const inithelper_t *ih;
+  LIST_FOREACH(ih, &inithelpers, link)
+    ih->init();
 }
