@@ -70,21 +70,42 @@ hdrfunc(void *ptr, size_t size, size_t nmemb, void *userdata)
 
 static __thread CURL *thread_persistent_session;
 
+
+static struct curl_slist *
+append_header(struct curl_slist *slist, const char *a, const char *b)
+{
+  if(a != NULL && b != NULL) {
+    char *r = NULL;
+    if(asprintf(&r, "%s: %s", a, b) != -1) {
+      slist = curl_slist_append(slist, r);
+      free(r);
+    }
+  }
+  return slist;
+}
+
+
 int
 http_client_request(http_client_response_t *hcr, const char *url, ...)
 {
   char *errbuf = NULL;
   size_t errsize = 0;
-  long timeout = 0;
   int flags = 0;
   int tag;
   struct curl_slist *slist = NULL;
 
+  FILE *sendf = NULL;
+
   va_list ap;
   va_start(ap, url);
 
+  CURL *curl = thread_persistent_session;
+  if(curl == NULL)
+    curl = curl_easy_init();
+
   memset(hcr, 0, sizeof(http_client_response_t));
   hcr->hcr_headers = ntv_create_map();
+
 
   while((tag = va_arg(ap, int)) != 0) {
     switch(tag) {
@@ -98,20 +119,58 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       break;
 
     case HCR_TAG_TIMEOUT:
-      timeout = va_arg(ap, int);
+      curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)va_arg(ap, int));
       break;
 
     case HCR_TAG_HEADER: {
       const char *a = va_arg(ap, const char *);
       const char *b = va_arg(ap, const char *);
+      slist = append_header(slist, a, b);
+      break;
+    }
 
-      if(a != NULL && b != NULL) {
-        char *r = NULL;
-        if(asprintf(&r, "%s: %s", a, b) != -1) {
-          slist = curl_slist_append(slist, r);
-          free(r);
-        }
-      }
+    case HCR_TAG_PUTDATA: {
+      void *data = va_arg(ap, void *);
+      curl_off_t putdatasize = va_arg(ap, size_t);
+      sendf = open_buffer_read(data, putdatasize);
+      slist = append_header(slist, "Content-Type", va_arg(ap, const char *));
+
+      curl_easy_setopt(curl, CURLOPT_READDATA, sendf);
+      curl_easy_setopt(curl, CURLOPT_SEEKDATA, sendf);
+      curl_easy_setopt(curl, CURLOPT_PUT, 1L);
+      curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+      curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, putdatasize);
+      break;
+    }
+
+    case HCR_TAG_POSTDATA: {
+      void *data = va_arg(ap, void *);
+      curl_off_t putdatasize = va_arg(ap, size_t);
+      sendf = open_buffer_read(data, putdatasize);
+      slist = append_header(slist, "Content-Type", va_arg(ap, const char *));
+
+      curl_easy_setopt(curl, CURLOPT_READDATA, sendf);
+      curl_easy_setopt(curl, CURLOPT_SEEKDATA, sendf);
+      curl_easy_setopt(curl, CURLOPT_POST, 1L);
+      break;
+    }
+
+    case HCR_TAG_POSTFIELDS: {
+      void *data = va_arg(ap, void *);
+      long datalen = va_arg(ap, size_t);
+
+      curl_easy_setopt(curl, CURLOPT_POST, 1L);
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, datalen);
+      break;
+    }
+
+    case HCR_TAG_POSTNTV: {
+      char *json = ntv_json_serialize_to_str(va_arg(ap, const ntv_t *), 0);
+      curl_easy_setopt(curl, CURLOPT_POST, 1L);
+      curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, json);
+      free(json);
+      slist = append_header(slist, "Content-Type", "application/json");
       break;
     }
 
@@ -122,9 +181,6 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   FILE *f = open_buffer(&hcr->hcr_body, &hcr->hcr_bodysize);
 
-  CURL *curl = thread_persistent_session;
-  if(curl == NULL)
-    curl = curl_easy_init();
 
   curl_easy_setopt(curl, CURLOPT_URL, url);
 
@@ -147,13 +203,14 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, &libsvc_curl_sock_fn);
   curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, NULL);
-  if(timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
 
   if(slist != NULL)
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
 
   CURLcode result = curl_easy_perform(curl);
+
+  if(sendf != NULL)
+    fclose(sendf);
 
   if(slist != NULL)
     curl_slist_free_all(slist);

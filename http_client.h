@@ -23,6 +23,10 @@ enum {
   HCR_TAG_FLAGS,
   HCR_TAG_HEADER,
   HCR_TAG_TIMEOUT,
+  HCR_TAG_PUTDATA,
+  HCR_TAG_POSTDATA,
+  HCR_TAG_POSTFIELDS,
+  HCR_TAG_POSTNTV,
 };
 
 
@@ -32,10 +36,15 @@ enum {
 #define HCR_VERBOSE                     0x8
 #define HCR_ACCEPT_GZIP                 0x10
 
-#define HCR_ERRBUF(a, b)    HCR_TAG_ERRBUF, a, b
-#define HCR_FLAGS(a)        HCR_TAG_FLAGS, a
-#define HCR_HEADER(a, b)    HCR_TAG_HEADER, a, b
-#define HCR_TIMEOUT(a)      HCR_TAG_TIMEOUT, a
+#define HCR_ERRBUF(a, b)      HCR_TAG_ERRBUF, a, (size_t)(b)
+#define HCR_FLAGS(a)          HCR_TAG_FLAGS, a
+#define HCR_HEADER(a, b)      HCR_TAG_HEADER, a, b
+#define HCR_TIMEOUT(a)        HCR_TAG_TIMEOUT, a
+#define HCR_PUTDATA(data, len, ct)  HCR_TAG_PUTDATA, data, (size_t)(len), ct
+#define HCR_POSTDATA(data, len, ct)  HCR_TAG_POSTDATA, data, (size_t)(len), ct
+#define HCR_POSTFIELDS(data, len) HCR_TAG_POSTFIELDS, data, (size_t)(len)
+#define HCR_POSTJSON(ntv) HCR_TAG_POSTNTV, ntv
+
 
 int http_client_request(http_client_response_t *hcr, const char *url, ...)
   __attribute__((__sentinel__(0)));
