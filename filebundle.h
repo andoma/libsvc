@@ -34,6 +34,6 @@ struct filebundle {
   const char *prefix;
 };
 
-int filebundle_load(const char *p, void **ptr, int *len);
+int filebundle_load(const char *p, void **ptr, int *len, int *osize);
 
 void filebundle_free(void *ptr);

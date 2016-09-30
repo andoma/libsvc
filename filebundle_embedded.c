@@ -33,7 +33,7 @@ struct filebundle *filebundles;
 
 
 int
-filebundle_load(const char *p, void **ptr, int *len)
+filebundle_load(const char *p, void **ptr, int *len, int *osize)
 {
   const struct filebundle_entry *fe;
   const struct filebundle *fb;
@@ -63,6 +63,9 @@ filebundle_load(const char *p, void **ptr, int *len)
     *ptr = (void *)fe->data;
   if(len)
     *len = fe->size;
+  if(osize)
+    *osize = fe->original_size;
+
   return 0;
 }
 

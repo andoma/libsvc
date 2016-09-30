@@ -33,9 +33,13 @@
 #include "misc.h"
 
 
+
 int
-filebundle_load(const char *p, void **ptr, int *len)
+filebundle_load(const char *p, void **ptr, int *len, int *osize)
 {
+  if(osize != NULL)
+    *osize = -1;
+
   int fd = open(p, O_RDONLY);
   if(fd == -1)
     return errno;

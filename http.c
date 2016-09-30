@@ -1069,13 +1069,13 @@ serve_file(http_connection_t *hc, const char *remain, void *opaque)
     }
   }
 
-  if(filebundle_load(path, &data, &size)) {
+  if(filebundle_load(path, &data, &size, NULL)) {
     if(!bs->send_index_html_on_404 || ct != NULL)
       return 404;
 
     remain = "index.html";
     snprintf(path, sizeof(path), "%s/%s", bs->filepath, remain);
-    if(filebundle_load(path, &data, &size)) {
+    if(filebundle_load(path, &data, &size, NULL)) {
       return 404;
     }
   }
