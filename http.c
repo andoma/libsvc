@@ -283,13 +283,13 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
     if(cookie != NULL) {
       htsbuf_qprintf(&hdrs,
                      "Set-Cookie: %s.session=%s; Path=/; "
-                     "expires=%s; HttpOnly\r\n",
+                     "expires=%s; HttpOnly; secure\r\n",
                      PROGNAME, cookie,
                      http_mktime(t, 365 * 86400));
     } else {
       htsbuf_qprintf(&hdrs,
                      "Set-Cookie: %s.session=deleted; Path=/; "
-                     "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly\r\n",
+                     "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; secure\r\n",
                      PROGNAME);
     }
   }
