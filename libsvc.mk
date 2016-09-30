@@ -25,7 +25,7 @@ endif
 
 ALLDEPS += libsvc/libsvc.mk Makefile libsvc/sources.mk
 
-OBJS=    $(SRCS:%.c=$(BUILDDIR)/%.o)
+OBJS +=  $(SRCS:%.c=$(BUILDDIR)/%.o)
 DEPS=    ${OBJS:%.o=%.d}
 
 # Common CFLAGS for all files
@@ -41,12 +41,24 @@ $(BUILDDIR)/bundles/%.c: % $(CURDIR)/libsvc/mkbundle $(ALLDEPS)
 	@mkdir -p $(dir $@)
 	$(MKBUNDLE) -o $@ -s $< -d  ${BUILDDIR}/bundles/$<.d -p $<
 
+$(BUILDDIR)/zbundles/%.o: $(BUILDDIR)/zbundles/%.c $(ALLDEPS)
+	$(CC) ${CFLAGS} ${CFLAGS_com} ${CFLAGS_opt} -c -o $@ $<
+
+$(BUILDDIR)/zbundles/%.c: % $(CURDIR)/libsvc/mkbundle $(ALLDEPS)
+	@mkdir -p $(dir $@)
+	$(MKBUNDLE) -z -o $@ -s $< -d ${BUILDDIR}/zbundles/$<.d -p $<
+
 # File bundles
 BUNDLES += $(sort $(BUNDLES-yes))
 BUNDLE_SRCS=$(BUNDLES:%=$(BUILDDIR)/bundles/%.c)
-BUNDLE_DEPS=$(BUNDLE_SRCS:%.c=%.d)
-BUNDLE_OBJS=$(BUNDLE_SRCS:%.c=%.o)
-.PRECIOUS: ${BUNDLE_SRCS}
+
+ZBUNDLES += $(sort $(ZBUNDLES-yes))
+ZBUNDLE_SRCS=$(ZBUNDLES:%=$(BUILDDIR)/zbundles/%.c)
+
+BUNDLE_DEPS=$(BUNDLE_SRCS:%.c=%.d) $(ZBUNDLE_SRCS:%.c=%.d)
+BUNDLE_OBJS=$(BUNDLE_SRCS:%.c=%.o) $(ZBUNDLE_SRCS:%.c=%.o)
+.PRECIOUS: ${BUNDLE_SRCS} ${ZBUNDLE_SRCS}
+
 
 MKBUNDLE = $(CURDIR)/libsvc/mkbundle
 
