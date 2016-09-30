@@ -39,7 +39,7 @@ filebundle_load(const char *p, void **ptr, int *len)
   const struct filebundle *fb;
   char *path = mystrdupa(p);
 
-  char *x = strrchr(path, '/');
+  char *x = strchr(path, '/');
   if(x == NULL)
     return ENOTDIR;
 
