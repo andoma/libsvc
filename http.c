@@ -52,6 +52,7 @@
 typedef struct http_server {
   const char *hs_config_prefix;
   int hs_reverse_proxy;  // Set if we sit behind a reverse proxy
+  int hs_secure_cookies;
 
 } http_server_t;
 
@@ -283,14 +284,16 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
     if(cookie != NULL) {
       htsbuf_qprintf(&hdrs,
                      "Set-Cookie: %s.session=%s; Path=/; "
-                     "expires=%s; HttpOnly; secure\r\n",
+                     "expires=%s; HttpOnly%s\r\n",
                      PROGNAME, cookie,
-                     http_mktime(t, 365 * 86400));
+                     http_mktime(t, 365 * 86400),
+                     hc->hc_server->hs_secure_cookies ? "; secure" : "");
     } else {
       htsbuf_qprintf(&hdrs,
                      "Set-Cookie: %s.session=deleted; Path=/; "
-                     "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; secure\r\n",
-                     PROGNAME);
+                     "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly%s\r\n",
+                     PROGNAME,
+                     hc->hc_server->hs_secure_cookies ? "; secure" : "");
     }
   }
 
@@ -855,13 +858,14 @@ http_parse_query_args(http_connection_t *hc, char *args)
  *
  */
 static void
-http_serve_requests(http_connection_t *hc, const http_server_t *hs)
+http_serve_requests(http_connection_t *hc)
 {
   char cmdline[4096];
   char hdrline[4096];
   char *argv[3], *c;
   int n;
 
+  const http_server_t *hs = hc->hc_server;
 
   htsbuf_queue_init(&hc->hc_reply, 0);
 
@@ -964,10 +968,9 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
 	   struct sockaddr_in *self)
 {
   http_connection_t hc;
-  http_server_t *hs = opaque;
 
   memset(&hc, 0, sizeof(http_connection_t));
-
+  hc.hc_server = opaque;
   TAILQ_INIT(&hc.hc_args);
   TAILQ_INIT(&hc.hc_req_args);
   TAILQ_INIT(&hc.hc_response_headers);
@@ -976,7 +979,7 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
   hc.hc_peer = peer;
   hc.hc_self = self;
 
-  http_serve_requests(&hc, hs);
+  http_serve_requests(&hc);
 
   free(hc.hc_post_data);
   free(hc.hc_username);
@@ -1018,7 +1021,7 @@ http_server_init(const char *config_prefix)
   http_server_t *hs = calloc(1, sizeof(http_server_t));
   hs->hs_config_prefix = strdup(config_prefix);
   hs->hs_reverse_proxy = cfg_get_int(cr, CFG(config_prefix, "reverseProxy"), 0);
-
+  hs->hs_secure_cookies = cfg_get_int(cr, CFG(config_prefix, "secureCookies"), 0);
   void *ts = tcp_server_create(port, bindaddr, http_serve, hs);
   if(ts == NULL)
     return errno;

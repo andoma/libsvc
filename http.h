@@ -114,6 +114,8 @@ typedef struct http_connection {
   struct ntv *hc_session_received;
   struct ntv *hc_session;
 
+  const struct http_server *hc_server;
+  
 } http_connection_t;
 
 
