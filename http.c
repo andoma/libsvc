@@ -1138,6 +1138,9 @@ generate_session_cookie(http_connection_t *hc)
   uint8_t cookiebin[3000] = {0};
   int outlen = 0, tmplen;
 
+  if(ntv_is_empty(hc->hc_session))
+    return NULL;
+
   if(!ccm_key_valid)
     return NULL;
 

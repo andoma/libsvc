@@ -107,6 +107,7 @@ void ntv_delete_field(const ntv_t *ntv, const char *key);
 void ntv_release(ntv_t *ntv);
 void ntv_print(const ntv_t *ntv);
 ntv_t *ntv_copy(const ntv_t *src);
+int ntv_is_empty(const ntv_t *ntv);
 
 // Return non-zero if 'src' and 'dst' are not equal
 int ntv_cmp(const ntv_t *src, const ntv_t *dst);
