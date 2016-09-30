@@ -1084,7 +1084,7 @@ serve_file(http_connection_t *hc, const char *remain, void *opaque)
 
   http_output_content(hc, ct);
   filebundle_free(data);
-  return 200;
+  return 0;
 }
 
 
