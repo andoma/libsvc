@@ -335,7 +335,7 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 
   if(wsp->wsp_prepare != NULL) {
     prep_result = wsp->wsp_prepare(p, remain, selected_protocol,
-                                   sizeof(selected_protocol));
+                                   sizeof(selected_protocol), hc);
     if(prep_result < 0)
       return -prep_result;
   }

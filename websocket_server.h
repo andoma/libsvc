@@ -27,13 +27,15 @@
 #include "htsmsg_json.h"
 
 struct ntv;
+struct http_connection;
 
 typedef struct ws_server_connection ws_server_connection_t;
 
 typedef int (websocket_prepare_t)(const char *protocols,
                                   const char *remain,
                                   char *selected_protocol,
-                                  size_t selected_protocol_len);
+                                  size_t selected_protocol_len,
+                                  struct http_connection *hc);
 
 typedef void *(websocket_connected_t)(ws_server_connection_t *wsc,
                                       const char *remain,
