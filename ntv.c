@@ -481,7 +481,8 @@ ntv_print0(FILE *fp, const struct ntv_queue *q, int indent)
 void
 ntv_print(const ntv_t *ntv)
 {
-  ntv_print0(stdout, &ntv->ntv_children, 0);
+  if(ntv != NULL)
+    ntv_print0(stdout, &ntv->ntv_children, 0);
 }
 
 
