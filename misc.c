@@ -921,3 +921,48 @@ http_deescape(char *s)
 }
 
 
+size_t
+html_enteties_escape(const char *src, char *dst)
+{
+  size_t olen = 0;
+  const char *entity = NULL;
+  for(;*src;src++) {
+    switch(*src) {
+    case 38:
+      entity = "amp";
+      break;
+    case 60:
+      entity = "lt";
+      break;
+    case 62:
+      entity = "gt";
+      break;
+    default:
+      if(dst) dst[olen] = *src;
+      olen++;
+      continue;
+    }
+    if(dst) {
+      dst[olen++] = '&';
+      while(*entity)
+	dst[olen++] = *entity++;
+      dst[olen++] = ';';
+    } else {
+      olen += 2 + strlen(entity);
+    }
+  }
+  if(dst)
+    dst[olen] = 0;
+  olen++;
+  return olen;
+}
+
+
+const char *
+html_enteties_escape_tmp(const char *src)
+{
+  size_t len = html_enteties_escape(src, NULL);
+  char *r = talloc_malloc(len);
+  html_enteties_escape(src, r);
+  return r;
+}

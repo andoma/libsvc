@@ -127,3 +127,6 @@ char *lp_get(char **lp);
 #define ARRAYSIZE(x) (sizeof(x) / sizeof(x[0]))
 #endif
 
+size_t html_enteties_escape(const char *src, char *dst);
+
+const char *html_enteties_escape_tmp(const char *src);
