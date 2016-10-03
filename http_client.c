@@ -42,6 +42,22 @@
 #include "curlhelpers.h"
 
 
+static pthread_key_t http_client_key;
+
+/**
+ *
+ */
+static CURL *
+get_handle(void)
+{
+  CURL *curl = pthread_getspecific(http_client_key);
+  if(curl == NULL) {
+    curl = curl_easy_init();
+    pthread_setspecific(http_client_key, curl);
+  }
+  return curl;
+}
+
 
 /**
  *
@@ -67,8 +83,6 @@ hdrfunc(void *ptr, size_t size, size_t nmemb, void *userdata)
   ntv_set_str(hcr->hcr_headers, argv[0], argv[1]);
   return len;
 }
-
-static __thread CURL *thread_persistent_session;
 
 
 static struct curl_slist *
@@ -99,9 +113,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   va_list ap;
   va_start(ap, url);
 
-  CURL *curl = thread_persistent_session;
-  if(curl == NULL)
-    curl = curl_easy_init();
+  CURL *curl = get_handle();
 
   memset(hcr, 0, sizeof(http_client_response_t));
   hcr->hcr_headers = ntv_create_map();
@@ -244,11 +256,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     }
   }
 
-  if(thread_persistent_session) {
-    curl_easy_reset(curl);
-  } else {
-    curl_easy_cleanup(curl);
-  }
+  curl_easy_reset(curl);
+
   return rval;
 }
 
@@ -263,19 +272,24 @@ http_client_response_free(http_client_response_t *hcr)
 }
 
 
-void
-http_client_init_thread_session(void)
+/**
+ *
+ */
+static void
+http_client_thread_cleanup(void *aux)
 {
-  assert(thread_persistent_session == NULL);
-  thread_persistent_session = curl_easy_init();
+  curl_easy_cleanup(aux);
 }
 
 
-void
-http_client_stop_thread_session(void)
+/**
+ *
+ */
+static void __attribute__((constructor))
+http_client_init(void)
 {
-  assert(thread_persistent_session != NULL);
-  curl_easy_cleanup(thread_persistent_session);
-  thread_persistent_session = NULL;
+  pthread_key_create(&http_client_key, http_client_thread_cleanup);
 }
+
+
 

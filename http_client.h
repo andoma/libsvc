@@ -54,7 +54,3 @@ void http_client_response_free(http_client_response_t *hcr);
 #define scoped_http_result(x) \
   http_client_response_t x \
   __attribute__((cleanup(http_client_response_free))) = {}
-
-void http_client_init_thread_session(void);
-
-void http_client_stop_thread_session(void);
