@@ -94,7 +94,7 @@ done
 
 echo >>${OUTPUT} "#include \"libsvc/filebundle.h\""
 echo >>${OUTPUT} "static const struct filebundle_entry filebundle_entries[] = {"
-[[ -z $DEPFILE ]] || echo >${DEPFILE} -n "${OUTPUT}: "
+[[ -z $DEPFILE ]] || echo >${DEPFILE} -n "${OUTPUT}: ${SOURCE} "
 
 for file in $FILES; do
     [[ -z $DEPFILE ]] || echo >>${DEPFILE} -n "${SOURCE}/$file "

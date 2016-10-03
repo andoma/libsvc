@@ -26,7 +26,7 @@ endif
 ALLDEPS += libsvc/libsvc.mk Makefile libsvc/sources.mk
 
 OBJS +=  $(SRCS:%.c=$(BUILDDIR)/%.o)
-DEPS=    ${OBJS:%.o=%.d}
+DEPS +=  ${OBJS:%.o=%.d}
 
 # Common CFLAGS for all files
 CFLAGS_com  = -g -funsigned-char -D_FILE_OFFSET_BITS=64
@@ -55,7 +55,7 @@ BUNDLE_SRCS=$(BUNDLES:%=$(BUILDDIR)/bundles/%.c)
 ZBUNDLES += $(sort $(ZBUNDLES-yes))
 ZBUNDLE_SRCS=$(ZBUNDLES:%=$(BUILDDIR)/zbundles/%.c)
 
-BUNDLE_DEPS=$(BUNDLE_SRCS:%.c=%.d) $(ZBUNDLE_SRCS:%.c=%.d)
+DEPS += $(BUNDLE_SRCS:%.c=%.d) $(ZBUNDLE_SRCS:%.c=%.d)
 BUNDLE_OBJS=$(BUNDLE_SRCS:%.c=%.o) $(ZBUNDLE_SRCS:%.c=%.o)
 .PRECIOUS: ${BUNDLE_SRCS} ${ZBUNDLE_SRCS}
 
