@@ -16,6 +16,8 @@ typedef struct http_client_response {
 
 } http_client_response_t;
 
+typedef const char *(http_client_auth_cb_t)(void *opaque, int http_status);
+
 
 enum {
   HCR_TAG_END,
@@ -27,6 +29,7 @@ enum {
   HCR_TAG_POSTDATA,
   HCR_TAG_POSTFIELDS,
   HCR_TAG_POSTNTV,
+  HCR_TAG_AUTHCB,
 };
 
 
@@ -44,7 +47,7 @@ enum {
 #define HCR_POSTDATA(data, len, ct)  HCR_TAG_POSTDATA, data, (size_t)(len), ct
 #define HCR_POSTFIELDS(data, len) HCR_TAG_POSTFIELDS, data, (size_t)(len)
 #define HCR_POSTJSON(ntv) HCR_TAG_POSTNTV, ntv
-
+#define HCR_AUTHCB(cb, opaque) HCR_TAG_AUTHCB, cb, opaque
 
 int http_client_request(http_client_response_t *hcr, const char *url, ...)
   __attribute__((__sentinel__(0)));

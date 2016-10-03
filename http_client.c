@@ -59,6 +59,21 @@ get_handle(void)
 }
 
 
+static void
+set_handle(CURL *c)
+{
+  if(c != NULL) {
+    CURL *curl = pthread_getspecific(http_client_key);
+    if(curl != NULL) {
+      curl_easy_cleanup(curl);
+    }
+  }
+
+  pthread_setspecific(http_client_key, c);
+}
+
+
+
 /**
  *
  */
@@ -110,6 +125,9 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   FILE *sendf = NULL;
 
+  http_client_auth_cb_t *auth_cb = NULL;
+  void *auth_opaque = NULL;
+
   va_list ap;
   va_start(ap, url);
 
@@ -124,6 +142,11 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     case HCR_TAG_ERRBUF:
       errbuf  = va_arg(ap, char *);
       errsize = va_arg(ap, size_t);
+      break;
+
+    case HCR_TAG_AUTHCB:
+      auth_cb = va_arg(ap, http_client_auth_cb_t *);
+      auth_opaque = va_arg(ap, void *);
       break;
 
     case HCR_TAG_FLAGS:
@@ -221,6 +244,15 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   if(slist != NULL)
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
+
+  if(auth_cb) {
+    set_handle(NULL);
+    const char *auth = auth_cb(auth_opaque, 0);
+    set_handle(curl);
+    if(auth)
+      slist = append_header(slist, "Authorization", auth);
+
+  }
 
   CURLcode result = curl_easy_perform(curl);
 
