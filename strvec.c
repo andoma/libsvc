@@ -17,6 +17,8 @@ strvec_push(strvec_t *vec, const char *value)
 void
 strvec_reset(strvec_t *vec)
 {
+  for(int i = 0; i < vec->count; i++)
+    free(vec->v[i]);
   vec->count = 0;
   vec->capacity = 0;
   free(vec->v);
