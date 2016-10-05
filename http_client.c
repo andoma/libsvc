@@ -270,21 +270,31 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &long_http_code);
   hcr->hcr_http_status = long_http_code;
 
+  hcr->hcr_transport_status = "OK";
+
   int rval = 0;
   if(result) {
     if(result == CURLE_HTTP_RETURNED_ERROR) {
       snprintf(errbuf, errsize, "HTTP Error %lu", long_http_code);
+      snprintf(hcr->hcr_errbuf, sizeof(hcr->hcr_errbuf), "HTTP Error %lu",
+               long_http_code);
+      hcr->hcr_transport_status = hcr->hcr_errbuf;
     } else {
       snprintf(errbuf, errsize, "%s", curl_easy_strerror(result));
+      hcr->hcr_transport_status = curl_easy_strerror(result);
     }
     rval = 1;
   } else {
     rval = 0;
     if(flags & HCR_DECODE_BODY_AS_JSON) {
-      if((hcr->hcr_json_result = ntv_json_deserialize(hcr->hcr_body,
-                                                      errbuf, errsize)) == NULL)
+      if((hcr->hcr_json_result =
+          ntv_json_deserialize(hcr->hcr_body, errbuf, errsize)) == NULL) {
+        if(errbuf != NULL)
+          hcr->hcr_transport_status = errbuf;
+        else
+          hcr->hcr_transport_status = "Bad JSON";
         rval = 1;
-
+      }
     }
   }
 

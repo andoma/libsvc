@@ -14,6 +14,10 @@ typedef struct http_client_response {
 
   int hcr_http_status;
 
+  const char *hcr_transport_status;
+
+  char hcr_errbuf[32];
+
 } http_client_response_t;
 
 typedef const char *(http_client_auth_cb_t)(void *opaque, int http_status);
