@@ -37,14 +37,12 @@ websocket_free(websocket_state_t *state)
   state->packet = NULL;
 }
 
-
 /**
  *
  */
-void
-websocket_append_hdr(htsbuf_queue_t *q, int opcode, size_t len)
+int
+websocket_build_hdr(uint8_t *hdr, int opcode, size_t len)
 {
-  uint8_t hdr[14]; // max header length
   int hlen;
   hdr[0] = 0x80 | (opcode & 0xf);
   if(len <= 125) {
@@ -60,7 +58,19 @@ websocket_append_hdr(htsbuf_queue_t *q, int opcode, size_t len)
     wr64_be(hdr + 2, len);
     hlen = 10;
   }
+  return hlen;
+}
 
+
+
+/**
+ *
+ */
+void
+websocket_append_hdr(htsbuf_queue_t *q, int opcode, size_t len)
+{
+  uint8_t hdr[14]; // max header length
+  const int hlen = websocket_build_hdr(hdr, opcode, len);
   htsbuf_append(q, hdr, hlen);
 }
 
@@ -153,5 +163,3 @@ websocket_parse(htsbuf_queue_t *q,
     return 1;
   }
 }
-
-

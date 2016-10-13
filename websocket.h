@@ -33,6 +33,11 @@ typedef struct websocket_state {
   uint8_t *packet;
 } websocket_state_t;
 
+#define WEBSOCKET_MAX_HDR_LEN 14
+
+int websocket_build_hdr(uint8_t hdr[WEBSOCKET_MAX_HDR_LEN],
+                        int opcode, size_t len);
+
 void websocket_append_hdr(struct htsbuf_queue *q, int opcode, size_t len);
 
 void websocket_free(websocket_state_t *state);
@@ -46,3 +51,17 @@ int websocket_parse(struct htsbuf_queue *q,
                     int (*cb)(void *opaque, int opcode,
                               uint8_t **data, int len),
                     void *opaque, websocket_state_t *state);
+
+
+#define WS_OPCODE_CLOSE 8
+#define WS_OPCODE_PING  9
+#define WS_OPCODE_PONG  10
+
+#define WS_STATUS_PING_TIMEOUT      999
+#define WS_STATUS_NORMAL_CLOSE      1000
+#define WS_STATUS_GOING_AWAY        1001
+#define WS_STATUS_PROTOCOL_ERROR    1002
+#define WS_STATUS_CANNOT_ACCEPT     1003
+
+#define WS_STATUS_NO_STATUS         1005
+#define WS_STATUS_ABNORMALLY_CLOSED 1006

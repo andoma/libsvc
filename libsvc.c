@@ -20,12 +20,16 @@
 * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
-
+#include <errno.h>
+#include <string.h>
 #include "libsvc.h"
 #include "tcp.h"
 #include "misc.h"
 #include "init.h"
 #include "queue.h"
+#include "trace.h"
+
+#include <sys/resource.h>
 
 #include <openssl/rand.h>
 
@@ -101,4 +105,31 @@ libsvc_init(void)
   const inithelper_t *ih;
   LIST_FOREACH(ih, &inithelpers, link)
     ih->init();
+}
+
+
+void
+libsvc_set_fdlimit(int num_fd)
+{
+  struct rlimit lim;
+
+
+  if(getrlimit(RLIMIT_NOFILE, &lim) == -1) {
+    trace(LOG_ERR, "Unable to get fdlimit  -- %s",
+          strerror(errno));
+  }
+
+  lim.rlim_cur = num_fd < lim.rlim_max ? num_fd : lim.rlim_max;
+
+  if(setrlimit(RLIMIT_NOFILE, &lim) == -1) {
+    trace(LOG_ERR, "Unable to set fdlimit to %d -- %s",
+          num_fd, strerror(errno));
+    trace(LOG_INFO, "Current fdlimit %ld (max: %ld)",
+          lim.rlim_cur, lim.rlim_max);
+    exit(1);
+  }
+
+  trace(LOG_INFO, "Current fdlimit %ld (max: %ld)",
+        lim.rlim_cur, lim.rlim_max);
+
 }

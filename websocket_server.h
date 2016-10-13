@@ -68,3 +68,5 @@ void websocket_send_close(ws_server_connection_t *wss, int code,
 const struct ntv *websocket_http_session(ws_server_connection_t *wsc);
 
 const char *websocket_get_peeraddr(ws_server_connection_t *wsc);
+
+void websocket_server_turn_on_debug(ws_server_connection_t *wsc);

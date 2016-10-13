@@ -52,7 +52,12 @@
 LIST_HEAD(asyncio_timer_list, asyncio_timer);
 LIST_HEAD(asyncio_worker_list, asyncio_worker);
 
-static struct asyncio_timer_list asyncio_timers;
+#define TW_TIME_SHIFT  18
+#define TW_SLOTS 65536
+#define TW_SLOT_MASK (TW_SLOTS - 1)
+
+static struct asyncio_timer_list timerwheel[TW_SLOTS];
+static int                timerwheel_read_pos;
 
 static int asyncio_pipe[2];
 
@@ -178,12 +183,18 @@ asyncio_timer_init(asyncio_timer_t *at, void (*fn)(void *opaque),
 /**
  *
  */
-static int
-at_compar(const asyncio_timer_t *a, const asyncio_timer_t *b)
+static int64_t
+asyncio_get_monotime(void)
 {
-  if(a->at_expire < b->at_expire)
-    return -1;
-  return 1;
+#if _POSIX_TIMERS > 0 && defined(_POSIX_MONOTONIC_CLOCK)
+  struct timespec tv;
+  clock_gettime(CLOCK_MONOTONIC, &tv);
+  return (int64_t)tv.tv_sec * 1000000LL + (tv.tv_nsec / 1000);
+#else
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (int64_t)tv.tv_sec * 1000000LL + tv.tv_usec;
+#endif
 }
 
 
@@ -191,13 +202,21 @@ at_compar(const asyncio_timer_t *a, const asyncio_timer_t *b)
  *
  */
 void
-asyncio_timer_arm(asyncio_timer_t *at, int64_t expire)
+asyncio_timer_arm_delta(asyncio_timer_t *at, uint64_t delta)
 {
   if(at->at_expire)
     LIST_REMOVE(at, at_link);
 
+  const int64_t now = asyncio_get_monotime();
+
+  int64_t expire = now + delta;
+  if(expire < now)
+    expire = now;
+
+  const int slot = ((expire >> TW_TIME_SHIFT) + 1) & TW_SLOT_MASK;
+
   at->at_expire = expire;
-  LIST_INSERT_SORTED(&asyncio_timers, at, at_link, at_compar);
+  LIST_INSERT_HEAD(&timerwheel[slot], at, at_link);
 }
 
 
@@ -316,15 +335,24 @@ async_fd_create(int fd, int flags)
 /**
  *
  */
-static void
+void
+async_fd_retain(async_fd_t *af)
+{
+  atomic_inc(&af->af_refcount);
+}
+
+
+/**
+ *
+ */
+void
 async_fd_release(async_fd_t *af)
 {
   if(atomic_dec(&af->af_refcount))
     return;
 
   assert(af->af_dns_req == NULL);
-
-  asyncio_timer_disarm(&af->af_timer);
+  assert(af->af_timer.at_expire == 0);
 
   if(af->af_fd != -1)
     close(af->af_fd);
@@ -376,6 +404,10 @@ do_write(async_fd_t *af)
   mod_poll_flags(af, EPOLLOUT, 0);
 }
 
+
+/**
+ *
+ */
 static void
 do_write_lock(async_fd_t *af)
 {
@@ -451,6 +483,45 @@ do_accept(async_fd_t *af)
 /**
  *
  */
+static int
+tw_step(void)
+{
+  asyncio_timer_t *at, *next;
+  int64_t now = asyncio_get_monotime();
+  int target_slot = (now >> TW_TIME_SHIFT) & TW_SLOT_MASK;
+  int cbs = 0;
+  struct asyncio_timer_list tmplist;
+  LIST_INIT(&tmplist);
+
+  while(timerwheel_read_pos != target_slot) {
+    timerwheel_read_pos = (timerwheel_read_pos + 1) & TW_SLOT_MASK;
+
+    for(at = LIST_FIRST(&timerwheel[timerwheel_read_pos]);
+        at != NULL; at = next) {
+      next = LIST_NEXT(at, at_link);
+      if(at->at_expire <= now) {
+        LIST_REMOVE(at, at_link);
+        LIST_INSERT_HEAD(&tmplist, at, at_link);
+      }
+    }
+
+    while((at = LIST_FIRST(&tmplist)) != NULL) {
+      LIST_REMOVE(at, at_link);
+      at->at_expire = 0;
+      at->at_fn(at->at_opaque);
+      cbs++;
+    }
+  }
+
+  const int slottime = 1 << TW_TIME_SHIFT;
+  int spill = now & (slottime - 1);
+  return (slottime - spill) / 1000 + 1;
+}
+
+
+/**
+ *
+ */
 static void *
 asyncio_loop(void *aux)
 {
@@ -459,22 +530,7 @@ asyncio_loop(void *aux)
   while(1) {
     talloc_cleanup();
 
-    int64_t now = asyncio_now();
-
-    asyncio_timer_t *at;
-    while((at = LIST_FIRST(&asyncio_timers)) != NULL && at->at_expire <= now) {
-      LIST_REMOVE(at, at_link);
-      at->at_expire = 0;
-      at->at_fn(at->at_opaque);
-    }
-
-    int timeout = INT32_MAX;
-
-    if((at = LIST_FIRST(&asyncio_timers)) != NULL)
-      timeout = MIN(timeout, (at->at_expire - now + 999) / 1000);
-
-    if(timeout == INT32_MAX)
-      timeout = -1;
+    int timeout = tw_step();
 
 #ifdef __linux__
 
@@ -598,10 +654,17 @@ asyncio_close(async_fd_t *af)
 
   asyncio_timer_disarm(&af->af_timer);
 
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+
   mod_poll_flags(af, 0, -1);
 
   close(af->af_fd);
   af->af_fd = -1;
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
+
   async_fd_release(af);
 }
 
@@ -616,9 +679,15 @@ asyncio_shutdown(async_fd_t *af)
 
   asyncio_timer_disarm(&af->af_timer);
 
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+
   shutdown(af->af_fd, SHUT_RD);
 
   mod_poll_flags(af, 0, -1);
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
 }
 
 
@@ -631,9 +700,62 @@ asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork)
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
-  htsbuf_append(&af->af_sendq, buf, len);
-  if(af->af_fd != -1 && !cork)
-    do_write(af);
+  if(af->af_fd != -1) {
+    htsbuf_append(&af->af_sendq, buf, len);
+
+    if(!cork)
+      do_write(af);
+  }
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
+}
+
+
+/**
+ *
+ */
+void
+asyncio_send_with_hdr(async_fd_t *af,
+                      const void *hdr_buf, size_t hdr_len,
+                      const void *buf, size_t len,
+                      int cork)
+{
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+
+  if(af->af_fd != -1) {
+    int qempty = af->af_sendq.hq_size == 0;
+
+    if(!cork && qempty) {
+      int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL);
+      if(r > 0) {
+        hdr_buf += r;
+        hdr_len -= r;
+      }
+    }
+
+    if(hdr_len > 0) {
+      htsbuf_append(&af->af_sendq, hdr_buf, hdr_len);
+      qempty = 0;
+    }
+
+    if(!cork && qempty) {
+      int r = send(af->af_fd, buf, len, MSG_NOSIGNAL);
+      if(r > 0) {
+        buf += r;
+        len -= r;
+      }
+    }
+
+    if(len > 0) {
+      htsbuf_append(&af->af_sendq, buf, len);
+      qempty = 0;
+    }
+
+    if(!cork)
+      do_write(af);
+  }
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
@@ -649,9 +771,46 @@ asyncio_sendq(async_fd_t *af, htsbuf_queue_t *q, int cork)
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
-  htsbuf_appendq(&af->af_sendq, q);
-  if(af->af_fd != -1 && !cork)
-    do_write(af);
+  if(af->af_fd != -1) {
+    htsbuf_appendq(&af->af_sendq, q);
+    if(!cork)
+      do_write(af);
+  }
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
+}
+
+
+/**
+ *
+ */
+void
+asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
+                       htsbuf_queue_t *q, int cork)
+{
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+
+  if(af->af_fd != -1) {
+    int qempty = af->af_sendq.hq_size == 0;
+
+    if(!cork && qempty) {
+      int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL);
+      if(r > 0) {
+        hdr_buf += r;
+        hdr_len -= r;
+      }
+    }
+
+    if(hdr_len > 0) {
+      htsbuf_append(&af->af_sendq, hdr_buf, hdr_len);
+      qempty = 0;
+    }
+    htsbuf_appendq(&af->af_sendq, q);
+    if(!cork)
+      do_write(af);
+  }
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
@@ -751,9 +910,15 @@ asyncio_stream_mt(int fd,
  *
  */
 void
-asyncio_enable_read(async_fd_t *fd)
+asyncio_enable_read(async_fd_t *af)
 {
-  mod_poll_flags(fd, EPOLLIN, 0);
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+
+  mod_poll_flags(af, EPOLLIN, 0);
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
 }
 
 
@@ -767,7 +932,7 @@ con_send_err(async_fd_t *af, const char *msg)
   if(retry == 0) {
     async_fd_release(af);
   } else {
-    asyncio_timer_arm(&af->af_timer, asyncio_now() + retry * 1000);
+    asyncio_timer_arm_delta(&af->af_timer, retry * 1000);
   }
 }
 
@@ -936,7 +1101,7 @@ asyncio_connect(const char *hostname,
   af->af_error       = err;
 
   asyncio_timer_init(&af->af_timer, connect_timeout, af);
-  asyncio_timer_arm(&af->af_timer, asyncio_now() + timeout * 1000);
+  asyncio_timer_arm_delta(&af->af_timer, timeout * 1000);
   af->af_dns_req = asyncio_dns_lookup_host(hostname, connect_dns_cb, af);
   return af;
 }
@@ -959,7 +1124,7 @@ asyncio_reconnect(async_fd_t *af, int delay)
   close(af->af_fd);
   af->af_fd = -1;
 
-  asyncio_timer_arm(&af->af_timer, asyncio_now() + delay * 1000);
+  asyncio_timer_arm_delta(&af->af_timer, delay * 1000);
 }
 
 

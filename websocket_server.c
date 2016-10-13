@@ -34,6 +34,7 @@
 #include "asyncio.h"
 #include "task.h"
 #include "ntv.h"
+#include "bytestream.h"
 
 TAILQ_HEAD(ws_server_data_queue, ws_server_data);
 
@@ -102,7 +103,7 @@ websocket_http_session(ws_server_connection_t *wsc)
 static void
 wsc_destroy(ws_server_connection_t *wsc)
 {
-  asyncio_close(wsc->wsc_af);
+  async_fd_release(wsc->wsc_af);
   free(wsc->wsc_peeraddr);
   ntv_release(wsc->wsc_session);
   websocket_free(&wsc->wsc_state);
@@ -155,25 +156,13 @@ ws_enq_data(ws_server_connection_t *wsc, int opcode, void *data, int arg)
 /**
  *
  */
-static void
-websocket_send_hdr(ws_server_connection_t *wsc, int opcode, size_t len)
-{
-  htsbuf_queue_t q;
-  htsbuf_queue_init(&q, 0);
-  websocket_append_hdr(&q, opcode, len);
-  asyncio_sendq(wsc->wsc_af, &q, 1);
-}
-
-
-/**
- *
- */
 void
 websocket_send(ws_server_connection_t *wsc, int opcode,
                const void *data, size_t len)
 {
-  websocket_send_hdr(wsc, opcode, len);
-  asyncio_send(wsc->wsc_af, data, len, 0);
+  uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
+  int hlen = websocket_build_hdr(hdr, opcode, len);
+  asyncio_send_with_hdr(wsc->wsc_af, hdr, hlen, data, len, 0);
 }
 
 
@@ -183,8 +172,9 @@ websocket_send(ws_server_connection_t *wsc, int opcode,
 void
 websocket_sendq(ws_server_connection_t *wsc, int opcode, htsbuf_queue_t *hq)
 {
-  websocket_send_hdr(wsc, opcode, hq->hq_size);
-  asyncio_sendq(wsc->wsc_af, hq, 0);
+  uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
+  int hlen = websocket_build_hdr(hdr, opcode, hq->hq_size);
+  asyncio_sendq_with_hdr(wsc->wsc_af, hdr, hlen, hq, 0);
 }
 
 
@@ -223,17 +213,45 @@ websocket_send_close(ws_server_connection_t *wsc, int code,
   websocket_sendq(wsc, 8, &hq);
 }
 
+/**
+ *
+ */
+static void
+websocket_disconnect(ws_server_connection_t *wsc, int status)
+{
+  asyncio_close(wsc->wsc_af);
+  asyncio_timer_disarm(&wsc->wsc_timer);
+  ws_enq_data(wsc, WSD_OPCODE_DISCONNECT, NULL, status);
+}
+
 
 /**
  *
  */
 static void
-websocket_err_cb(void *opaque, int error)
+websocket_err_cb(void *opaque, int status)
 {
   ws_server_connection_t *wsc = opaque;
-  asyncio_shutdown(wsc->wsc_af);
-  asyncio_timer_disarm(&wsc->wsc_timer);
-  ws_enq_data(wsc, WSD_OPCODE_DISCONNECT, NULL, error);
+  websocket_disconnect(wsc, status == ETIMEDOUT ? WS_STATUS_PING_TIMEOUT :
+                       WS_STATUS_ABNORMALLY_CLOSED);
+}
+
+
+
+/**
+ *
+ */
+static void
+handle_close(ws_server_connection_t *wsc, const uint8_t *data, int len)
+{
+  int status = WS_STATUS_NO_STATUS;
+  if(len >= 2) {
+    status = rd16_be(data);
+    if(status < 1000)
+      status = WS_STATUS_NO_STATUS;
+  }
+  websocket_disconnect(wsc, status);
+
 }
 
 /**
@@ -243,13 +261,12 @@ static int
 websocket_packet(void *opaque, int opcode, uint8_t **data, int len)
 {
   ws_server_connection_t *wsc = opaque;
-
-
   wsc->wsc_ping_wait = 0;
 
   switch(opcode) {
   case 8:
-    return 1;
+    handle_close(wsc, *data, len);
+    return 0;
 
   case 9:
     websocket_send(wsc, 10, *data, len);
@@ -290,7 +307,7 @@ timer_cb(void *aux)
   uint32_t ping = 0;
   websocket_send(wsc, 9, &ping, 4);
   wsc->wsc_ping_wait++;
-  asyncio_timer_arm(&wsc->wsc_timer, asyncio_now() + PING_INTERVAL * 1000000);
+  asyncio_timer_arm_delta(&wsc->wsc_timer, PING_INTERVAL * 1000000);
 }
 
 
@@ -302,7 +319,7 @@ start_websocket(void *aux)
   asyncio_enable_read(wsc->wsc_af);
 
   asyncio_timer_init(&wsc->wsc_timer, timer_cb, wsc);
-  asyncio_timer_arm(&wsc->wsc_timer, asyncio_now() + PING_INTERVAL * 1000000);
+  asyncio_timer_arm_delta(&wsc->wsc_timer, PING_INTERVAL * 1000000);
 }
 
 
@@ -377,6 +394,8 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 
   wsc->wsc_af = asyncio_stream_mt(fd, websocket_read_cb,
                                   websocket_err_cb, wsc);
+
+  async_fd_retain(wsc->wsc_af);
 
   TAILQ_INIT(&wsc->wsc_queue);
   wsc->wsc_path = wsp;

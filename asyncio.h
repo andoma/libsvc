@@ -41,7 +41,7 @@ typedef struct asyncio_timer {
 void asyncio_timer_init(asyncio_timer_t *at, void (*fn)(void *opaque),
 			void *opque);
 
-void asyncio_timer_arm(asyncio_timer_t *at, int64_t expire);
+void asyncio_timer_arm_delta(asyncio_timer_t *at, uint64_t delta);
 
 void asyncio_timer_disarm(asyncio_timer_t *at);
 
@@ -133,13 +133,25 @@ void asyncio_close(async_fd_t *af);
 
 void asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork);
 
+void asyncio_send_with_hdr(async_fd_t *af,
+                           const void *hdr_buf, size_t hdr_len,
+                           const void *buf, size_t len,
+                           int cork);
+
 void asyncio_sendq(async_fd_t *af, htsbuf_queue_t *hq, int cork);
+
+void asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
+                            htsbuf_queue_t *q, int cork);
 
 void asyncio_reconnect(async_fd_t *af, int delay);
 
 void asyncio_enable_read(async_fd_t *fd);
 
 void asyncio_shutdown(async_fd_t *fd);
+
+void async_fd_retain(async_fd_t *af);
+
+void async_fd_release(async_fd_t *af);
 
 /*************************************************************************
  * Workers
