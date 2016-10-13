@@ -128,14 +128,17 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   http_client_auth_cb_t *auth_cb = NULL;
   void *auth_opaque = NULL;
 
-  va_list ap;
-  va_start(ap, url);
+  va_list apx, ap;
+  va_start(apx, url);
 
   CURL *curl = get_handle();
-
+  int auth_retry_code = 0;
   memset(hcr, 0, sizeof(http_client_response_t));
-  hcr->hcr_headers = ntv_create_map();
 
+ retry:
+  va_copy(ap, apx);
+
+  hcr->hcr_headers = ntv_create_map();
 
   while((tag = va_arg(ap, int)) != 0) {
     switch(tag) {
@@ -214,6 +217,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     }
   }
 
+  va_end(ap);
+
   FILE *f = open_buffer(&hcr->hcr_body, &hcr->hcr_bodysize);
 
 
@@ -247,7 +252,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   if(auth_cb) {
     set_handle(NULL);
-    const char *auth = auth_cb(auth_opaque, 0);
+    const char *auth = auth_cb(auth_opaque, auth_retry_code);
     set_handle(curl);
     if(auth)
       slist = append_header(slist, "Authorization", auth);
@@ -259,8 +264,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   if(sendf != NULL)
     fclose(sendf);
 
-  if(slist != NULL)
+  if(slist != NULL) {
     curl_slist_free_all(slist);
+    slist = NULL;
+  }
 
   fwrite("", 1, 1, f); // Write one extra byte to null terminate
   fclose(f);
@@ -268,6 +275,14 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   long long_http_code = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &long_http_code);
+
+  if(long_http_code == 401 && auth_cb && auth_retry_code == 0) {
+    auth_retry_code = 401;
+    http_client_response_free(hcr);
+    curl_easy_reset(curl);
+    goto retry;
+  }
+
   hcr->hcr_http_status = long_http_code;
 
   hcr->hcr_transport_status = "OK";
@@ -299,6 +314,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   }
 
   curl_easy_reset(curl);
+
+  va_end(apx);
 
   return rval;
 }
