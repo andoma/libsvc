@@ -667,6 +667,8 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
   if((ts->ts_ssl = SSL_new(ssl_ctx)) == NULL)
     goto bad_ssl;
 
+  SSL_set_tlsext_host_name(ts->ts_ssl, hostname);
+
 
   if(SSL_set_fd(ts->ts_ssl, fd) == 0)
     goto bad_ssl;
@@ -784,7 +786,7 @@ tcp_init1(const char *extra_ca, int init_ssl)
     CRYPTO_set_id_callback(ssl_tid_fn);
   }
 
-  ssl_ctx = SSL_CTX_new(SSLv23_client_method());
+  ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
 
   if(!SSL_CTX_load_verify_locations(ssl_ctx, NULL, "/etc/ssl/certs"))
     exit(1);
