@@ -385,16 +385,18 @@ htsbuf_append_and_escape_jsonstr(htsbuf_queue_t *hq, const char *str)
   htsbuf_append(hq, "\"", 1);
 
   while(*s != 0) {
-    if(*s == '"' || *s == '\\' || *s == '\n' || *s == '\r' || *s == '\t') {
+    if(*s == '"' || *s == '/' || *s == '\\' || *s == '\n' || *s == '\r' || *s == '\t') {
       htsbuf_append(hq, str, s - str);
 
       if(*s == '"')
 	htsbuf_append(hq, "\\\"", 2);
-      else if(*s == '\n') 
+      else if(*s == '/')
+	htsbuf_append(hq, "\\/", 2);
+      else if(*s == '\n')
 	htsbuf_append(hq, "\\n", 2);
-      else if(*s == '\r') 
+      else if(*s == '\r')
 	htsbuf_append(hq, "\\r", 2);
-      else if(*s == '\t') 
+      else if(*s == '\t')
 	htsbuf_append(hq, "\\t", 2);
       else
 	htsbuf_append(hq, "\\\\", 2);
