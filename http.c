@@ -645,9 +645,12 @@ process_request(http_connection_t *hc, const http_server_t *hs)
     }
   }
 
-  if(hs->hs_reverse_proxy &&
-     (v = http_arg_get(&hc->hc_args, "X-Real-IP")) != NULL) {
-    hc->hc_peer_addr = strdup(v);
+  if(hs->hs_reverse_proxy) {
+    if((v = http_arg_get(&hc->hc_args, "X-Real-IP")) != NULL) {
+      hc->hc_peer_addr = strdup(v);
+    } else if((v = http_arg_get(&hc->hc_args, "X-Forwarded-For")) != NULL) {
+      hc->hc_peer_addr = strdup(v);
+    }
   }
 
   if(hc->hc_peer_addr == NULL) {
