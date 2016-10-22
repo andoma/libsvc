@@ -247,17 +247,16 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, &libsvc_curl_sock_fn);
   curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, NULL);
 
-  if(slist != NULL)
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
-
   if(auth_cb) {
     set_handle(NULL);
     const char *auth = auth_cb(auth_opaque, auth_retry_code);
     set_handle(curl);
     if(auth)
       slist = append_header(slist, "Authorization", auth);
-
   }
+
+  if(slist != NULL)
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
 
   CURLcode result = curl_easy_perform(curl);
 
