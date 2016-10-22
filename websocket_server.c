@@ -330,11 +330,10 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 {
   ws_server_path_t *wsp = opaque;
 
-  const char *c = http_arg_get(&hc->hc_args, "Connection");
   const char *u = http_arg_get(&hc->hc_args, "Upgrade");
   char selected_protocol[512];
 
-  if(strcasecmp(c?:"", "Upgrade") || strcasecmp(u?:"", "websocket"))
+  if(strcasecmp(u?:"", "websocket"))
     return 405;
 
   SHA_CTX shactx;
