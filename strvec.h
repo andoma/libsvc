@@ -11,7 +11,11 @@ void strvec_push(strvec_t *vec, const char *value);
 
 void strvec_reset(strvec_t *vec);
 
-void strvec_insert(strvec_t *vec, int position, const char *value);
+void strvec_insert(strvec_t *vec, unsigned int position, const char *value);
+
+void strvec_delete(strvec_t *vec, unsigned int position);
+
+int strvec_delete_value(strvec_t *vec, const char *value);
 
 void strvec_insert_sorted(strvec_t *vec, const char *value);
 

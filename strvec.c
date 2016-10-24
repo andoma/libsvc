@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -26,7 +27,7 @@ strvec_reset(strvec_t *vec)
 }
 
 void
-strvec_insert(strvec_t *vec, int position, const char *value)
+strvec_insert(strvec_t *vec, unsigned int position, const char *value)
 {
   if(position == vec->count)
     return strvec_push(vec, value);
@@ -41,6 +42,16 @@ strvec_insert(strvec_t *vec, int position, const char *value)
 
   vec->v[position] = strdup(value);
   vec->count++;
+}
+
+
+void
+strvec_delete(strvec_t *vec, unsigned int position)
+{
+  assert(position < vec->count);
+  memmove(vec->v + position, vec->v + position + 1,
+          (vec->count - position - 1) * sizeof(vec->v[0]));
+  vec->count--;
 }
 
 
@@ -76,6 +87,18 @@ strvec_find(const strvec_t *vec, const char *value)
     return -1;
   const int pos = strvec_search(vec, value);
   return pos < vec->count && !strcmp(vec->v[pos], value) ? pos : -1;
+}
+
+
+int
+strvec_delete_value(strvec_t *vec, const char *value)
+{
+  if(vec->count == 0)
+    return -1;
+  const int pos = strvec_search(vec, value);
+  if(pos >= 0)
+    strvec_delete(vec, pos);
+  return pos;
 }
 
 void
