@@ -212,6 +212,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       break;
     }
 
+    case HCR_TAG_VERB:
+      curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, va_arg(ap, const char *));
+      break;
+
     default:
       abort();
     }
