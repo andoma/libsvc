@@ -56,8 +56,9 @@ static struct task_group_queue task_groups =TAILQ_HEAD_INITIALIZER(task_groups);
 static unsigned int num_task_threads;
 static unsigned int num_task_threads_avail;
 static pthread_mutex_t task_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t task_cond   = PTHREAD_COND_INITIALIZER;
-
+static pthread_cond_t task_cond = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t task_end_cond = PTHREAD_COND_INITIALIZER;
+static int task_sys_running = 1;
 
 /**
  *
@@ -82,12 +83,12 @@ task_thread(void *aux)
   task_group_t *tg;
 
   pthread_mutex_lock(&task_mutex);
-  while(1) {
+  while(task_sys_running) {
     t = TAILQ_FIRST(&tasks);
     tg = TAILQ_FIRST(&task_groups);
 
     if(t == NULL && tg == NULL) {
-      if(num_task_threads_avail == MAX_IDLE_TASK_THREADS)
+      if(num_task_threads_avail >= MAX_IDLE_TASK_THREADS)
         break;
 
       num_task_threads_avail++;
@@ -135,6 +136,7 @@ task_thread(void *aux)
   }
 
   num_task_threads--;
+  pthread_cond_signal(&task_end_cond);
   pthread_mutex_unlock(&task_mutex);
   return NULL;
 }
@@ -222,16 +224,37 @@ task_run_in_group(task_fn_t *fn, void *opaque, task_group_t *tg)
   task_t *t = calloc(1, sizeof(task_t));
   t->t_fn = fn;
   t->t_opaque = opaque;
-  t->t_group = tg;
-  atomic_inc(&tg->tg_refcount);
   pthread_mutex_lock(&task_mutex);
-  if(TAILQ_FIRST(&tg->tg_tasks) == NULL)
-    TAILQ_INSERT_TAIL(&task_groups, tg, tg_link);
 
-  TAILQ_INSERT_TAIL(&tg->tg_tasks, t, t_link);
-  task_schedule();
+  if(task_sys_running) {
+    t->t_group = tg;
+    atomic_inc(&tg->tg_refcount);
+
+    if(TAILQ_FIRST(&tg->tg_tasks) == NULL)
+      TAILQ_INSERT_TAIL(&task_groups, tg, tg_link);
+
+    TAILQ_INSERT_TAIL(&tg->tg_tasks, t, t_link);
+    task_schedule();
+  } else {
+    TAILQ_INSERT_TAIL(&tasks, t, t_link);
+  }
   pthread_mutex_unlock(&task_mutex);
 }
 
 
+/**
+ *
+ */
+void
+task_stop(void)
+{
+  pthread_mutex_lock(&task_mutex);
+  task_sys_running = 0;
+  pthread_cond_broadcast(&task_cond);
 
+  while(num_task_threads) {
+    pthread_cond_wait(&task_end_cond, &task_mutex);
+  }
+
+  pthread_mutex_unlock(&task_mutex);
+}

@@ -116,6 +116,16 @@ tcp_steal_fd(tcp_stream_t *ts)
   return fd;
 }
 
+
+/**
+ *
+ */
+void
+tcp_shutdown(tcp_stream_t *ts)
+{
+  shutdown(ts->ts_fd, SHUT_RD);
+}
+
 /**
  *
  */

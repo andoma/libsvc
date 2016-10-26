@@ -26,6 +26,8 @@
 #include "htsbuf.h"
 #include "tcp.h"
 
+struct http_server;
+
 TAILQ_HEAD(http_arg_list, http_arg);
 
 typedef struct http_arg {
@@ -115,7 +117,8 @@ typedef struct http_connection {
   struct ntv *hc_session;
 
   const struct http_server *hc_server;
-  
+  LIST_ENTRY(http_connection) hc_server_link;
+
 } http_connection_t;
 
 
@@ -161,7 +164,9 @@ typedef int (http_callback2_t)(http_connection_t *hc, int argc, char **argv,
 
 void http_route_add(const char *path, http_callback2_t *callback, int flags);
 
-int http_server_init(const char *config);
+struct http_server *http_server_init(const char *config);
+
+void http_server_stop(struct http_server *hs);
 
 int http_access_verify(http_connection_t *hc);
 

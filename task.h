@@ -36,3 +36,4 @@ void task_group_destroy(task_group_t *tg);
 
 void task_run_in_group(task_fn_t *fn, void *opaque, task_group_t *tg);
 
+void task_stop(void);

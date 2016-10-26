@@ -49,12 +49,18 @@
 #include "ntv.h"
 
 
+LIST_HEAD(http_connection_list, http_connection);
+
 typedef struct http_server {
   const char *hs_config_prefix;
   int hs_reverse_proxy;  // Set if we sit behind a reverse proxy
   int hs_secure_cookies;
 
+  pthread_mutex_t hs_mutex;
+  struct http_connection_list hs_connections;
+  int hs_closed;
 } http_server_t;
+
 
 typedef struct http_path {
   LIST_ENTRY(http_path) hp_link;
@@ -959,7 +965,6 @@ http_serve_requests(http_connection_t *hc)
     hc->hc_password = NULL;
 
   } while(hc->hc_keep_alive);
-  
 }
 
 
@@ -967,13 +972,25 @@ http_serve_requests(http_connection_t *hc)
  *
  */
 static void
-http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer, 
+http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
 	   struct sockaddr_in *self)
 {
   http_connection_t hc;
-
+  http_server_t *hs = opaque;
   memset(&hc, 0, sizeof(http_connection_t));
-  hc.hc_server = opaque;
+  hc.hc_server = hs;
+
+  pthread_mutex_lock(&hs->hs_mutex);
+
+  if(hs->hs_closed) {
+    tcp_close(ts);
+    pthread_mutex_unlock(&hs->hs_mutex);
+    return;
+  }
+
+  LIST_INSERT_HEAD(&hs->hs_connections, &hc, hc_server_link);
+  pthread_mutex_unlock(&hs->hs_mutex);
+
   TAILQ_INIT(&hc.hc_args);
   TAILQ_INIT(&hc.hc_req_args);
   TAILQ_INIT(&hc.hc_response_headers);
@@ -1003,13 +1020,17 @@ http_serve(tcp_stream_t *ts, void *opaque, struct sockaddr_in *peer,
   if(hc.hc_ts != NULL)
     tcp_close(hc.hc_ts);
   talloc_cleanup();
+
+  pthread_mutex_lock(&hs->hs_mutex);
+  LIST_REMOVE(&hc, hc_server_link);
+  pthread_mutex_unlock(&hs->hs_mutex);
 }
 
 
 /**
  *  Fire up HTTP server
  */
-int
+struct http_server *
 http_server_init(const char *config_prefix)
 {
   cfg_root(cr);
@@ -1027,9 +1048,28 @@ http_server_init(const char *config_prefix)
   hs->hs_secure_cookies = cfg_get_int(cr, CFG(config_prefix, "secureCookies"), 0);
   void *ts = tcp_server_create(port, bindaddr, http_serve, hs);
   if(ts == NULL)
-    return errno;
-  return 0;
+    return NULL;
+  return hs;
 }
+
+/**
+ *
+ */
+void
+http_server_stop(struct http_server *hs)
+{
+  http_connection_t *hc;
+
+  pthread_mutex_lock(&hs->hs_mutex);
+  hs->hs_closed = 1;
+
+  LIST_FOREACH(hc, &hs->hs_connections, hc_server_link) {
+    tcp_shutdown(hc->hc_ts);
+  }
+
+  pthread_mutex_unlock(&hs->hs_mutex);
+}
+
 
 struct bundleserve {
   const char *filepath;

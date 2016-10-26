@@ -81,3 +81,7 @@ int tcp_can_read(tcp_stream_t *ts, struct pollfd *pfd);
 int tcp_get_errno(tcp_stream_t *ts);
 
 int tcp_steal_fd(tcp_stream_t *ts);
+
+void tcp_shutdown(tcp_stream_t *ts);
+
+void tcp_server_stop(void);

@@ -103,8 +103,30 @@ libsvc_init(void)
 #endif
 
   const inithelper_t *ih;
-  LIST_FOREACH(ih, &inithelpers, link)
+  LIST_FOREACH(ih, &inithelpers, link) {
     ih->init();
+  }
+}
+
+
+void
+libsvc_fini(void)
+{
+  inithelper_t *ih;
+
+  LIST_HEAD(, inithelper) rev;
+  LIST_INIT(&rev);
+  while((ih = LIST_FIRST(&inithelpers)) != NULL) {
+    LIST_REMOVE(ih, link);
+    LIST_INSERT_HEAD(&rev, ih, link);
+  }
+
+  while((ih = LIST_FIRST(&rev)) != NULL) {
+    LIST_REMOVE(ih, link);
+    if(ih->fini != NULL)
+      ih->fini();
+    free(ih);
+  }
 }
 
 

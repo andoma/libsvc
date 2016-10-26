@@ -73,23 +73,30 @@ typedef struct tcp_server_launch_t {
 LIST_HEAD(tcp_thread_list, tcp_thread);
 
 #define MAX_ACTIVE_THREADS 64
-#define MAX_IDLE_THREADS   1
+#define MAX_IDLE_THREADS   4
 
 static int tcp_num_idle_threads;
 static int tcp_num_active_threads;
 static pthread_mutex_t tcp_thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t tcp_thread_cond = PTHREAD_COND_INITIALIZER;
+static int tcp_server_max_idle_threads = MAX_IDLE_THREADS;
+static int tcp_server_run = 1;
+
 static struct tcp_thread_list tcp_idle_threads;
+static struct tcp_thread_list tcp_threads;
 
 /**
  *
  */
 typedef struct tcp_thread {
-  LIST_ENTRY(tcp_thread) tt_link;
+  LIST_ENTRY(tcp_thread) tt_idle_link;
+  LIST_ENTRY(tcp_thread) tt_global_link;
 
   tcp_server_launch_t *tt_launch;
   pthread_cond_t tt_cond;
   pthread_t tt_tid;
+
+  int tt_stop;
 
 } tcp_thread_t;
 
@@ -101,36 +108,56 @@ static void *
 tcp_trampoline(void *aux)
 {
   tcp_thread_t *tt = aux;
-  tcp_server_launch_t *tsl;
+  tcp_server_launch_t *tsl = tt->tt_launch;
+  tt->tt_launch = NULL;
+
+  pthread_mutex_lock(&tcp_thread_mutex);
 
   while(1) {
-    tsl = tt->tt_launch;
-    tt->tt_launch = NULL;
+
     assert(tsl != NULL);
-    tsl->start(tcp_stream_create_from_fd(tsl->fd),
-               tsl->opaque, &tsl->peer, &tsl->self);
+
+    if(tcp_server_run) {
+
+      pthread_mutex_unlock(&tcp_thread_mutex);
+      tsl->start(tcp_stream_create_from_fd(tsl->fd),
+                 tsl->opaque, &tsl->peer, &tsl->self);
+      talloc_cleanup();
+      pthread_mutex_lock(&tcp_thread_mutex);
+    } else {
+      close(tsl->fd);
+    }
+
     free(tsl);
 
-    pthread_mutex_lock(&tcp_thread_mutex);
-
-    if(tcp_num_idle_threads == MAX_IDLE_THREADS) {
-      tcp_num_active_threads--;
-      pthread_mutex_unlock(&tcp_thread_mutex);
+    if(!tcp_server_run || tcp_num_idle_threads >= tcp_server_max_idle_threads) {
       break;
     }
 
     tcp_num_idle_threads++;
-    LIST_INSERT_HEAD(&tcp_idle_threads, tt, tt_link);
+    LIST_INSERT_HEAD(&tcp_idle_threads, tt, tt_idle_link);
     pthread_cond_signal(&tcp_thread_cond);
 
-    while(tt->tt_launch == NULL)
+    while(tt->tt_launch == NULL && tcp_server_run) {
       pthread_cond_wait(&tt->tt_cond, &tcp_thread_mutex);
+    }
 
-    pthread_mutex_unlock(&tcp_thread_mutex);
+    if(!tcp_server_run)
+      break;
 
-    talloc_cleanup();
+    tsl = tt->tt_launch;
+    tt->tt_launch = NULL;
   }
-  free(tt);
+
+  tcp_num_active_threads--;
+
+  if(tcp_server_run) {
+    pthread_detach(pthread_self());
+    LIST_REMOVE(tt, tt_global_link);
+    free(tt);
+  }
+
+  pthread_mutex_unlock(&tcp_thread_mutex);
   return NULL;
 }
 
@@ -165,6 +192,12 @@ tcp_server_start(tcp_server_launch_t *tsl)
 
   pthread_mutex_lock(&tcp_thread_mutex);
 
+  if(!tcp_server_run) {
+    close(tsl->fd);
+    free(tsl);
+    pthread_mutex_unlock(&tcp_thread_mutex);
+  }
+
   tcp_thread_t *tt;
 
   while(1) {
@@ -172,7 +205,7 @@ tcp_server_start(tcp_server_launch_t *tsl)
 
     tt = LIST_FIRST(&tcp_idle_threads);
     if(tt != NULL) {
-      LIST_REMOVE(tt, tt_link);
+      LIST_REMOVE(tt, tt_idle_link);
       assert(tt->tt_launch == NULL);
       tt->tt_launch = tsl;
       tcp_num_idle_threads--;
@@ -192,12 +225,9 @@ tcp_server_start(tcp_server_launch_t *tsl)
     tt = calloc(1, sizeof(tcp_thread_t));
     pthread_cond_init(&tt->tt_cond, NULL);
     tt->tt_launch = tsl;
+    LIST_INSERT_HEAD(&tcp_threads, tt, tt_global_link);
 
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    pthread_create(&tt->tt_tid, &attr, tcp_trampoline, tt);
-    pthread_attr_destroy(&attr);
+    pthread_create(&tt->tt_tid, NULL, tcp_trampoline, tt);
     break;
   }
   pthread_mutex_unlock(&tcp_thread_mutex);
@@ -346,4 +376,33 @@ tcp_server_init(void)
     abort();
 
   pthread_create(&tid, NULL, tcp_server_loop, NULL);
+}
+
+
+/**
+ *
+ */
+void
+tcp_server_stop(void)
+{
+  tcp_thread_t *tt;
+
+
+  trace(LOG_INFO, "Waiting for TCP thread pool to drain");
+  pthread_mutex_lock(&tcp_servers_mutex);
+
+  tcp_server_run = 0;
+
+  LIST_FOREACH(tt, &tcp_threads, tt_global_link) {
+    pthread_cond_signal(&tt->tt_cond);
+  }
+
+  while((tt = LIST_FIRST(&tcp_threads)) != NULL) {
+    LIST_REMOVE(tt, tt_global_link);
+    pthread_mutex_unlock(&tcp_servers_mutex);
+    pthread_join(tt->tt_tid, NULL);
+    pthread_mutex_lock(&tcp_servers_mutex);
+    free(tt);
+  }
+  trace(LOG_INFO, "TCP thread pool to drained");
 }
