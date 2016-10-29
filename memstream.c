@@ -66,7 +66,6 @@ buf_write(void *aux, const char *data, int len)
   return len;
 }
 
-
 /**
  *
  */
@@ -90,5 +89,40 @@ open_buffer(char **out, size_t *outlen)
   bh->outlen = outlen;
   return funopen(bh, NULL, buf_write, NULL, buf_close);
 }
+
+
+typedef struct readhelper {
+  char *data;
+  size_t size;
+  off_t pos;
+} readhelper_t;
+
+/**
+ *
+ */
+static int
+buf_read(void *aux, char *data, int len)
+{
+  readhelper_t *rh = aux;
+
+  if(rh->pos + len > rh->size)
+    len = rh->size - rh->pos;
+
+  memcpy(data, rh->data + rh->pos, len);
+  rh->pos += len;
+  return len;
+}
+
+
+FILE *
+open_buffer_read(void *buf, size_t len)
+{
+  readhelper_t *rh = malloc(sizeof(bufhelper_t));
+  rh->data = buf;
+  rh->size = len;
+  rh->pos = 0;
+  return funopen(rh, buf_read, NULL, NULL, buf_close);
+}
+
 
 #endif

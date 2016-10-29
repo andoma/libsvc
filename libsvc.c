@@ -147,11 +147,11 @@ libsvc_set_fdlimit(int num_fd)
     trace(LOG_ERR, "Unable to set fdlimit to %d -- %s",
           num_fd, strerror(errno));
     trace(LOG_INFO, "Current fdlimit %ld (max: %ld)",
-          lim.rlim_cur, lim.rlim_max);
+          (long)lim.rlim_cur, (long)lim.rlim_max);
     exit(1);
   }
 
   trace(LOG_INFO, "Current fdlimit %ld (max: %ld)",
-        lim.rlim_cur, lim.rlim_max);
+        (long)lim.rlim_cur, (long)lim.rlim_max);
 
 }
