@@ -798,8 +798,13 @@ tcp_init1(const char *extra_ca, int init_ssl)
 
   ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
 
+#if defined(__APPLE__)
+  if(!SSL_CTX_load_verify_locations(ssl_ctx, "/usr/local/etc/openssl/cert.pem", NULL))
+    exit(1);
+#else
   if(!SSL_CTX_load_verify_locations(ssl_ctx, NULL, "/etc/ssl/certs"))
     exit(1);
+#endif
 
   if(extra_ca != NULL) {
     BIO *cbio = BIO_new_mem_buf((char *)extra_ca, -1);
