@@ -12,7 +12,7 @@ strvec_push(strvec_t *vec, const char *value)
     vec->capacity = vec->capacity * 2 + 16;
     vec->v = realloc(vec->v, sizeof(vec->v[0]) * vec->capacity);
   }
-  vec->v[vec->count++] = strdup(value);
+  vec->v[vec->count++] = value ? strdup(value) : NULL;
 }
 
 void
