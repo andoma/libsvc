@@ -95,7 +95,7 @@ strvec_delete_value(strvec_t *vec, const char *value)
 {
   if(vec->count == 0)
     return -1;
-  const int pos = strvec_search(vec, value);
+  const int pos = strvec_find(vec, value);
   if(pos >= 0)
     strvec_delete(vec, pos);
   return pos;
