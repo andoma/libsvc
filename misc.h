@@ -130,3 +130,7 @@ char *lp_get(char **lp);
 size_t html_enteties_escape(const char *src, char *dst);
 
 const char *html_enteties_escape_tmp(const char *src);
+
+char * str_replace_tokens(char *str, const char *tokenprefix,
+			  const char *tokenpostfix,
+			  const char **tokens);

@@ -966,3 +966,59 @@ html_enteties_escape_tmp(const char *src)
   html_enteties_escape(src, r);
   return r;
 }
+
+char *
+str_replace_tokens(char *str, const char *tokenprefix,
+		   const char *tokenpostfix,
+		   const char **tokens)
+{
+  const size_t prelen = strlen(tokenprefix);
+  const size_t postlen = strlen(tokenpostfix);
+
+  int tlen = strlen(str);
+  char *curpos = str;
+  int i;
+
+  while(1) {
+    char *a = strstr(curpos, tokenprefix);
+    if(a == NULL)
+      break;
+    char *b = a + prelen;
+
+    char *c = strstr(b, tokenpostfix);
+    if(c == NULL)
+      break;
+
+    char *d = c + postlen;
+
+    char save = *c;
+    *c = 0; // replace token end with \0 so we can strcmp()
+
+    for(i = 0; tokens[i] != NULL; i+=2) {
+      if(!strcmp(tokens[i], b))
+	break;
+    }
+
+    *c = save;
+    if(tokens[i] == NULL) {
+      // Lookup failed
+      curpos = d;
+      continue;
+    }
+
+    int replacelen = strlen(tokens[i + 1]);
+    int newlen = tlen - (d - a) + replacelen;
+
+    char *n = malloc(newlen + 1);
+    memcpy(n, str, a - str);
+    memcpy(n + (a - str), tokens[i + 1], replacelen);
+    memcpy(n + (a - str) + replacelen, d, tlen - (d - str));
+    n[newlen] = 0;
+
+    curpos = n + (d - str);
+    tlen = newlen;
+    free(str);
+    str = n;
+  }
+  return str;
+}
