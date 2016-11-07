@@ -108,13 +108,21 @@ decolorize(char *s)
 void
 enable_syslog(const char *program, const char *facility)
 {
-  int f;
+  unsigned int f;
   const char *x;
-  if(!strcmp(facility, "daemon"))
+  if(!strcmp(facility, "daemon")) {
     f = LOG_DAEMON;
-  else if((x = mystrbegins(facility, "local")) != NULL)
-    f = LOG_LOCAL0 + atoi(x);
-  else {
+  } else if((x = mystrbegins(facility, "local")) != NULL) {
+    f = atoi(x);
+    if(f > 7) {
+      fprintf(stderr, "Invalid syslog config -- %s\n", facility);
+      exit(1);
+    }
+    static const int locals[8] = {
+      LOG_LOCAL0, LOG_LOCAL1, LOG_LOCAL2, LOG_LOCAL3,
+      LOG_LOCAL4, LOG_LOCAL5, LOG_LOCAL6, LOG_LOCAL7};
+    f = locals[f];
+  } else {
     fprintf(stderr, "Invalid syslog config -- %s\n", facility);
     exit(1);
   }
