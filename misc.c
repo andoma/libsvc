@@ -476,7 +476,7 @@ url_split(char *proto, int proto_size,
  *
  */
 int
-rm_rf(const char *path)
+rm_rf(const char *path, int remove_self)
 {
   struct dirent **namelist;
   char fullpath[PATH_MAX];
@@ -493,12 +493,13 @@ rm_rf(const char *path)
         unlink(fullpath);
       }
       if(type == DT_DIR)
-        rm_rf(fullpath);
+        rm_rf(fullpath, 1);
     }
     free(namelist[n]);
   }
   free(namelist);
-  rmdir(path);
+  if(remove_self)
+    rmdir(path);
   return 0;
 }
 

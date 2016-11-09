@@ -58,7 +58,7 @@ void url_split(char *proto, int proto_size,
 
 int makedirs(const char *path);
 
-int rm_rf(const char *path);
+int rm_rf(const char *path, int remove_self);
 
 void get_random_bytes(void *out, size_t len);
 
