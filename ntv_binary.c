@@ -27,7 +27,6 @@
 
 #include "ntv.h"
 #include "htsbuf.h"
-#include "dbl.h"
 
 
 // These values are selected based on bytes that must never occur in
