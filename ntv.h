@@ -38,7 +38,7 @@ typedef struct ntv_namespace {
 
 typedef enum {
   NTV_XML_ATTRIBUTE = 0x1,
-
+  NTV_DONT_FREE = 0x2,
 } ntv_flags;
 
 typedef enum {
@@ -163,6 +163,7 @@ ntv_t *ntv_json_deserialize(const char *src, char *errbuf, size_t errlen);
 
 void ntv_binary_serialize(const ntv_t *msg, struct htsbuf_queue *hq);
 ntv_t *ntv_binary_deserialize(const void *data, size_t length);
+ntv_t *ntv_binary_deserialize_nocopy(const void *data, size_t length);
 
 
 #if __STDC_VERSION__ >= 201112L

@@ -207,25 +207,29 @@ ntv_read_string(const uint8_t *data, const uint8_t *dataend, char **res)
 
 static const uint8_t *
 ntv_read_binary(const uint8_t *data, const uint8_t *dataend, void **res,
-                size_t *lenp)
+                size_t *lenp, int nocopy)
 {
   uint64_t u64;
   data = ntv_read_length(data, dataend, &u64);
   if(data == NULL)
     return NULL;
 
-  char *r = *res = malloc(u64);
-  if(r == NULL)
-    return NULL;
+  if(nocopy) {
+    *res = (void *)data;
+  } else {
+    char *r = *res = malloc(u64);
+    if(r == NULL)
+      return NULL;
+    memcpy(r, data, u64);
+  }
   *lenp = u64;
-  memcpy(r, data, u64);
   return data + u64;
 }
 
 
 static const uint8_t *
 ntv_binary_deserialize0(const uint8_t *data, const uint8_t *dataend,
-                        ntv_t **ret)
+                        ntv_t **ret, int nocopy)
 {
   uint64_t u64;
   ntv_t *f = NULL;
@@ -256,7 +260,7 @@ ntv_binary_deserialize0(const uint8_t *data, const uint8_t *dataend,
       }
 
       ntv_t *sub;
-      data = ntv_binary_deserialize0(data, dataend, &sub);
+      data = ntv_binary_deserialize0(data, dataend, &sub, nocopy);
       if(data == NULL)
         break;
 
@@ -311,7 +315,9 @@ ntv_binary_deserialize0(const uint8_t *data, const uint8_t *dataend,
 
   case NTV_BIN_BINARY:
     f = ntv_create(NTV_BINARY);
-    data = ntv_read_binary(data, dataend, &f->ntv_bin, &f->ntv_binsize);
+    data = ntv_read_binary(data, dataend, &f->ntv_bin, &f->ntv_binsize, nocopy);
+    if(nocopy)
+      f->ntv_flags |= NTV_DONT_FREE;
     break;
   }
 
@@ -329,6 +335,14 @@ ntv_t *
 ntv_binary_deserialize(const void *data, size_t length)
 {
   ntv_t *r = NULL;
-  ntv_binary_deserialize0(data, data + length, &r);
+  ntv_binary_deserialize0(data, data + length, &r, 0);
+  return r;
+}
+
+ntv_t *
+ntv_binary_deserialize_nocopy(const void *data, size_t length)
+{
+  ntv_t *r = NULL;
+  ntv_binary_deserialize0(data, data + length, &r, 1);
   return r;
 }

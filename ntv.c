@@ -69,15 +69,18 @@ ntv_field_clear(ntv_t *f, ntv_type newtype)
     break;
 
   case NTV_STRING:
-    free(f->ntv_string);
+    if(!(f->ntv_flags & NTV_DONT_FREE))
+      free(f->ntv_string);
     f->ntv_string = NULL;
     break;
   case NTV_BINARY:
-    free(f->ntv_bin);
+    if(!(f->ntv_flags & NTV_DONT_FREE))
+      free(f->ntv_bin);
     f->ntv_bin = NULL;
     break;
   }
 
+  f->ntv_flags &= ~NTV_DONT_FREE;
   f->ntv_type = newtype;
 }
 
