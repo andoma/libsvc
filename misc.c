@@ -236,8 +236,8 @@ dictcmp(const char *a, const char *b)
 
   while(1) {
 
-    ua = utf8_get(&a);
-    ub = utf8_get(&b);
+    ua = utf8_get(&a, NULL);
+    ub = utf8_get(&b, NULL);
 
     switch((ua >= '0' && ua <= '9' ? 1 : 0)|(ub >= '0' && ub <= '9' ? 2 : 0)) {
     case 0:  /* 0: a is not a digit, nor is b */

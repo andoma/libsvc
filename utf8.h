@@ -25,10 +25,12 @@
 
 int utf8_put(char *out, int c);
 
-int utf8_get(const char **s);
+int utf8_get(const char **s, const char *stop);
 
 char *utf8_cleanup(const char *str);
 
 void utf8_cleanup_inplace(char *str, size_t len);
 
 int utf8_len(const char *s);
+
+int utf8_verify(const char *str, const char *end);

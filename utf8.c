@@ -108,10 +108,13 @@ utf8_put(char *out, int c)
  *
  */
 int
-utf8_get(const char **s)
+utf8_get(const char **s, const char *stop)
 {
     uint8_t c;
     int r, l, m;
+
+    if(*s == stop)
+      return 0xfffd;
 
     c = **s;
     *s = *s + 1;
@@ -154,6 +157,8 @@ utf8_get(const char **s)
     }
 
     while(l-- > 0) {
+      if(*s == stop)
+        return 0xfffd;
         c = **s;
         if((c & 0xc0) != 0x80)
             return 0xfffd;
@@ -173,7 +178,7 @@ int
 utf8_len(const char *s)
 {
   int l = 0;
-  while(utf8_get(&s))
+  while(utf8_get(&s, NULL))
     l++;
   return l;
 }
@@ -190,7 +195,7 @@ utf8_cleanup(const char *str)
   int outlen = 1;
   int c;
   int bad = 0;
-  while((c = utf8_get(&s)) != 0) {
+  while((c = utf8_get(&s, NULL)) != 0) {
     if(c == 0xfffd)
       bad = 1;
     outlen += utf8_put(NULL, c);
@@ -201,7 +206,7 @@ utf8_cleanup(const char *str)
 
   char *out = malloc(outlen);
   char *ret = out;
-  while((c = utf8_get(&str)) != 0)
+  while((c = utf8_get(&str, NULL)) != 0)
     out += utf8_put(out, c);
 
   *out = 0;
@@ -219,7 +224,7 @@ utf8_cleanup_inplace(char *str, size_t len)
   int outlen = 1;
   int c;
   int bad = 0;
-  while((c = utf8_get(&s)) != 0) {
+  while((c = utf8_get(&s, NULL)) != 0) {
     if(c == 0xfffd)
       bad = 1;
     outlen += utf8_put(NULL, c);
@@ -231,10 +236,27 @@ utf8_cleanup_inplace(char *str, size_t len)
   char *out = alloca(outlen);
   const char *ret = out;
   s = str;
-  while((c = utf8_get(&s)) != 0)
+  while((c = utf8_get(&s, NULL)) != 0)
     out += utf8_put(out, c);
 
   *out = 0;
 
   snprintf(str, len, "%s", ret);
+}
+
+
+
+/**
+ * Return 1 iff the string is UTF-8 conformant
+ */
+int
+utf8_verify(const char *str, const char *end)
+{
+  int c;
+
+  while(str != end && (c = utf8_get(&str, end)) != 0) {
+    if(c == 0xfffd)
+      return 0;
+  }
+  return 1;
 }
