@@ -147,7 +147,7 @@ void asyncio_reconnect(async_fd_t *af, int delay);
 
 void asyncio_enable_read(async_fd_t *fd);
 
-void asyncio_shutdown(async_fd_t *fd);
+void asyncio_shutdown(async_fd_t *fd, int how);
 
 void async_fd_retain(async_fd_t *af);
 

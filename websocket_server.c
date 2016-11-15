@@ -20,7 +20,7 @@
 * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
-
+#if 0
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -382,10 +382,11 @@ websocket_http_callback(http_connection_t *hc, const char *remain,
 
   htsbuf_qprintf(&out, "\r\n");
 
-  tcp_write_queue(hc->hc_ts, &out);
+  asyncio_sendq(hc->hc_af, &out, 0);
+  //  tcp_write_queue(hc->hc_ts, &out);
 
   // Steal socket
-  int fd = tcp_steal_fd(hc->hc_ts);
+  int fd = -1; // tcp_steal_fd(hc->hc_ts);
 
   ws_server_connection_t *wsc = calloc(1, sizeof(ws_server_connection_t));
 
@@ -443,3 +444,4 @@ websocket_route_add(const char *path,
 }
 
 
+#endif

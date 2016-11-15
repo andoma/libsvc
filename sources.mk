@@ -49,7 +49,7 @@ libsvc_INCS += \
 	intvec.h \
 	strvec.h \
 	init.h \
-	murmur3.c \
+	murmur3.h \
 
 CFLAGS  += $(shell pkg-config --cflags openssl)
 LDFLAGS += $(shell pkg-config --libs openssl)
@@ -117,8 +117,8 @@ endif
 ##############################################################
 
 ifeq (${WITH_HTTP_SERVER},yes)
-libsvc_SRCS    +=  http.c
-libsvc_INCS    +=  http.h
+libsvc_SRCS    +=  http.c http_parser.c
+libsvc_INCS    +=  http.h http_parser.h
 WITH_TCP_SERVER := yes
 CFLAGS += -DWITH_HTTP_SERVER
 endif

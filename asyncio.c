@@ -204,6 +204,8 @@ asyncio_get_monotime(void)
 void
 asyncio_timer_arm_delta(asyncio_timer_t *at, uint64_t delta)
 {
+  assert(pthread_self() == asyncio_tid);
+
   if(at->at_expire)
     LIST_REMOVE(at, at_link);
 
@@ -226,6 +228,8 @@ asyncio_timer_arm_delta(asyncio_timer_t *at, uint64_t delta)
 void
 asyncio_timer_disarm(asyncio_timer_t *at)
 {
+  assert(pthread_self() == asyncio_tid);
+
   if(at->at_expire) {
     LIST_REMOVE(at, at_link);
     at->at_expire = 0;
@@ -350,12 +354,9 @@ async_fd_release(async_fd_t *af)
 {
   if(atomic_dec(&af->af_refcount))
     return;
-
   assert(af->af_dns_req == NULL);
   assert(af->af_timer.at_expire == 0);
-
-  if(af->af_fd != -1)
-    close(af->af_fd);
+  assert(af->af_fd == -1);
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_destroy(&af->af_sendq_mutex);
@@ -650,22 +651,23 @@ asyncio_loop(void *aux)
 void
 asyncio_close(async_fd_t *af)
 {
-  assert(af->af_fd != -1);
+  assert(pthread_self() == asyncio_tid);
 
   asyncio_timer_disarm(&af->af_timer);
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
-  mod_poll_flags(af, 0, -1);
-
-  close(af->af_fd);
-  af->af_fd = -1;
+  if(af->af_fd != -1) {
+    mod_poll_flags(af, 0, -1);
+    close(af->af_fd);
+    af->af_fd = -1;
+  }
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
-
-  async_fd_release(af);
+  else
+    async_fd_release(af);
 }
 
 
@@ -673,18 +675,14 @@ asyncio_close(async_fd_t *af)
  *
  */
 void
-asyncio_shutdown(async_fd_t *af)
+asyncio_shutdown(async_fd_t *af, int how)
 {
-  assert(af->af_fd != -1);
-
-  asyncio_timer_disarm(&af->af_timer);
-
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
-  shutdown(af->af_fd, SHUT_RD);
-
-  mod_poll_flags(af, 0, -1);
+  if(af->af_fd != -1) {
+    shutdown(af->af_fd, how);
+  }
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
@@ -823,7 +821,7 @@ asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
 async_fd_t *
 asyncio_bind(const char *bindaddr, int port,
              asyncio_accept_cb_t *cb,
-             void *opque)
+             void *opaque)
 {
   int fd, ret;
   int one = 1;
@@ -858,6 +856,7 @@ asyncio_bind(const char *bindaddr, int port,
   async_fd_t *af = async_fd_create(fd, EPOLLIN);
   af->af_pollin = &do_accept;
   af->af_accept = cb;
+  af->af_opaque = opaque;
   return af;
 }
 
