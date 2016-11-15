@@ -62,8 +62,7 @@ doreload(int x)
 static void
 http_init(void)
 {
-  if(http_server_init(NULL))
-    exit(1);
+  http_server_init(NULL);
 }
 #endif
 
