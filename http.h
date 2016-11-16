@@ -75,6 +75,9 @@ typedef struct http_request {
 
   htsbuf_queue_t hr_reply;
 
+  int64_t hr_req_received;
+  int64_t hr_req_process;
+
   int hr_method;
 
   unsigned short hr_major;

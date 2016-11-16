@@ -294,6 +294,19 @@ http_req_ver_str(const http_request_t *hr)
 /**
  *
  */
+static void
+http_log(http_request_t *hr, int status, const char *str)
+{
+  int64_t d1 = hr->hr_req_process - hr->hr_req_received;
+  int64_t d2 = asyncio_now() - hr->hr_req_process;
+
+  trace(LOG_INFO, "HTTP %s -- %d (%s) %s T:%"PRId64"+%"PRId64"us",
+        hr->hr_path, status, str, hr->hr_peer_addr, d1, d2);
+}
+
+/**
+ *
+ */
 int
 http_send_100_continue(http_request_t *hr)
 {
@@ -303,8 +316,7 @@ http_send_100_continue(http_request_t *hr)
   htsbuf_qprintf(&q, "%s 100 Continue\r\n\r\n",
                  http_req_ver_str(hr));
   asyncio_sendq(hr->hr_connection->hc_af, &q, 0);
-
-  trace(LOG_INFO, "HTTP %s -- 100", hr->hr_path);
+  http_log(hr, 100, "Continue");
   return 0;
 }
 
@@ -432,7 +444,7 @@ http_send_reply(http_request_t *hr, int rc, const char *content,
 		const char *encoding, const char *location, int maxage)
 {
   const char *rcstr = http_rc2str(rc);
-  trace(LOG_INFO, "HTTP %s -- %d %s", hr->hr_path, rc, rcstr);
+  http_log(hr, rc, rcstr);
 
   if(http_send_header(hr, rc, rcstr, content, hr->hr_reply.hq_size,
                       encoding, location, maxage, 0, NULL, NULL))
@@ -482,7 +494,7 @@ http_err(http_request_t *hr, int error, const char *str)
     htsbuf_qprintf(&hr->hr_reply, "</BODY></HTML>\r\n");
   }
 
-  trace(LOG_INFO, "HTTP %s -- %d %s", hr->hr_path, error, errtxt);
+  http_log(hr, error, errtxt);
 
   if(http_send_header(hr, error, str, NULL, hr->hr_reply.hq_size,
                       NULL, NULL, 0, 0, NULL, NULL))
@@ -642,8 +654,7 @@ http_dispatch_request(http_request_t *hr)
       return;
     }
 
-    trace(LOG_INFO, "HTTP %s -- 101 Websocket upgrade",
-          hr->hr_path);
+    http_log(hr, 101, "Websocket upgrade");
     hr->hr_keep_alive = 1;
     return;
   }
@@ -733,6 +744,7 @@ static void
 http_dispatch_request_task(void *aux)
 {
   http_request_t *hr = aux;
+  hr->hr_req_process = asyncio_now();
   http_dispatch_request(hr);
   http_request_destroy(hr);
 }
@@ -937,6 +949,7 @@ add_current_header(http_connection_t *hc)
 static int
 http_message_begin(http_parser *p)
 {
+  //  http_connection_t *hc = p->data;
   return 0;
 }
 
@@ -986,6 +999,7 @@ http_create_request(http_connection_t *hc, int continue_check)
   TAILQ_INIT(&hr->hr_query_args);
   TAILQ_INIT(&hr->hr_response_headers);
 
+  hr->hr_req_received = asyncio_now();
 
   if(continue_check) {
     TAILQ_INIT(&hr->hr_request_headers);
@@ -1179,7 +1193,6 @@ http_server_read(void *opaque, struct htsbuf_queue *hq)
                                    hd->hd_data_len - hd->hd_data_off);
     htsbuf_drop(hq, r);
     if(hc->hc_parser.http_errno) {
-      printf("Parser error: %s\n", http_errno_name(hc->hc_parser.http_errno));
       http_connection_close(hc);
       return;
     }
