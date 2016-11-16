@@ -1142,7 +1142,7 @@ http_connection_shutdown_task(void *aux)
 {
   http_connection_t *hc = aux;
 
-  if(hc->hc_ws_path)
+  if(hc->hc_ws_path != NULL && hc->hc_ws_opaque != NULL)
     hc->hc_ws_path->wsp_disconnected(hc->hc_ws_opaque, hc->hc_error);
 
   http_connection_release(hc);
@@ -1168,17 +1168,12 @@ static void
 http_server_read(void *opaque, struct htsbuf_queue *hq)
 {
   http_connection_t *hc = opaque;
-  while(1) {
+  while(hc->hc_ws_path == NULL) {
+
     htsbuf_data_t *hd = TAILQ_FIRST(&hq->hq_q);
     if(hd == NULL)
-      break;
+      return;
 
-    if(hc->hc_ws_path) {
-      if(websocket_parse(hq, websocket_packet_input, hc, &hc->hc_ws_state)) {
-        http_connection_close(hc);
-      }
-      continue;
-    }
     size_t r = http_parser_execute(&hc->hc_parser, &parser_settings,
                                    (const void *)hd->hd_data + hd->hd_data_off,
                                    hd->hd_data_len - hd->hd_data_off);
@@ -1188,6 +1183,10 @@ http_server_read(void *opaque, struct htsbuf_queue *hq)
       http_connection_close(hc);
       return;
     }
+  }
+
+  if(websocket_parse(hq, websocket_packet_input, hc, &hc->hc_ws_state)) {
+    http_connection_close(hc);
   }
 }
 
