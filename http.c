@@ -1299,7 +1299,7 @@ http_server_init(const char *config_prefix)
   hs->hs_config_prefix = strdup(config_prefix);
 
   const char *real_ip_header =
-    cfg_get_str(cr, CFG(config_prefix, "real-ip-header"), NULL);
+    cfg_get_str(cr, CFG(config_prefix, "realIpHeader"), NULL);
   hs->hs_real_ip_header = real_ip_header ? strdup(real_ip_header) : NULL;
 
   hs->hs_secure_cookies = cfg_get_int(cr, CFG(config_prefix, "secureCookies"), 0);
