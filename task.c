@@ -33,8 +33,14 @@
 #define MAX_IDLE_TASK_THREADS 4
 
 
+LIST_HEAD(task_thread_list, task_thread);
 TAILQ_HEAD(task_queue, task);
 TAILQ_HEAD(task_group_queue, task_group);
+
+typedef struct task_thread {
+  LIST_ENTRY(task_thread) link;
+  pthread_t tid;
+} task_thread_t;
 
 struct task_group {
   atomic_t tg_refcount;
@@ -57,8 +63,8 @@ static unsigned int num_task_threads;
 static unsigned int num_task_threads_avail;
 static pthread_mutex_t task_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t task_cond = PTHREAD_COND_INITIALIZER;
-static pthread_cond_t task_end_cond = PTHREAD_COND_INITIALIZER;
 static int task_sys_running = 1;
+static struct task_thread_list task_threads;
 
 /**
  *
@@ -79,6 +85,7 @@ task_group_release(task_group_t *tg)
 static void *
 task_thread(void *aux)
 {
+  task_thread_t *tt = aux;
   task_t *t;
   task_group_t *tg;
 
@@ -136,7 +143,12 @@ task_thread(void *aux)
   }
 
   num_task_threads--;
-  pthread_cond_signal(&task_end_cond);
+
+  if(task_sys_running) {
+    pthread_detach(tt->tid);
+    LIST_REMOVE(tt, link);
+    free(tt);
+  }
   pthread_mutex_unlock(&task_mutex);
   return NULL;
 }
@@ -148,14 +160,12 @@ task_thread(void *aux)
 static void
 task_launch_thread(void)
 {
+  assert(task_sys_running != 0);
   num_task_threads++;
 
-  pthread_t id;
-  pthread_attr_t attr;
-  pthread_attr_init(&attr);
-  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-  pthread_create(&id, &attr, task_thread, NULL);
-  pthread_attr_destroy(&attr);
+  task_thread_t *tt = calloc(1, sizeof(task_thread_t));
+  LIST_INSERT_HEAD(&task_threads, tt, link);
+  pthread_create(&tt->tid, NULL, task_thread, tt);
 }
 
 
@@ -248,13 +258,18 @@ task_run_in_group(task_fn_t *fn, void *opaque, task_group_t *tg)
 void
 task_stop(void)
 {
+  task_thread_t *tt;
+
   pthread_mutex_lock(&task_mutex);
   task_sys_running = 0;
   pthread_cond_broadcast(&task_cond);
 
-  while(num_task_threads) {
-    pthread_cond_wait(&task_end_cond, &task_mutex);
+  while((tt = LIST_FIRST(&task_threads)) != NULL) {
+    LIST_REMOVE(tt, link);
+    pthread_mutex_unlock(&task_mutex);
+    pthread_join(tt->tid, NULL);
+    pthread_mutex_lock(&task_mutex);
+    free(tt);
   }
-
   pthread_mutex_unlock(&task_mutex);
 }
