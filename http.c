@@ -340,6 +340,13 @@ http_mktime(time_t t, int delta)
 }
 
 
+
+void
+http_send_raw(http_request_t *hr, const void *data, size_t len)
+{
+  asyncio_send(hr->hr_connection->hc_af, data, len, 0);
+}
+
 /**
  * Transmit a HTTP reply
  */

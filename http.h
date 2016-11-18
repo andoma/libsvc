@@ -126,6 +126,9 @@ int http_send_header(http_request_t *hc, int rc, const char *statustxt,
 int http_send_reply(http_request_t *hc, int rc, const char *content,
                     const char *encoding, const char *location, int maxage);
 
+void http_send_raw(http_request_t *hc, const void *data, size_t len);
+
+
 typedef int (http_callback_t)(http_request_t *hc,
 			      const char *remain, void *opaque);
 
