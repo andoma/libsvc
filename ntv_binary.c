@@ -49,10 +49,10 @@ ntv_write_varint(htsbuf_queue_t *hq, uint64_t v)
 {
   uint8_t tmp[10];
   int x = 0;
-  while(v) {
-    tmp[x++] = v | (v > 0x7f ? 0x80 : 0);
+  do {
+    tmp[x++] = (v & 0x7f) | (v > 0x7f ? 0x80 : 0);
     v >>= 7;
-  }
+  } while(v);
   htsbuf_append(hq, tmp, x);
 }
 
