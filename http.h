@@ -29,7 +29,7 @@
 #include "task.h"
 
 struct http_connection;
-struct ws_server_path;
+struct ntv;
 
 TAILQ_HEAD(http_arg_list, http_arg);
 
@@ -149,3 +149,34 @@ void http_serve_static(const char *path, const char *filebundle,
                        int send_index_html_on_404);
 
 void http_server_init_session_cookie(const char *password, uint8_t generation);
+
+
+
+
+typedef int (websocket_connected_t)(struct http_request *hr);
+
+typedef void (websocket_receive_t)(void *opaque, int opcode,
+                                   const uint8_t *data, size_t len);
+
+typedef void (websocket_disconnected_t)(void *opaque, int error);
+
+void websocket_route_add(const char *path,
+                         websocket_connected_t *connected,
+                         websocket_receive_t *receive,
+                         websocket_disconnected_t *error);
+
+void websocket_send(struct http_connection *hc,
+                    int opcode, const void *data, size_t len);
+
+void websocket_sendq(struct http_connection *hc,
+                     int opcode, htsbuf_queue_t *hq);
+
+
+void websocket_send_json_ntv(struct http_connection *hc, struct ntv *msg);
+
+void websocket_send_close(struct http_connection *hc, int code,
+                          const char *reason);
+
+int websocket_session_start(struct http_request *hr,
+                            void *opaque,
+                            const char *selected_protocol);

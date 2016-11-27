@@ -91,18 +91,6 @@ LDFLAGS += $(shell mysql_config --libs_r)
 endif
 
 ##############################################################
-# Websocket server
-##############################################################
-
-ifeq (${WITH_WS_SERVER},yes)
-libsvc_SRCS    +=  websocket_server.c websocket.c
-libsvc_INCS    +=  websocket_server.h
-WITH_HTTP_SERVER := yes
-WITH_ASYNCIO := yes
-CFLAGS += -DWITH_WS_SERVER
-endif
-
-##############################################################
 # Websocket client
 ##############################################################
 
@@ -117,9 +105,9 @@ endif
 ##############################################################
 
 ifeq (${WITH_HTTP_SERVER},yes)
-libsvc_SRCS    +=  http.c http_parser.c
-libsvc_INCS    +=  http.h http_parser.h
-WITH_TCP_SERVER := yes
+libsvc_SRCS    += http.c http_parser.c websocket.c
+libsvc_INCS    += http.h http_parser.h websocket.h
+WITH_ASYNCIO   := yes
 CFLAGS += -DWITH_HTTP_SERVER
 endif
 

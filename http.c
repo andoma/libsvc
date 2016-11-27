@@ -50,7 +50,6 @@
 #include "ntv.h"
 #include "asyncio.h"
 #include "websocket.h"
-#include "websocket_server.h"
 
 LIST_HEAD(http_connection_list, http_connection);
 
