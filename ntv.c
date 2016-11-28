@@ -111,14 +111,28 @@ ntv_release(ntv_t *n)
 
 
 static ntv_t *
-ntv_field_name_find(const ntv_t *parent, const char *fieldname)
+ntv_field_name_find(const ntv_t *parent, const char *fieldname,
+                    ntv_type type)
 {
   ntv_t *sub;
   if(parent == NULL || fieldname == NULL)
     return NULL;
 
+  if(-((unsigned long)(intptr_t)fieldname) < 4096) {
+    unsigned int num = -(intptr_t)fieldname - 1;
+
+    TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
+      if(type != -1 && type != sub->ntv_type)
+        continue;
+      if(!num--)
+	return sub;
+    }
+    return NULL;
+  }
+
   TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
-    if(!strcmp(sub->ntv_name, fieldname))
+    if(!strcmp(sub->ntv_name, fieldname) &&
+       (type == -1 || type == sub->ntv_type))
       return sub;
   }
   return NULL;
@@ -128,33 +142,19 @@ ntv_field_name_find(const ntv_t *parent, const char *fieldname)
 void
 ntv_delete_field(const ntv_t *parent, const char *fieldname)
 {
-  ntv_t *f = ntv_field_name_find(parent, fieldname);
+  ntv_t *f = ntv_field_name_find(parent, fieldname, -1);
   if(f != NULL)
     ntv_destroy(f);
 }
 
-
-static ntv_t *
-ntv_field_nametype_find(const ntv_t *parent, const char *fieldname,
-                        ntv_type type)
-{
-  if(parent == NULL || fieldname == NULL)
-    return NULL;
-
-  ntv_t *sub;
-  TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
-    if(sub->ntv_type == type && !strcmp(sub->ntv_name, fieldname))
-      return sub;
-  }
-  return NULL;
-}
 
 
 
 static ntv_t *
 ntv_field_name_prep(ntv_t *parent, const char *fieldname, ntv_type type)
 {
-  ntv_t *f = fieldname != NULL ? ntv_field_name_find(parent, fieldname) : NULL;
+  ntv_t *f = fieldname != NULL ?
+    ntv_field_name_find(parent, fieldname, -1) : NULL;
   if(f != NULL) {
     ntv_field_clear(f, type);
   } else {
@@ -213,28 +213,28 @@ ntv_ret_double(const ntv_t *f, double default_value)
 int64_t
 ntv_get_int64(const ntv_t *n, const char *key, int64_t default_value)
 {
-  return ntv_ret_int64(ntv_field_name_find(n, key), default_value);
+  return ntv_ret_int64(ntv_field_name_find(n, key, -1), default_value);
 }
 
 
 int
 ntv_get_int(const ntv_t *n, const char *key, int default_value)
 {
-  return ntv_ret_int64(ntv_field_name_find(n, key), default_value);
+  return ntv_ret_int64(ntv_field_name_find(n, key, -1), default_value);
 }
 
 
 double
 ntv_get_double(const ntv_t *n, const char *key, double default_value)
 {
-  return ntv_ret_double(ntv_field_name_find(n, key), default_value);
+  return ntv_ret_double(ntv_field_name_find(n, key, -1), default_value);
 }
 
 
 const char *
 ntv_get_str(const ntv_t *n, const char *key)
 {
-  ntv_t *f = ntv_field_nametype_find(n, key, NTV_STRING);
+  ntv_t *f = ntv_field_name_find(n, key, NTV_STRING);
   return f ? f->ntv_string : NULL;
 }
 
@@ -242,13 +242,13 @@ ntv_get_str(const ntv_t *n, const char *key)
 const ntv_t *
 ntv_get_map(const ntv_t *n, const char *key)
 {
-  return ntv_field_nametype_find(n, key, NTV_MAP);
+  return ntv_field_name_find(n, key, NTV_MAP);
 }
 
 const ntv_t *
 ntv_get_list(const ntv_t *n, const char *key)
 {
-  return ntv_field_nametype_find(n, key, NTV_LIST);
+  return ntv_field_name_find(n, key, NTV_LIST);
 }
 
 

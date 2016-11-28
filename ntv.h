@@ -81,6 +81,8 @@ typedef struct ntv {
 
 } ntv_t;
 
+#define NTV_INDEX(i) ((const char *)(intptr_t)(-(i+1)))
+
 #define NTV_FOREACH(field_, msg)                                \
   for(ntv_t *field_ = TAILQ_FIRST(&(msg)->ntv_children);        \
       field_ != NULL; field_ = TAILQ_NEXT(field_, ntv_link))
