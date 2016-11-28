@@ -102,6 +102,9 @@ typedef struct async_fd {
 
   uint16_t af_flags;
 #define AF_SENDQ_MUTEX        0x1
+
+  uint8_t af_pending_shutdown;
+
 } async_fd_t;
 
 
@@ -147,7 +150,7 @@ void asyncio_reconnect(async_fd_t *af, int delay);
 
 void asyncio_enable_read(async_fd_t *fd);
 
-void asyncio_shutdown(async_fd_t *fd, int how);
+void asyncio_shutdown(async_fd_t *fd);
 
 void async_fd_retain(async_fd_t *af);
 

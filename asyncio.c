@@ -380,6 +380,9 @@ do_write(async_fd_t *af)
   while(1) {
     int avail = htsbuf_peek(&af->af_sendq, tmp, sizeof(tmp));
     if(avail == 0) {
+      if(af->af_pending_shutdown) {
+        shutdown(af->af_fd, 2);
+      }
       // Nothing more to send
       mod_poll_flags(af, 0, EPOLLOUT);
       return;
@@ -675,13 +678,18 @@ asyncio_close(async_fd_t *af)
  *
  */
 void
-asyncio_shutdown(async_fd_t *af, int how)
+asyncio_shutdown(async_fd_t *af)
 {
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
   if(af->af_fd != -1) {
-    shutdown(af->af_fd, how);
+
+    if(af->af_sendq.hq_size) {
+      af->af_pending_shutdown = 1;
+    } else {
+      shutdown(af->af_fd, 2);
+    }
   }
 
   if(af->af_flags & AF_SENDQ_MUTEX)

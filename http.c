@@ -734,7 +734,7 @@ http_request_destroy(http_request_t *hr)
   free(hr->hr_password);
 
   if(!hr->hr_keep_alive)
-    asyncio_shutdown(hr->hr_connection->hc_af, 2);
+    asyncio_shutdown(hr->hr_connection->hc_af);
 
   http_connection_release(hr->hr_connection);
 
@@ -1688,7 +1688,7 @@ ws_dispatch(void *aux)
   case WSD_OPCODE_DISCONNECT:
     wsp->wsp_disconnected(hc->hc_ws_opaque, wsd->wsd_arg);
     hc->hc_ws_path = NULL;
-    asyncio_shutdown(hc->hc_af, 2);
+    asyncio_shutdown(hc->hc_af);
     break;
 
   default:
