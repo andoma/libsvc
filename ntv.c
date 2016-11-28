@@ -122,7 +122,7 @@ ntv_field_name_find(const ntv_t *parent, const char *fieldname,
     unsigned int num = -(intptr_t)fieldname - 1;
 
     TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
-      if(type != -1 && type != sub->ntv_type)
+      if((int)type != -1 && type != sub->ntv_type)
         continue;
       if(!num--)
 	return sub;
@@ -132,7 +132,7 @@ ntv_field_name_find(const ntv_t *parent, const char *fieldname,
 
   TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
     if(!strcmp(sub->ntv_name, fieldname) &&
-       (type == -1 || type == sub->ntv_type))
+       ((int)type == -1 || type == sub->ntv_type))
       return sub;
   }
   return NULL;
