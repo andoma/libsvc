@@ -33,6 +33,9 @@
 
 static int dosyslog;
 
+
+
+
 /**
  *
  */
@@ -55,14 +58,41 @@ tracev(int level, const char *fmt, va_list ap)
   time_t tim = tv.tv_sec;
   localtime_r(&tim, &tm);
 
-  fprintf(stderr, "%02d:%02d:%02d.%03d ",
+  const char *sgr = "";
+  switch(level) {
+  case LOG_EMERG:
+  case LOG_ALERT:
+  case LOG_CRIT:
+  case LOG_ERR:
+    sgr = "\033[31m";
+    break;
+  case LOG_WARNING:
+    sgr = "\033[33m";
+    break;
+  case LOG_NOTICE:
+    sgr = "\033[35m";
+    break;
+  case LOG_INFO:
+    sgr = "\033[32m";
+    break;
+  case LOG_DEBUG:
+    sgr = "\033[36m";
+    break;
+  }
+
+
+  fprintf(stderr, "%s%4d-%02d-%02d %02d:%02d:%02d.%03d ",
+          sgr,
+          tm.tm_year + 1900,
+          tm.tm_mon + 1,
+          tm.tm_mday,
           tm.tm_hour,
           tm.tm_min,
           tm.tm_sec,
           (int)tv.tv_usec / 1000);
 
   vfprintf(stderr, fmt, ap);
-  fputc('\n', stderr);
+  fputs("\033[0m\n", stderr);
 }
 
 
