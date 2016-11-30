@@ -299,7 +299,13 @@ http_log(http_request_t *hr, int status, const char *str)
   int64_t d1 = hr->hr_req_process - hr->hr_req_received;
   int64_t d2 = asyncio_now() - hr->hr_req_process;
 
-  trace(LOG_INFO, "HTTP %s -- %d (%s) %s T:%"PRId64"+%"PRId64"us",
+  int level = LOG_INFO;
+  if(status >= 500)
+    level = LOG_ERR;
+  else if(status >= 400)
+    level = LOG_NOTICE;
+
+  trace(level, "HTTP %s -- %d (%s) %s T:%"PRId64"+%"PRId64"us",
         hr->hr_path, status, str, hr->hr_peer_addr, d1, d2);
 }
 
@@ -1292,7 +1298,14 @@ http_server_start(void *aux)
 {
   http_server_t *hs = aux;
 
-  asyncio_bind(hs->hs_bind_address, hs->hs_port, http_server_accept, hs);
+  if(asyncio_bind(hs->hs_bind_address, hs->hs_port,
+                  http_server_accept, hs) == NULL) {
+    trace(LOG_ERR, "HTTP: Failed to bind %s:%d",
+          hs->hs_bind_address, hs->hs_port);
+  } else {
+    trace(LOG_NOTICE, "HTTP: Listening on %s:%d",
+          hs->hs_bind_address, hs->hs_port);
+  }
 }
 
 
