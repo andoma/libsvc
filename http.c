@@ -726,7 +726,6 @@ http_request_destroy(http_request_t *hr)
 {
   free(hr->hr_path);
   free(hr->hr_remain);
-  free(hr->hr_path_orig);
   http_arg_flush(&hr->hr_request_headers);
   http_arg_flush(&hr->hr_response_headers);
   http_arg_flush(&hr->hr_query_args);

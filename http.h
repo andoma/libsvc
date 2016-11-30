@@ -53,7 +53,6 @@ typedef struct http_arg {
 typedef struct http_request {
   struct http_connection *hr_connection;
   char *hr_path;
-  char *hr_path_orig;
   char *hr_remain;
 
   struct http_arg_list hr_request_headers;
