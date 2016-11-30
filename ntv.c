@@ -29,7 +29,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
-
+#include <sys/param.h>
 #include "ntv.h"
 
 ntv_t *
@@ -463,10 +463,11 @@ ntv_print0(FILE *fp, const struct ntv_queue *q, int indent)
       break;
 
     case NTV_BINARY:
-      fprintf(fp, "(binary) = <");
-      for(i = 0; i < f->ntv_binsize - 1; i++)
+      fprintf(fp, "(binary %zd bytes) = <", f->ntv_binsize);
+      for(i = 0; i < MIN(16, f->ntv_binsize - 1); i++)
 	fprintf(fp, "%02x.", ((uint8_t *)f->ntv_bin)[i]);
-      fprintf(fp, "%02x>\n", ((uint8_t *)f->ntv_bin)[i]);
+      fprintf(fp, "%s%02x>\n", i != f->ntv_binsize - 1 ? ".." : "",
+              ((uint8_t *)f->ntv_bin)[i]);
       break;
 
     case NTV_INT:
