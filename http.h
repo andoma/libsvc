@@ -172,7 +172,7 @@ void websocket_sendq(struct http_connection *hc,
                      int opcode, htsbuf_queue_t *hq);
 
 
-void websocket_send_json_ntv(struct http_connection *hc, struct ntv *msg);
+void websocket_send_json(struct http_connection *hc, struct ntv *msg);
 
 void websocket_send_close(struct http_connection *hc, int code,
                           const char *reason);

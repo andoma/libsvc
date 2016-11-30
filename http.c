@@ -1742,14 +1742,35 @@ websocket_sendq(struct http_connection *hc, int opcode, htsbuf_queue_t *hq)
 }
 
 
+/**
+ *
+ */
 void
-websocket_send_json_ntv(http_connection_t *hc, struct ntv *msg)
+websocket_send_json(http_connection_t *hc, struct ntv *msg)
 {
   htsbuf_queue_t hq;
   htsbuf_queue_init(&hq, 0);
 
   ntv_json_serialize(msg, &hq, 0);
   websocket_sendq(hc, 1, &hq);
+}
+
+
+/**
+ *
+ */
+void
+websocket_send_close(struct http_connection *hc, int code,
+                     const char *reason)
+{
+  htsbuf_queue_t hq;
+  htsbuf_queue_init(&hq, 0);
+  uint16_t code16 = htons(code);
+  htsbuf_append(&hq, &code16, 2);
+  if(reason)
+    htsbuf_append(&hq, reason, strlen(reason));
+
+  websocket_sendq(hc, 8, &hq);
 }
 
 
