@@ -122,6 +122,9 @@ ntv_json_serialize(const ntv_t *msg, htsbuf_queue_t *hq, int pretty)
 char *
 ntv_json_serialize_to_str(const ntv_t *msg, int pretty)
 {
+  if(msg == NULL)
+    return NULL;
+
   htsbuf_queue_t hq;
   char *str;
   htsbuf_queue_init(&hq, 0);
