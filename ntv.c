@@ -110,6 +110,14 @@ ntv_release(ntv_t *n)
 }
 
 
+void
+ntv_releasep(ntv_t **n)
+{
+  ntv_release(*n);
+  *n = NULL;
+}
+
+
 static ntv_t *
 ntv_field_name_find(const ntv_t *parent, const char *fieldname,
                     ntv_type type)

@@ -107,6 +107,7 @@ ntv_t *ntv_create_list(void);
 void ntv_delete_field(const ntv_t *ntv, const char *key);
 
 void ntv_release(ntv_t *ntv);
+void ntv_releasep(ntv_t **ntv);
 void ntv_print(const ntv_t *ntv);
 ntv_t *ntv_copy(const ntv_t *src);
 int ntv_is_empty(const ntv_t *ntv);
@@ -182,3 +183,5 @@ ntv_t *ntv_binary_deserialize_nocopy(const void *data, size_t length);
            ntv_t *: ntv_set_ntv                                         \
            )(ntv, key, val)
 #endif
+
+#define NTV_CLEANUP  __attribute__((cleanup(ntv_releasep)))
