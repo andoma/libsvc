@@ -781,6 +781,8 @@ asyncio_sendq(async_fd_t *af, htsbuf_queue_t *q, int cork)
     htsbuf_appendq(&af->af_sendq, q);
     if(!cork)
       do_write(af);
+  } else {
+    htsbuf_queue_flush(q);
   }
 
   if(af->af_flags & AF_SENDQ_MUTEX)
@@ -816,6 +818,8 @@ asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
     htsbuf_appendq(&af->af_sendq, q);
     if(!cork)
       do_write(af);
+  } else {
+    htsbuf_queue_flush(q);
   }
 
   if(af->af_flags & AF_SENDQ_MUTEX)

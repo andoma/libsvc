@@ -743,6 +743,7 @@ http_request_destroy(http_request_t *hr)
 
   http_connection_release(hr->hr_connection);
 
+  htsbuf_queue_flush(&hr->hr_reply);
   free(hr);
 }
 
