@@ -655,6 +655,7 @@ http_dispatch_request(http_request_t *hr)
   char *args = strchr(hr->hr_path, '?');
   if(args != NULL) {
     *args = 0;
+    hr->hr_args = strdup(args + 1);
     http_parse_query_args(hr, args + 1);
   }
 
@@ -726,6 +727,7 @@ http_request_destroy(http_request_t *hr)
 {
   free(hr->hr_path);
   free(hr->hr_remain);
+  free(hr->hr_args);
   http_arg_flush(&hr->hr_request_headers);
   http_arg_flush(&hr->hr_response_headers);
   http_arg_flush(&hr->hr_query_args);
