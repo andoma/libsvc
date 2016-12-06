@@ -35,6 +35,7 @@ enum {
   HCR_TAG_POSTNTV,
   HCR_TAG_AUTHCB,
   HCR_TAG_VERB,
+  HCR_TAG_USERNPASS,
 };
 
 
@@ -54,6 +55,7 @@ enum {
 #define HCR_POSTJSON(ntv) HCR_TAG_POSTNTV, ntv
 #define HCR_AUTHCB(cb, opaque) HCR_TAG_AUTHCB, cb, opaque
 #define HCR_VERB(v) HCR_TAG_VERB, v
+#define HCR_USERNPASS(a, b) HCR_TAG_USERNPASS, a, b
 
 int http_client_request(http_client_response_t *hcr, const char *url, ...)
   __attribute__((__sentinel__(0)));

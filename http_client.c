@@ -218,6 +218,11 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, va_arg(ap, const char *));
       break;
 
+    case HCR_TAG_USERNPASS:
+      curl_easy_setopt(curl, CURLOPT_USERNAME, va_arg(ap, const char *));
+      curl_easy_setopt(curl, CURLOPT_PASSWORD, va_arg(ap, const char *));
+      break;
+
     default:
       abort();
     }
