@@ -128,6 +128,7 @@ int http_send_reply(http_request_t *hc, int rc, const char *content,
 
 void http_send_raw(http_request_t *hc, const void *data, size_t len);
 
+void http_send_chunk(http_request_t *hc, const void *data, size_t len);
 
 typedef int (http_callback_t)(http_request_t *hc,
 			      const char *remain, void *opaque);

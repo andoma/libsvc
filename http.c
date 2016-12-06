@@ -364,6 +364,19 @@ http_send_raw(http_request_t *hr, const void *data, size_t len)
   asyncio_send(hr->hr_connection->hc_af, data, len, 0);
 }
 
+void
+http_send_chunk(http_request_t *hr, const void *data, size_t len)
+{
+  char buf[20];
+  snprintf(buf, sizeof(buf), "%zx\r\n", len);
+  asyncio_send(hr->hr_connection->hc_af, buf, strlen(buf), 1);
+  if(len)
+    asyncio_send(hr->hr_connection->hc_af, data, len, 1);
+
+  asyncio_send(hr->hr_connection->hc_af, "\r\n", 2, 0);
+}
+
+
 /**
  * Transmit a HTTP reply
  */
