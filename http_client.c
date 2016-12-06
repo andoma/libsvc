@@ -353,7 +353,7 @@ cookie_read(void *fh, char *buf, size_t size)
   char range[100];
   snprintf(range, sizeof(range), "bytes=%"PRId64"-%"PRId64,
            hcf->fpos, hcf->fpos + size - 1);
-  printf("range: %s\n", range);
+
   scoped_http_result(hcr);
 
   if(http_client_request(&hcr, hcf->url,
@@ -376,6 +376,50 @@ cookie_read(void *fh, char *buf, size_t size)
  *
  */
 static int
+cookie_close(void *fh)
+{
+  http_client_file_t *hcf = fh;
+  free(hcf->url);
+  free(hcf);
+  return 0;
+}
+
+
+#ifdef __APPLE__
+
+static int
+fun_read(void *fh, char *buf, int size)
+{
+  return cookie_read(fh, buf, size);
+}
+
+
+/**
+ *
+ */
+static fpos_t
+fun_seek(void *fh, fpos_t offset, int whence)
+{
+  http_client_file_t *hcf = fh;
+  switch(whence) {
+  case SEEK_SET:
+    hcf->fpos = offset;
+    break;
+  case SEEK_CUR:
+    hcf->fpos += offset;
+    break;
+  case SEEK_END:
+    printf("CANT SEEK TO END HELP\n");
+    return -1;
+  }
+  return hcf->fpos;
+}
+
+#else
+/**
+ *
+ */
+static int
 cookie_seek(void *fh, off64_t *offsetp, int whence)
 {
   http_client_file_t *hcf = fh;
@@ -394,26 +438,12 @@ cookie_seek(void *fh, off64_t *offsetp, int whence)
   return 0;
 }
 
-
-/**
- *
- */
-static int
-cookie_close(void *fh)
-{
-  http_client_file_t *hcf = fh;
-  free(hcf->url);
-  free(hcf);
-  return 0;
-}
-
-
 static cookie_io_functions_t cookie_functions = {
   .read  = cookie_read,
   .seek  = cookie_seek,
   .close = cookie_close,
 };
-
+#endif
 
 /**
  *
@@ -423,7 +453,13 @@ http_open_file(const char *url)
 {
   http_client_file_t *hcf = calloc(1, sizeof(http_client_file_t));
   hcf->url = strdup(url);
-  FILE *fp =  fopencookie(hcf, "rb", cookie_functions);
+
+  FILE *fp;
+#ifdef __APPLE__
+  fp = funopen(hcf, fun_read, NULL, fun_seek, cookie_close);
+#else
+  fp = fopencookie(hcf, "rb", cookie_functions);
+#endif
   if(fp != NULL) {
     void *buf = malloc(65536);
     setvbuf(fp, buf, _IOFBF, 65536);
