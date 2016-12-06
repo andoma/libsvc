@@ -117,7 +117,7 @@ buf_read(void *aux, char *data, int len)
 FILE *
 open_buffer_read(void *buf, size_t len)
 {
-  readhelper_t *rh = malloc(sizeof(bufhelper_t));
+  readhelper_t *rh = malloc(sizeof(readhelper_t));
   rh->data = buf;
   rh->size = len;
   rh->pos = 0;
