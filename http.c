@@ -265,10 +265,22 @@ const static struct strtab HTTP_statuscodes[] = {
 #undef XX
 };
 
+const static struct strtab HTTP_methodcodes[] = {
+#define XX(num, name, string) {#string, HTTP_##name},
+  HTTP_METHOD_MAP(XX)
+#undef XX
+};
+
 static const char *
 http_rc2str(int code)
 {
   return val2str(code, HTTP_statuscodes) ?: "Unknown status code";
+}
+
+static const char *
+http_method2str(int code)
+{
+  return val2str(code, HTTP_methodcodes) ?: "???";
 }
 
 static const char *httpdays[7] = {
@@ -1048,6 +1060,22 @@ http_create_request(http_connection_t *hc, int continue_check)
   task_run_in_group(http_dispatch_request_task, hr, hc->hc_task_group);
 }
 
+static void
+trace_request_headers(http_connection_t *hc)
+{
+  cfg_root(cr);
+  const http_server_t *hs = hc->hc_server;
+  int tracehttp = cfg_get_int(cr, CFG(hs->hs_config_prefix, "trace"), 0);
+  if(!tracehttp)
+    return;
+
+  trace(LOG_DEBUG, "HTTP-IN %s %s", http_method2str(hc->hc_parser.method),
+        hc->hc_path);
+  http_arg_t *ha;
+  TAILQ_FOREACH(ha, &hc->hc_request_headers, link)
+    trace(LOG_DEBUG, "HTTP-IN   %s: %s", ha->key, ha->val);
+}
+
 
 /**
  *
@@ -1057,6 +1085,8 @@ http_headers_complete(http_parser *p)
 {
   http_connection_t *hc = p->data;
   add_current_header(hc);
+
+  trace_request_headers(hc);
 
   const char *upgrade = http_arg_get(&hc->hc_request_headers, "Upgrade");
 
