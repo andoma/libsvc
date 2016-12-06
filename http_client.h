@@ -63,3 +63,5 @@ void http_client_response_free(http_client_response_t *hcr);
 #define scoped_http_result(x) \
   http_client_response_t x \
   __attribute__((cleanup(http_client_response_free))) = {}
+
+FILE *http_open_file(const char *url);

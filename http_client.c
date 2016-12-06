@@ -23,6 +23,8 @@
 
 #define _GNU_SOURCE
 
+#include <sys/param.h>
+
 #include <stdio.h>
 #include <alloca.h>
 #include <string.h>
@@ -225,6 +227,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   FILE *f = open_buffer(&hcr->hcr_body, &hcr->hcr_bodysize);
 
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 
   curl_easy_setopt(curl, CURLOPT_URL, url);
 
@@ -332,6 +335,102 @@ http_client_response_free(http_client_response_t *hcr)
   free(hcr->hcr_body);
   memset(hcr, 0, sizeof(http_client_response_t));
 }
+
+
+typedef struct http_client_file {
+  char *url;
+  int64_t fpos;
+} http_client_file_t;
+
+
+/**
+ *
+ */
+static ssize_t
+cookie_read(void *fh, char *buf, size_t size)
+{
+  http_client_file_t *hcf = fh;
+  char range[100];
+  snprintf(range, sizeof(range), "bytes=%"PRId64"-%"PRId64,
+           hcf->fpos, hcf->fpos + size - 1);
+  printf("range: %s\n", range);
+  scoped_http_result(hcr);
+
+  if(http_client_request(&hcr, hcf->url,
+                         HCR_HEADER("Range", range),
+                         NULL)) {
+    return -1;
+  }
+
+  if(hcr.hcr_http_status != 206)
+    return -1;
+
+  size_t xferd = MIN(size, hcr.hcr_bodysize);
+  memcpy(buf, hcr.hcr_body, xferd);
+  hcf->fpos += xferd;
+  return xferd;
+}
+
+
+/**
+ *
+ */
+static int
+cookie_seek(void *fh, off64_t *offsetp, int whence)
+{
+  http_client_file_t *hcf = fh;
+  switch(whence) {
+  case SEEK_SET:
+    hcf->fpos = *offsetp;
+    break;
+  case SEEK_CUR:
+    hcf->fpos += *offsetp;
+    break;
+  case SEEK_END:
+    printf("CANT SEEK TO END HELP\n");
+    return -1;
+  }
+  *offsetp = hcf->fpos;
+  return 0;
+}
+
+
+/**
+ *
+ */
+static int
+cookie_close(void *fh)
+{
+  http_client_file_t *hcf = fh;
+  free(hcf->url);
+  free(hcf);
+  return 0;
+}
+
+
+static cookie_io_functions_t cookie_functions = {
+  .read  = cookie_read,
+  .seek  = cookie_seek,
+  .close = cookie_close,
+};
+
+
+/**
+ *
+ */
+FILE *
+http_open_file(const char *url)
+{
+  http_client_file_t *hcf = calloc(1, sizeof(http_client_file_t));
+  hcf->url = strdup(url);
+  FILE *fp =  fopencookie(hcf, "rb", cookie_functions);
+  if(fp != NULL) {
+    void *buf = malloc(65536);
+    setvbuf(fp, buf, _IOFBF, 65536);
+  }
+  return fp;
+}
+
 
 
 /**
