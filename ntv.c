@@ -384,7 +384,7 @@ ntv_copy(const ntv_t *src)
       break;
 
     case NTV_BINARY:
-      abort();
+      ntv_set_bin(dst, f->ntv_name, f->ntv_bin, f->ntv_binsize);
       break;
 
     case NTV_INT:
