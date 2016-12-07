@@ -121,6 +121,7 @@ int     ntv_get_int(const ntv_t *ntv, const char *key, int default_value);
 int64_t ntv_get_int64(const ntv_t *ntv, const char *key, int64_t default_value);
 double  ntv_get_double(const ntv_t *ntv, const char *key, double default_value);
 const char *ntv_get_str(const ntv_t *ntv, const char *key);
+const void *ntv_get_bin(const ntv_t *ntv, const char *key, size_t *sizep);
 
 const ntv_t *ntv_get_map(const ntv_t *ntv, const char *key);
 const ntv_t *ntv_get_list(const ntv_t *ntv, const char *key);
@@ -144,6 +145,10 @@ void ntv_set_null(ntv_t *ntv, const char *key);
 void ntv_set_boolean(ntv_t *ntv, const char *key, bool value);
 void ntv_set_str(ntv_t *ntv, const char *key, const char *value);
 void ntv_set_strf(ntv_t *ntv, const char *key, const char *fmt, ...);
+void ntv_set_bin(ntv_t *ntv, const char *key, const void *data,
+                 size_t datalen);
+void ntv_set_bin_prealloc(ntv_t *ntv, const char *key, void *data,
+                          size_t datalen);
 void ntv_set_ntv(ntv_t *ntv, const char *key, struct ntv *sub);
 
 // Set operations on lists

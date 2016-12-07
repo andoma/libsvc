@@ -246,6 +246,14 @@ ntv_get_str(const ntv_t *n, const char *key)
   return f ? f->ntv_string : NULL;
 }
 
+const void *
+ntv_get_bin(const ntv_t *ntv, const char *key, size_t *sizep)
+{
+  ntv_t *f = ntv_field_name_find(ntv, key, NTV_BINARY);
+  if(sizep != NULL)
+    *sizep = f ? f->ntv_binsize : 0;
+  return f ? f->ntv_bin : NULL;
+}
 
 const ntv_t *
 ntv_get_map(const ntv_t *n, const char *key)
@@ -308,6 +316,32 @@ ntv_set_strf(ntv_t *m, const char *key, const char *fmt, ...)
   if(vasprintf(&f->ntv_string, fmt, ap) == -1)
     f->ntv_type = NTV_NULL;
   va_end(ap);
+}
+
+void
+ntv_set_bin(ntv_t *ntv, const char *key, const void *data, size_t datalen)
+{
+  if(data == NULL) {
+    ntv_delete_field(ntv, key);
+  } else {
+    ntv_t *f = ntv_field_name_prep(ntv, key, NTV_BINARY);
+    f->ntv_bin = malloc(datalen);
+    memcpy(f->ntv_bin, data, datalen);
+    f->ntv_binsize = datalen;
+  }
+}
+
+
+void
+ntv_set_bin_prealloc(ntv_t *ntv, const char *key, void *data, size_t datalen)
+{
+  if(data == NULL) {
+    ntv_delete_field(ntv, key);
+  } else {
+    ntv_t *f = ntv_field_name_prep(ntv, key, NTV_BINARY);
+    f->ntv_bin = data;
+    f->ntv_binsize = datalen;
+  }
 }
 
 
