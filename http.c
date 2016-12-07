@@ -367,13 +367,13 @@ http_send_raw(http_request_t *hr, const void *data, size_t len)
 void
 http_send_chunk(http_request_t *hr, const void *data, size_t len)
 {
-  char buf[20];
-  snprintf(buf, sizeof(buf), "%zx\r\n", len);
-  asyncio_send(hr->hr_connection->hc_af, buf, strlen(buf), 1);
-  if(len)
-    asyncio_send(hr->hr_connection->hc_af, data, len, 1);
-
-  asyncio_send(hr->hr_connection->hc_af, "\r\n", 2, 0);
+  htsbuf_queue_t hq;
+  htsbuf_queue_init(&hq, 0);
+  htsbuf_qprintf(&hq, "%zx\r\n", len);
+  htsbuf_append(&hq, data, len);
+  htsbuf_append(&hq, "\r\n", 2);
+  asyncio_sendq(hr->hr_connection->hc_af, &hq, 0);
+  htsbuf_queue_flush(&hq);
 }
 
 
