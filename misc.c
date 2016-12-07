@@ -1023,3 +1023,15 @@ str_replace_tokens(char *str, const char *tokenprefix,
   }
   return str;
 }
+
+
+char *
+bin2str(const void *src, size_t len)
+{
+  if(len > 1024L * 1024L * 1024L * 3L)
+    return NULL;
+  char *r = malloc(len + 1);
+  r[len] = 0;
+  memcpy(r, src, len);
+  return r;
+}
