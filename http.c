@@ -364,7 +364,8 @@ http_send_raw(http_request_t *hr, const void *data, size_t len)
   asyncio_send(hr->hr_connection->hc_af, data, len, 0);
 }
 
-void
+
+int
 http_send_chunk(http_request_t *hr, const void *data, size_t len)
 {
   htsbuf_queue_t hq;
@@ -372,8 +373,9 @@ http_send_chunk(http_request_t *hr, const void *data, size_t len)
   htsbuf_qprintf(&hq, "%zx\r\n", len);
   htsbuf_append(&hq, data, len);
   htsbuf_append(&hq, "\r\n", 2);
-  asyncio_sendq(hr->hr_connection->hc_af, &hq, 0);
+  int r = asyncio_sendq(hr->hr_connection->hc_af, &hq, 0);
   htsbuf_queue_flush(&hq);
+  return r;
 }
 
 

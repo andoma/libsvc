@@ -134,17 +134,17 @@ async_fd_t *asyncio_stream_mt(int fd,
 
 void asyncio_close(async_fd_t *af);
 
-void asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork);
+int asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork);
 
-void asyncio_send_with_hdr(async_fd_t *af,
-                           const void *hdr_buf, size_t hdr_len,
-                           const void *buf, size_t len,
-                           int cork);
+int asyncio_send_with_hdr(async_fd_t *af,
+                          const void *hdr_buf, size_t hdr_len,
+                          const void *buf, size_t len,
+                          int cork);
 
-void asyncio_sendq(async_fd_t *af, htsbuf_queue_t *hq, int cork);
+int asyncio_sendq(async_fd_t *af, htsbuf_queue_t *hq, int cork);
 
-void asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
-                            htsbuf_queue_t *q, int cork);
+int asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
+                           htsbuf_queue_t *q, int cork);
 
 void asyncio_reconnect(async_fd_t *af, int delay);
 

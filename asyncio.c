@@ -700,9 +700,10 @@ asyncio_shutdown(async_fd_t *af)
 /**
  *
  */
-void
+int
 asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork)
 {
+  int rval = 0;
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
@@ -711,22 +712,26 @@ asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork)
 
     if(!cork)
       do_write(af);
+  } else {
+    rval = -1;
   }
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
+  return rval;
 }
 
 
 /**
  *
  */
-void
+int
 asyncio_send_with_hdr(async_fd_t *af,
                       const void *hdr_buf, size_t hdr_len,
                       const void *buf, size_t len,
                       int cork)
 {
+  int rval = 0;
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
@@ -761,19 +766,23 @@ asyncio_send_with_hdr(async_fd_t *af,
 
     if(!cork)
       do_write(af);
+  } else {
+    rval = -1;
   }
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
+  return rval;
 }
 
 
 /**
  *
  */
-void
+int
 asyncio_sendq(async_fd_t *af, htsbuf_queue_t *q, int cork)
 {
+  int rval = 0;
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
@@ -783,20 +792,23 @@ asyncio_sendq(async_fd_t *af, htsbuf_queue_t *q, int cork)
       do_write(af);
   } else {
     htsbuf_queue_flush(q);
+    rval = 1;
   }
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
+  return rval;
 }
 
 
 /**
  *
  */
-void
+int
 asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
                        htsbuf_queue_t *q, int cork)
 {
+  int rval = 0;
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
@@ -820,10 +832,12 @@ asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
       do_write(af);
   } else {
     htsbuf_queue_flush(q);
+    rval = 1;
   }
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
+  return rval;
 }
 
 
