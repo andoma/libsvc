@@ -752,6 +752,16 @@ http_dispatch_request(http_request_t *hr)
 static void
 http_request_destroy(http_request_t *hr)
 {
+  if(hr->hr_username != NULL) {
+    memset(hr->hr_username, 0, strlen(hr->hr_username));
+    free(hr->hr_username);
+  }
+
+  if(hr->hr_password != NULL) {
+    memset(hr->hr_password, 0, strlen(hr->hr_password));
+    free(hr->hr_password);
+  }
+
   free(hr->hr_path);
   free(hr->hr_remain);
   free(hr->hr_args);
@@ -764,8 +774,6 @@ http_request_destroy(http_request_t *hr)
   ntv_release(hr->hr_post_message);
   ntv_release(hr->hr_session_received);
   ntv_release(hr->hr_session);
-  free(hr->hr_username);
-  free(hr->hr_password);
 
   if(!hr->hr_keep_alive)
     asyncio_shutdown(hr->hr_connection->hc_af);
