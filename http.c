@@ -311,6 +311,11 @@ http_req_ver_str(const http_request_t *hr)
 static void
 http_log(http_request_t *hr, int status, const char *str)
 {
+  cfg_root(cr);
+  const http_server_t *hs = hr->hr_connection->hc_server;
+
+  int logua = cfg_get_int(cr, CFG(hs->hs_config_prefix, "logua"), 0);
+
   int64_t d1 = hr->hr_req_process - hr->hr_req_received;
   int64_t d2 = asyncio_now() - hr->hr_req_process;
 
@@ -320,8 +325,13 @@ http_log(http_request_t *hr, int status, const char *str)
   else if(status >= 400)
     level = LOG_NOTICE;
 
-  trace(level, "HTTP %s -- %d (%s) %s T:%"PRId64"+%"PRId64"us",
-        hr->hr_path, status, str, hr->hr_peer_addr, d1, d2);
+  const char *ua =
+    logua ? http_arg_get(&hr->hr_request_headers, "user-agent") : NULL;
+
+  trace(level, "HTTP %s -- %d (%s) %s T:%"PRId64"+%"PRId64"us%s%s",
+        hr->hr_path, status, str, hr->hr_peer_addr, d1, d2,
+        logua ? ", user-agent: " : "",
+        logua ? (ua ?: "<unset>") : "");
 }
 
 /**
