@@ -83,7 +83,7 @@ typedef struct http_request {
   unsigned short hr_major;
   unsigned short hr_minor;
 
-  uint8_t hr_keep_alive : 1;
+  uint8_t hr_keep_alive : 2;
   uint8_t hr_secure_cookies : 1;
   uint8_t hr_no_output : 1;
   uint8_t hr_100_continue_check : 1;

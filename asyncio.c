@@ -937,10 +937,33 @@ asyncio_stream_mt(int fd,
 void
 asyncio_enable_read(async_fd_t *af)
 {
+  assert(pthread_self() == asyncio_tid);
+
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
   mod_poll_flags(af, EPOLLIN, 0);
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
+
+  if(af->af_recvq.hq_size)
+    af->af_bytes_avail(af->af_opaque, &af->af_recvq);
+}
+
+
+/**
+ *
+ */
+void
+asyncio_disable_read(async_fd_t *af)
+{
+  assert(pthread_self() == asyncio_tid);
+
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+
+  mod_poll_flags(af, 0, EPOLLIN);
 
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);

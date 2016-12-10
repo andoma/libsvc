@@ -90,6 +90,8 @@ typedef struct http_connection {
   http_server_t *hc_server;
   struct async_fd *hc_af;
 
+  int hc_read_disabled;
+
   http_parser hc_parser;
   task_group_t *hc_task_group;
 
@@ -164,6 +166,7 @@ static void websocket_timer(http_connection_t *hc);
 
 static void http_connection_release(http_connection_t *hc);
 
+static void http_connection_reenable(void *aux);
 
 /**
  *
@@ -695,7 +698,7 @@ http_dispatch_request(http_request_t *hr)
     }
 
     http_log(hr, 101, "Websocket upgrade");
-    hr->hr_keep_alive = 1;
+    hr->hr_keep_alive = 2;
     return;
   }
 
@@ -775,13 +778,22 @@ http_request_destroy(http_request_t *hr)
   ntv_release(hr->hr_session_received);
   ntv_release(hr->hr_session);
 
-  if(!hr->hr_keep_alive)
-    asyncio_shutdown(hr->hr_connection->hc_af);
+  http_connection_t *hc = hr->hr_connection;
 
-  http_connection_release(hr->hr_connection);
-
+  switch(hr->hr_keep_alive) {
+  case 0:
+    asyncio_shutdown(hc->hc_af);
+    // FALLTHRU. We need to reenable so we can catch when the socket closes
+  case 1:
+    asyncio_run_task(http_connection_reenable, hc);
+    break;
+  case 2: // Websocket
+    http_connection_release(hc);
+    break;
+  }
   htsbuf_queue_flush(&hr->hr_reply);
   free(hr);
+
 }
 
 
@@ -1163,7 +1175,19 @@ http_message_complete(http_parser *p)
 {
   http_connection_t *hc = p->data;
   http_create_request(hc, 0);
-  asyncio_timer_arm_delta(&hc->hc_timer, 60 * 1000000);
+
+
+  // Re-arm timer if we do websocket
+  if(hc->hc_ws_path != NULL) {
+    asyncio_timer_arm_delta(&hc->hc_timer, 20 * 1000000);
+  } else {
+    // Otherwise we disarm, we really don't know how long the request
+    // take to serve so once the request finishes we will re-arm the
+    // timer again
+    asyncio_timer_disarm(&hc->hc_timer);
+    asyncio_disable_read(hc->hc_af);
+    hc->hc_read_disabled = 1;
+  }
   return 0;
 }
 
@@ -1179,7 +1203,6 @@ static const http_parser_settings parser_settings = {
   //  .on_chunk_header     = http_chunk_header,
   //  .on_chunk_complete   = http_chunk_complete
 };
-
 
 
 /**
@@ -1251,6 +1274,9 @@ http_server_read(void *opaque, struct htsbuf_queue *hq)
   http_connection_t *hc = opaque;
   while(hc->hc_ws_path == NULL) {
 
+    if(hc->hc_read_disabled)
+      return;
+
     htsbuf_data_t *hd = TAILQ_FIRST(&hq->hq_q);
     if(hd == NULL)
       return;
@@ -1268,6 +1294,24 @@ http_server_read(void *opaque, struct htsbuf_queue *hq)
   if(websocket_parse(hq, websocket_packet_input, hc, &hc->hc_ws_state)) {
     http_connection_close(hc);
   }
+}
+
+
+
+
+/**
+ *
+ */
+static void
+http_connection_reenable(void *aux)
+{
+  http_connection_t *hc = aux;
+
+  assert(hc->hc_read_disabled == 1);
+  hc->hc_read_disabled = 0;
+  asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
+  asyncio_enable_read(hc->hc_af);
+  http_connection_release(hc);
 }
 
 
