@@ -729,7 +729,7 @@ http_dispatch_request(http_request_t *hr)
   }
 
   // Handle POST/PUT payload
-  if(hr->hr_body) {
+  if(hr->hr_body && hr->hr_body_size > 0) {
     /* Parse content-type */
     v = http_arg_get(&hr->hr_request_headers, "Content-Type");
     if(v == NULL) {
