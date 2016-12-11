@@ -163,13 +163,13 @@ void ntv_set_idx_ntv(ntv_t *ntv, int key, struct ntv *sub);
 
 
 
-struct htsbuf_queue;
-void ntv_json_serialize(const ntv_t *msg, struct htsbuf_queue *hq, int pretty);
+struct mbuf;
+void ntv_json_serialize(const ntv_t *msg, struct mbuf *m, int pretty);
 char *ntv_json_serialize_to_str(const ntv_t *msg, int pretty);
 
 ntv_t *ntv_json_deserialize(const char *src, char *errbuf, size_t errlen);
 
-void ntv_binary_serialize(const ntv_t *msg, struct htsbuf_queue *hq);
+void ntv_binary_serialize(const ntv_t *msg, struct mbuf *m);
 ntv_t *ntv_binary_deserialize(const void *data, size_t length);
 ntv_t *ntv_binary_deserialize_nocopy(const void *data, size_t length);
 

@@ -26,7 +26,7 @@
 #include <stdio.h>
 
 #include "ntv.h"
-#include "htsbuf.h"
+#include "mbuf.h"
 
 
 // These values are selected based on bytes that must never occur in
@@ -45,7 +45,7 @@
 #define NTV_BIN_NULL          0xfc
 
 static void
-ntv_write_varint(htsbuf_queue_t *hq, uint64_t v)
+ntv_write_varint(mbuf_t *hq, uint64_t v)
 {
   uint8_t tmp[10];
   int x = 0;
@@ -53,28 +53,28 @@ ntv_write_varint(htsbuf_queue_t *hq, uint64_t v)
     tmp[x++] = (v & 0x7f) | (v > 0x7f ? 0x80 : 0);
     v >>= 7;
   } while(v);
-  htsbuf_append(hq, tmp, x);
+  mbuf_append(hq, tmp, x);
 }
 
 
 static void
-ntv_write_blob(htsbuf_queue_t *hq, const void *data, int len)
+ntv_write_blob(mbuf_t *hq, const void *data, int len)
 {
   ntv_write_varint(hq, len);
-  htsbuf_append(hq, data, len);
+  mbuf_append(hq, data, len);
 }
 
 
 static void
-ntv_write_string(htsbuf_queue_t *hq, const char *str)
+ntv_write_string(mbuf_t *hq, const char *str)
 {
   ntv_write_blob(hq, str, str ? strlen(str) : 0);
 }
 
 static void
-ntv_write_byte(htsbuf_queue_t *hq, uint8_t c)
+ntv_write_byte(mbuf_t *hq, uint8_t c)
 {
-  htsbuf_append(hq, &c, 1);
+  mbuf_append(hq, &c, 1);
 }
 
 
@@ -96,52 +96,52 @@ zigzag_decode(uint64_t x)
  *
  */
 void
-ntv_binary_serialize(const ntv_t *msg, htsbuf_queue_t *hq)
+ntv_binary_serialize(const ntv_t *msg, mbuf_t *m)
 {
   switch(msg->ntv_type) {
   case NTV_MAP:
-    ntv_write_byte(hq, NTV_BIN_MAP);
+    ntv_write_byte(m, NTV_BIN_MAP);
     NTV_FOREACH(f, msg) {
-      ntv_binary_serialize(f, hq);
-      ntv_write_string(hq, f->ntv_name);
+      ntv_binary_serialize(f, m);
+      ntv_write_string(m, f->ntv_name);
     }
-    ntv_write_byte(hq, NTV_BIN_END);
+    ntv_write_byte(m, NTV_BIN_END);
     break;
 
   case NTV_LIST:
-    ntv_write_byte(hq, NTV_BIN_LIST);
+    ntv_write_byte(m, NTV_BIN_LIST);
     NTV_FOREACH(f, msg) {
-      ntv_binary_serialize(f, hq);
+      ntv_binary_serialize(f, m);
     }
-    ntv_write_byte(hq, NTV_BIN_END);
+    ntv_write_byte(m, NTV_BIN_END);
     break;
 
   case NTV_STRING:
-    ntv_write_byte(hq, NTV_BIN_STRING);
-    ntv_write_string(hq, msg->ntv_string);
+    ntv_write_byte(m, NTV_BIN_STRING);
+    ntv_write_string(m, msg->ntv_string);
     break;
 
   case NTV_BINARY:
-    ntv_write_byte(hq, NTV_BIN_BINARY);
-    ntv_write_blob(hq, msg->ntv_bin, msg->ntv_binsize);
+    ntv_write_byte(m, NTV_BIN_BINARY);
+    ntv_write_blob(m, msg->ntv_bin, msg->ntv_binsize);
     break;
 
   case NTV_INT:
-    ntv_write_byte(hq, NTV_BIN_INTEGER);
-    ntv_write_varint(hq, zigzag_encode(msg->ntv_s64));
+    ntv_write_byte(m, NTV_BIN_INTEGER);
+    ntv_write_varint(m, zigzag_encode(msg->ntv_s64));
     break;
 
   case NTV_DOUBLE:
-    ntv_write_byte(hq, NTV_BIN_DOUBLE);
-    htsbuf_append(hq, &msg->ntv_double, sizeof(msg->ntv_double));
+    ntv_write_byte(m, NTV_BIN_DOUBLE);
+    mbuf_append(m, &msg->ntv_double, sizeof(msg->ntv_double));
     break;
 
   case NTV_NULL:
-    ntv_write_byte(hq, NTV_BIN_NULL);
+    ntv_write_byte(m, NTV_BIN_NULL);
     break;
 
   case NTV_BOOLEAN:
-    ntv_write_byte(hq, msg->ntv_boolean ?
+    ntv_write_byte(m, msg->ntv_boolean ?
                    NTV_BIN_BOOLEAN_TRUE : NTV_BIN_BOOLEAN_FALSE);
     break;
 

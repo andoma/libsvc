@@ -25,6 +25,7 @@ libsvc_SRCS += \
 	intvec.c \
 	strvec.c \
 	murmur3.c \
+	mbuf.c \
 
 libsvc_INCS += \
 	libsvc.h \
@@ -50,6 +51,7 @@ libsvc_INCS += \
 	strvec.h \
 	init.h \
 	murmur3.h \
+	mbuf.h \
 
 CFLAGS  += $(shell pkg-config --cflags openssl)
 LDFLAGS += $(shell pkg-config --libs openssl)

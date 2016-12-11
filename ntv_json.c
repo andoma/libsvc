@@ -26,7 +26,7 @@
 #include <stdio.h>
 
 #include "ntv.h"
-#include "htsbuf.h"
+#include "mbuf.h"
 #include "dbl.h"
 #include "json.h"
 
@@ -35,60 +35,60 @@
  *
  */
 static void
-ntv_json_write(const ntv_t *msg, htsbuf_queue_t *hq, int indent, int pretty)
+ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int pretty)
 {
   ntv_t *f;
   char buf[100];
   const bool isarray = msg->ntv_type == NTV_LIST;
 
-  htsbuf_append(hq, isarray ? "[" : "{", 1);
+  mbuf_append(m, isarray ? "[" : "{", 1);
 
   TAILQ_FOREACH(f, &msg->ntv_children, ntv_link) {
 
     if(pretty)
-      htsbuf_qprintf(hq, "\n%*.s", indent, "");
+      mbuf_qprintf(m, "\n%*.s", indent, "");
 
     if(!isarray) {
-      htsbuf_append_and_escape_jsonstr(hq, f->ntv_name ?: "noname");
-      htsbuf_append(hq, ": ", pretty ? 2 : 1);
+      mbuf_append_and_escape_jsonstr(m, f->ntv_name ?: "noname");
+      mbuf_append(m, ": ", pretty ? 2 : 1);
     }
 
     switch(f->ntv_type) {
     case NTV_MAP:
-      ntv_json_write(f, hq, indent + 1, pretty);
+      ntv_json_write(f, m, indent + 1, pretty);
       break;
 
     case NTV_LIST:
-      ntv_json_write(f, hq, indent + 1, pretty);
+      ntv_json_write(f, m, indent + 1, pretty);
       break;
 
     case NTV_STRING:
-      htsbuf_append_and_escape_jsonstr(hq, f->ntv_string);
+      mbuf_append_and_escape_jsonstr(m, f->ntv_string);
       break;
 
     case NTV_BINARY:
-      htsbuf_append_and_escape_jsonstr(hq, "binary");
+      mbuf_append_and_escape_jsonstr(m, "binary");
       break;
 
     case NTV_INT:
       snprintf(buf, sizeof(buf), "%" PRId64, f->ntv_s64);
-      htsbuf_append(hq, buf, strlen(buf));
+      mbuf_append(m, buf, strlen(buf));
       break;
 
     case NTV_DOUBLE:
       my_double2str(buf, sizeof(buf), f->ntv_double);
-      htsbuf_append(hq, buf, strlen(buf));
+      mbuf_append(m, buf, strlen(buf));
       break;
 
     case NTV_NULL:
-      htsbuf_append(hq, "null", 4);
+      mbuf_append(m, "null", 4);
       break;
 
     case NTV_BOOLEAN:
       if(f->ntv_boolean)
-        htsbuf_append(hq, "true", 4);
+        mbuf_append(m, "true", 4);
       else
-        htsbuf_append(hq, "false", 5);
+        mbuf_append(m, "false", 5);
       break;
 
     default:
@@ -96,23 +96,23 @@ ntv_json_write(const ntv_t *msg, htsbuf_queue_t *hq, int indent, int pretty)
     }
 
     if(TAILQ_NEXT(f, ntv_link))
-      htsbuf_append(hq, ",", 1);
+      mbuf_append(m, ",", 1);
   }
 
   if(pretty)
-      htsbuf_qprintf(hq, "\n%*.s", indent-1, "");
-  htsbuf_append(hq, isarray ? "]" : "}", 1);
+      mbuf_qprintf(m, "\n%*.s", indent-1, "");
+  mbuf_append(m, isarray ? "]" : "}", 1);
 }
 
 /**
  *
  */
 void
-ntv_json_serialize(const ntv_t *msg, htsbuf_queue_t *hq, int pretty)
+ntv_json_serialize(const ntv_t *msg, mbuf_t *m, int pretty)
 {
-  ntv_json_write(msg, hq, 0, pretty);
+  ntv_json_write(msg, m, 0, pretty);
   if(pretty)
-    htsbuf_append(hq, "\n", 1);
+    mbuf_append(m, "\n", 1);
 }
 
 
@@ -125,13 +125,10 @@ ntv_json_serialize_to_str(const ntv_t *msg, int pretty)
   if(msg == NULL)
     return NULL;
 
-  htsbuf_queue_t hq;
-  char *str;
-  htsbuf_queue_init(&hq, 0);
-  ntv_json_serialize(msg, &hq, pretty);
-  str = htsbuf_to_string(&hq);
-  htsbuf_queue_flush(&hq);
-  return str;
+  mbuf_t m;
+  mbuf_init(&m);
+  ntv_json_serialize(msg, &m, pretty);
+  return mbuf_clear_to_string(&m);
 }
 
 /**
