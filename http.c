@@ -50,6 +50,7 @@
 #include "ntv.h"
 #include "asyncio.h"
 #include "websocket.h"
+#include "mbuf.h"
 
 LIST_HEAD(http_connection_list, http_connection);
 
@@ -341,10 +342,10 @@ http_log(http_request_t *hr, int status, const char *str)
 int
 http_send_100_continue(http_request_t *hr)
 {
-  htsbuf_queue_t q;
-  htsbuf_queue_init(&q, 0);
+  mbuf_t q;
+  mbuf_init(&q);
 
-  htsbuf_qprintf(&q, "%s 100 Continue\r\n\r\n",
+  mbuf_qprintf(&q, "%s 100 Continue\r\n\r\n",
                  http_req_ver_str(hr));
   asyncio_sendq(hr->hr_connection->hc_af, &q, 0);
   http_log(hr, 100, "Continue");
@@ -382,13 +383,13 @@ http_send_raw(http_request_t *hr, const void *data, size_t len)
 int
 http_send_chunk(http_request_t *hr, const void *data, size_t len)
 {
-  htsbuf_queue_t hq;
-  htsbuf_queue_init(&hq, 0);
-  htsbuf_qprintf(&hq, "%zx\r\n", len);
-  htsbuf_append(&hq, data, len);
-  htsbuf_append(&hq, "\r\n", 2);
+  mbuf_t hq;
+  mbuf_init(&hq);
+  mbuf_qprintf(&hq, "%zx\r\n", len);
+  mbuf_append(&hq, data, len);
+  mbuf_append(&hq, "\r\n", 2);
   int r = asyncio_sendq(hr->hr_connection->hc_af, &hq, 0);
-  htsbuf_queue_flush(&hq);
+  mbuf_clear(&hq);
   return r;
 }
 
@@ -403,31 +404,31 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
 		 int maxage, const char *range,
 		 const char *disposition, const char *transfer_encoding)
 {
-  htsbuf_queue_t hdrs;
+  mbuf_t hdrs;
   time_t t = time(NULL);
 
-  htsbuf_queue_init(&hdrs, 0);
+  mbuf_init(&hdrs);
 
   if(statustxt == NULL)
     statustxt = http_rc2str(rc);
 
-  htsbuf_qprintf(&hdrs, "%s %d %s\r\n",
+  mbuf_qprintf(&hdrs, "%s %d %s\r\n",
                  http_req_ver_str(hr),
 		 rc, statustxt);
 
-  htsbuf_qprintf(&hdrs, "Server: %s\r\n", PROGNAME);
+  mbuf_qprintf(&hdrs, "Server: %s\r\n", PROGNAME);
 
   if(ntv_cmp(hr->hr_session, hr->hr_session_received)) {
     const char *cookie = generate_session_cookie(hr);
     if(cookie != NULL) {
-      htsbuf_qprintf(&hdrs,
+      mbuf_qprintf(&hdrs,
                      "Set-Cookie: %s.session=%s; Path=/; "
                      "expires=%s; HttpOnly%s\r\n",
                      PROGNAME, cookie,
                      http_mktime(t, 365 * 86400),
                      hr->hr_secure_cookies ? "; secure" : "");
     } else {
-      htsbuf_qprintf(&hdrs,
+      mbuf_qprintf(&hdrs,
                      "Set-Cookie: %s.session=deleted; Path=/; "
                      "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly%s\r\n",
                      PROGNAME,
@@ -436,51 +437,51 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
   }
 
   if(maxage == 0) {
-    htsbuf_qprintf(&hdrs, "Cache-Control: no-cache\r\n");
+    mbuf_qprintf(&hdrs, "Cache-Control: no-cache\r\n");
   } else {
-    htsbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", http_mktime(t, 0));
-    htsbuf_qprintf(&hdrs, "Cache-Control: public, max-age=%d\r\n", maxage);
+    mbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", http_mktime(t, 0));
+    mbuf_qprintf(&hdrs, "Cache-Control: public, max-age=%d\r\n", maxage);
   }
 
   if(rc == HTTP_STATUS_UNAUTHORIZED)
-    htsbuf_qprintf(&hdrs, "WWW-Authenticate: Basic realm=\"doozer\"\r\n");
+    mbuf_qprintf(&hdrs, "WWW-Authenticate: Basic realm=\"doozer\"\r\n");
 
   if(contentlen > 0)
-    htsbuf_qprintf(&hdrs, "Content-Length: %"PRId64"\r\n", contentlen);
+    mbuf_qprintf(&hdrs, "Content-Length: %"PRId64"\r\n", contentlen);
   else
     hr->hr_keep_alive = 0;
 
-  htsbuf_qprintf(&hdrs, "Connection: %s\r\n", 
+  mbuf_qprintf(&hdrs, "Connection: %s\r\n", 
 	      hr->hr_keep_alive ? "Keep-Alive" : "Close");
 
   if(encoding != NULL)
-    htsbuf_qprintf(&hdrs, "Content-Encoding: %s\r\n", encoding);
+    mbuf_qprintf(&hdrs, "Content-Encoding: %s\r\n", encoding);
 
   if(transfer_encoding != NULL)
-    htsbuf_qprintf(&hdrs, "Transfer-Encoding: %s\r\n", transfer_encoding);
+    mbuf_qprintf(&hdrs, "Transfer-Encoding: %s\r\n", transfer_encoding);
 
   if(location != NULL)
-    htsbuf_qprintf(&hdrs, "Location: %s\r\n", location);
+    mbuf_qprintf(&hdrs, "Location: %s\r\n", location);
 
   if(content != NULL)
-    htsbuf_qprintf(&hdrs, "Content-Type: %s\r\n", content);
+    mbuf_qprintf(&hdrs, "Content-Type: %s\r\n", content);
 
 
   if(range) {
-    htsbuf_qprintf(&hdrs, "Accept-Ranges: %s\r\n", "bytes");
-    htsbuf_qprintf(&hdrs, "Content-Range: %s\r\n", range);
+    mbuf_qprintf(&hdrs, "Accept-Ranges: %s\r\n", "bytes");
+    mbuf_qprintf(&hdrs, "Content-Range: %s\r\n", range);
   }
 
   if(disposition != NULL)
-    htsbuf_qprintf(&hdrs, "Content-Disposition: %s\r\n", disposition);
+    mbuf_qprintf(&hdrs, "Content-Disposition: %s\r\n", disposition);
 
   http_arg_t *ra;
   TAILQ_FOREACH(ra, &hr->hr_response_headers, link)
-    htsbuf_qprintf(&hdrs, "%s: %s\r\n", ra->key, ra->val);
+    mbuf_qprintf(&hdrs, "%s: %s\r\n", ra->key, ra->val);
 
-  htsbuf_qprintf(&hdrs, "\r\n");
+  mbuf_qprintf(&hdrs, "\r\n");
   //  fprintf(stderr, "-- OUTPUT ------------------\n");
-  //  htsbuf_dump_raw_stderr(&hdrs);
+  //  mbuf_dump_raw_stderr(&hdrs);
   //  fprintf(stderr, "----------------------------\n");
 
   asyncio_sendq(hr->hr_connection->hc_af, &hdrs, 0);
@@ -499,7 +500,7 @@ http_send_reply(http_request_t *hr, int rc, const char *content,
   const char *rcstr = http_rc2str(rc);
   http_log(hr, rc, rcstr);
 
-  if(http_send_header(hr, rc, rcstr, content, hr->hr_reply.hq_size,
+  if(http_send_header(hr, rc, rcstr, content, hr->hr_reply.mq_size,
                       encoding, location, maxage, 0, NULL, NULL))
     return -1;
 
@@ -529,11 +530,11 @@ http_err(http_request_t *hr, int error, const char *str)
     errtxt = http_rc2str(error);
   }
 
-  htsbuf_queue_flush(&hr->hr_reply);
+  mbuf_clear(&hr->hr_reply);
 
   if(error != 304) {
 
-    htsbuf_qprintf(&hr->hr_reply,
+    mbuf_qprintf(&hr->hr_reply,
                    "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n"
                    "<HTML><HEAD>\r\n"
                    "<TITLE>%d %s</TITLE>\r\n"
@@ -542,14 +543,14 @@ http_err(http_request_t *hr, int error, const char *str)
                    error, errtxt, error, errtxt);
 
     if(str != NULL)
-      htsbuf_qprintf(&hr->hr_reply, "<p>%s</p>\r\n", str);
+      mbuf_qprintf(&hr->hr_reply, "<p>%s</p>\r\n", str);
 
-    htsbuf_qprintf(&hr->hr_reply, "</BODY></HTML>\r\n");
+    mbuf_qprintf(&hr->hr_reply, "</BODY></HTML>\r\n");
   }
 
   http_log(hr, error, errtxt);
 
-  if(http_send_header(hr, error, str, NULL, hr->hr_reply.hq_size,
+  if(http_send_header(hr, error, str, NULL, hr->hr_reply.mq_size,
                       NULL, NULL, 0, 0, NULL, NULL))
     return 0;
 
@@ -596,9 +597,9 @@ http_output_content(http_request_t *hr, const char *content)
 void
 http_redirect(http_request_t *hr, const char *location, int status)
 {
-  htsbuf_queue_flush(&hr->hr_reply);
+  mbuf_clear(&hr->hr_reply);
 
-  htsbuf_qprintf(&hr->hr_reply,
+  mbuf_qprintf(&hr->hr_reply,
 		 "<!DOCTYPE html>\r\n"
 		 "<HTML><HEAD>\r\n"
 		 "<TITLE>Redirect</TITLE>\r\n"
@@ -802,7 +803,7 @@ http_request_destroy(http_request_t *hr)
     http_connection_release(hc);
     break;
   }
-  htsbuf_queue_flush(&hr->hr_reply);
+  mbuf_clear(&hr->hr_reply);
   free(hr);
 
 }
@@ -1066,7 +1067,7 @@ http_create_request(http_connection_t *hc, int continue_check)
   hr->hr_connection = hc;
   atomic_inc(&hc->hc_refcount);
 
-  htsbuf_queue_init(&hr->hr_reply, 0);
+  mbuf_init(&hr->hr_reply);
 
   TAILQ_INIT(&hr->hr_query_args);
   TAILQ_INIT(&hr->hr_response_headers);
@@ -1280,7 +1281,7 @@ http_connection_close(http_connection_t *hc)
  *
  */
 static void
-http_server_read(void *opaque, struct htsbuf_queue *hq)
+http_server_read(void *opaque, struct mbuf *mq)
 {
   http_connection_t *hc = opaque;
   while(hc->hc_ws_path == NULL) {
@@ -1288,21 +1289,21 @@ http_server_read(void *opaque, struct htsbuf_queue *hq)
     if(hc->hc_read_disabled)
       return;
 
-    htsbuf_data_t *hd = TAILQ_FIRST(&hq->hq_q);
-    if(hd == NULL)
+    mbuf_data_t *md = TAILQ_FIRST(&mq->mq_buffers);
+    if(md == NULL)
       return;
 
     size_t r = http_parser_execute(&hc->hc_parser, &parser_settings,
-                                   (const void *)hd->hd_data + hd->hd_data_off,
-                                   hd->hd_data_len - hd->hd_data_off);
-    htsbuf_drop(hq, r);
+                                   (const void *)md->md_data + md->md_data_off,
+                                   md->md_data_len - md->md_data_off);
+    mbuf_drop(mq, r);
     if(hc->hc_parser.http_errno) {
       http_connection_close(hc);
       return;
     }
   }
 
-  if(websocket_parse(hq, websocket_packet_input, hc, &hc->hc_ws_state)) {
+  if(websocket_parse(mq, websocket_packet_input, hc, &hc->hc_ws_state)) {
     http_connection_close(hc);
   }
 }
@@ -1514,7 +1515,7 @@ serve_file(http_connection_t *hc, const char *remain, void *opaque)
     }
   }
 
-  htsbuf_append(&hc->hc_reply, data, size);
+  mbuf_append(&hc->hc_reply, data, size);
 
   http_output_content(hc, ct);
   filebundle_free(data);
@@ -1581,21 +1582,21 @@ generate_session_cookie(http_request_t *hr)
 
   get_random_bytes(cookiebin, COOKIE_NONCE_LEN);
 
-  struct htsbuf_queue binary;
-  htsbuf_queue_init(&binary, 0);
+  mbuf_t binary;
+  mbuf_init(&binary);
   ntv_binary_serialize(hr->hr_session, &binary);
 
-  if(binary.hq_size > 2500) {
+  if(binary.mq_size > 2500) {
     trace(LOG_ALERT, "Max cookie length exceeded");
-    htsbuf_queue_flush(&binary);
+    mbuf_clear(&binary);
     return NULL;
   }
 
-  uint8_t *plaintext = alloca(binary.hq_size + 2);
-  int plaintextsize = binary.hq_size + 2;
+  uint8_t *plaintext = alloca(binary.mq_size + 2);
+  int plaintextsize = binary.mq_size + 2;
   plaintext[0] = 0xa0;
   plaintext[1] = cookie_generation;
-  htsbuf_read(&binary, plaintext + 2, binary.hq_size);
+  mbuf_read(&binary, plaintext + 2, binary.mq_size);
 
   ctx = EVP_CIPHER_CTX_new();
 
@@ -1744,10 +1745,10 @@ websocket_session_start(http_request_t *hr,
 
   base64_encode(sig, sizeof(sig), d, 20);
 
-  htsbuf_queue_t out;
-  htsbuf_queue_init(&out, 0);
+  mbuf_t out;
+  mbuf_init(&out);
 
-  htsbuf_qprintf(&out,
+  mbuf_qprintf(&out,
                  "HTTP/%d.%d 101 Switching Protocols\r\n"
                  "Connection: Upgrade\r\n"
                  "Upgrade: websocket\r\n"
@@ -1757,11 +1758,11 @@ websocket_session_start(http_request_t *hr,
                  sig);
 
   if(selected_protocol) {
-    htsbuf_qprintf(&out, "Sec-WebSocket-Protocol: %s\r\n",
+    mbuf_qprintf(&out, "Sec-WebSocket-Protocol: %s\r\n",
                    selected_protocol);
   }
 
-  htsbuf_qprintf(&out, "\r\n");
+  mbuf_qprintf(&out, "\r\n");
   asyncio_sendq(hc->hc_af, &out, 0);
   return 0;
 }
@@ -1861,11 +1862,11 @@ websocket_send(struct http_connection *hc,
  *
  */
 void
-websocket_sendq(struct http_connection *hc, int opcode, htsbuf_queue_t *hq)
+websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq)
 {
   uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
-  int hlen = websocket_build_hdr(hdr, opcode, hq->hq_size);
-  asyncio_sendq_with_hdr(hc->hc_af, hdr, hlen, hq, 0);
+  int hlen = websocket_build_hdr(hdr, opcode, mq->mq_size);
+  asyncio_sendq_with_hdr(hc->hc_af, hdr, hlen, mq, 0);
 }
 
 
@@ -1875,8 +1876,8 @@ websocket_sendq(struct http_connection *hc, int opcode, htsbuf_queue_t *hq)
 void
 websocket_send_json(http_connection_t *hc, struct ntv *msg)
 {
-  htsbuf_queue_t hq;
-  htsbuf_queue_init(&hq, 0);
+  mbuf_t hq;
+  mbuf_init(&hq);
 
   ntv_json_serialize(msg, &hq, 0);
   websocket_sendq(hc, 1, &hq);
@@ -1890,12 +1891,12 @@ void
 websocket_send_close(struct http_connection *hc, int code,
                      const char *reason)
 {
-  htsbuf_queue_t hq;
-  htsbuf_queue_init(&hq, 0);
+  mbuf_t hq;
+  mbuf_init(&hq);
   uint16_t code16 = htons(code);
-  htsbuf_append(&hq, &code16, 2);
+  mbuf_append(&hq, &code16, 2);
   if(reason)
-    htsbuf_append(&hq, reason, strlen(reason));
+    mbuf_append(&hq, reason, strlen(reason));
 
   websocket_sendq(hc, 8, &hq);
 }

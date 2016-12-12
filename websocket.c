@@ -22,7 +22,7 @@
 ******************************************************************************/
 #include <stdlib.h>
 
-#include "htsbuf.h"
+#include "mbuf.h"
 #include "websocket.h"
 #include "bytestream.h"
 
@@ -67,11 +67,11 @@ websocket_build_hdr(uint8_t *hdr, int opcode, size_t len)
  *
  */
 void
-websocket_append_hdr(htsbuf_queue_t *q, int opcode, size_t len)
+websocket_append_hdr(mbuf_t *q, int opcode, size_t len)
 {
   uint8_t hdr[14]; // max header length
   const int hlen = websocket_build_hdr(hdr, opcode, len);
-  htsbuf_append(q, hdr, hlen);
+  mbuf_append(q, hdr, hlen);
 }
 
 
@@ -79,13 +79,13 @@ websocket_append_hdr(htsbuf_queue_t *q, int opcode, size_t len)
  *
  */
 int
-websocket_parse(htsbuf_queue_t *q,
+websocket_parse(mbuf_t *q,
                 int (*cb)(void *opaque, int opcode, uint8_t **data, int len),
                 void *opaque, websocket_state_t *ws)
 {
   uint8_t hdr[14]; // max header length
   while(1) {
-    int p = htsbuf_peek(q, &hdr, 14);
+    int p = mbuf_peek(q, &hdr, 14);
     const uint8_t *m;
 
     if(p < 2)
@@ -116,10 +116,10 @@ websocket_parse(htsbuf_queue_t *q,
       m = NULL;
     }
 
-    if(q->hq_size < hoff + len)
+    if(q->mq_size < hoff + len)
       return 0;
 
-    htsbuf_drop(q, hoff);
+    mbuf_drop(q, hoff);
 
     if(opcode & 0x8) {
       // Ctrl frame
@@ -127,7 +127,7 @@ websocket_parse(htsbuf_queue_t *q,
       if(p == NULL)
         return 1;
 
-      htsbuf_read(q, p, len);
+      mbuf_read(q, p, len);
       if(m != NULL) for(int i = 0; i < len; i++) p[i] ^= m[i&3];
 
       int err = cb(opaque, opcode, &p, len);
@@ -144,7 +144,7 @@ websocket_parse(htsbuf_queue_t *q,
 
     uint8_t *d = ws->packet + ws->packet_size;
     d[len] = 0;
-    htsbuf_read(q, d, len);
+    mbuf_read(q, d, len);
 
     if(m != NULL) for(int i = 0; i < len; i++) d[i] ^= m[i&3];
 

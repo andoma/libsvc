@@ -25,7 +25,7 @@
 
 #include <stdint.h>
 
-struct htsbuf_queue;
+struct mbuf;
 
 typedef struct websocket_state {
   uint8_t opcode;
@@ -38,7 +38,7 @@ typedef struct websocket_state {
 int websocket_build_hdr(uint8_t hdr[WEBSOCKET_MAX_HDR_LEN],
                         int opcode, size_t len);
 
-void websocket_append_hdr(struct htsbuf_queue *q, int opcode, size_t len);
+void websocket_append_hdr(struct mbuf *q, int opcode, size_t len);
 
 void websocket_free(websocket_state_t *state);
 
@@ -47,7 +47,7 @@ void websocket_free(websocket_state_t *state);
  *  0 - Not enough data in input buffer, call again when more is available
  *  1 - Fatal error, disconnect
  */
-int websocket_parse(struct htsbuf_queue *q,
+int websocket_parse(struct mbuf *q,
                     int (*cb)(void *opaque, int opcode,
                               uint8_t **data, int len),
                     void *opaque, websocket_state_t *state);

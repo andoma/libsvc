@@ -30,6 +30,14 @@
 
 TAILQ_HEAD(mbuf_data_queue, mbuf_data);
 
+typedef struct mbuf_data {
+  TAILQ_ENTRY(mbuf_data) md_link;
+  uint8_t *md_data;
+  size_t md_data_size; /* Size of allocation hb_data */
+  size_t md_data_len;  /* Number of valid bytes from hd_data */
+  size_t md_data_off;  /* Offset in data, used for partial reads */
+} mbuf_data_t;
+
 
 typedef struct mbuf {
   struct mbuf_data_queue mq_buffers;

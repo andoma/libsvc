@@ -329,8 +329,8 @@ async_fd_create(int fd, int flags)
   async_fd_t *af = calloc(1, sizeof(async_fd_t));
   af->af_fd = fd;
   atomic_set(&af->af_refcount, 1);
-  htsbuf_queue_init(&af->af_sendq, INT32_MAX);
-  htsbuf_queue_init(&af->af_recvq, INT32_MAX);
+  mbuf_init(&af->af_sendq);
+  mbuf_init(&af->af_recvq);
   mod_poll_flags(af, flags, 0);
   return af;
 }
@@ -361,8 +361,8 @@ async_fd_release(async_fd_t *af)
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_destroy(&af->af_sendq_mutex);
 
-  htsbuf_queue_flush(&af->af_sendq);
-  htsbuf_queue_flush(&af->af_recvq);
+  mbuf_clear(&af->af_sendq);
+  mbuf_clear(&af->af_recvq);
   free(af->af_hostname);
   free(af);
 }
@@ -378,7 +378,7 @@ do_write(async_fd_t *af)
   char tmp[1024];
 
   while(1) {
-    int avail = htsbuf_peek(&af->af_sendq, tmp, sizeof(tmp));
+    int avail = mbuf_peek(&af->af_sendq, tmp, sizeof(tmp));
     if(avail == 0) {
       if(af->af_pending_shutdown) {
         shutdown(af->af_fd, 2);
@@ -400,7 +400,7 @@ do_write(async_fd_t *af)
       return;
     }
 
-    htsbuf_drop(&af->af_sendq, r);
+    mbuf_drop(&af->af_sendq, r);
     if(r != avail)
       break;
   }
@@ -443,7 +443,7 @@ do_read(async_fd_t *af)
       return;
     }
 
-    htsbuf_append(&af->af_recvq, tmp, r);
+    mbuf_append(&af->af_recvq, tmp, r);
   }
 
   af->af_bytes_avail(af->af_opaque, &af->af_recvq);
@@ -685,7 +685,7 @@ asyncio_shutdown(async_fd_t *af)
 
   if(af->af_fd != -1) {
 
-    if(af->af_sendq.hq_size) {
+    if(af->af_sendq.mq_size) {
       af->af_pending_shutdown = 1;
     } else {
       shutdown(af->af_fd, 2);
@@ -708,7 +708,7 @@ asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
   if(af->af_fd != -1) {
-    htsbuf_append(&af->af_sendq, buf, len);
+    mbuf_append(&af->af_sendq, buf, len);
 
     if(!cork)
       do_write(af);
@@ -736,7 +736,7 @@ asyncio_send_with_hdr(async_fd_t *af,
     pthread_mutex_lock(&af->af_sendq_mutex);
 
   if(af->af_fd != -1) {
-    int qempty = af->af_sendq.hq_size == 0;
+    int qempty = af->af_sendq.mq_size == 0;
 
     if(!cork && qempty) {
       int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL);
@@ -747,7 +747,7 @@ asyncio_send_with_hdr(async_fd_t *af,
     }
 
     if(hdr_len > 0) {
-      htsbuf_append(&af->af_sendq, hdr_buf, hdr_len);
+      mbuf_append(&af->af_sendq, hdr_buf, hdr_len);
       qempty = 0;
     }
 
@@ -760,7 +760,7 @@ asyncio_send_with_hdr(async_fd_t *af,
     }
 
     if(len > 0) {
-      htsbuf_append(&af->af_sendq, buf, len);
+      mbuf_append(&af->af_sendq, buf, len);
       qempty = 0;
     }
 
@@ -780,18 +780,18 @@ asyncio_send_with_hdr(async_fd_t *af,
  *
  */
 int
-asyncio_sendq(async_fd_t *af, htsbuf_queue_t *q, int cork)
+asyncio_sendq(async_fd_t *af, mbuf_t *q, int cork)
 {
   int rval = 0;
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
   if(af->af_fd != -1) {
-    htsbuf_appendq(&af->af_sendq, q);
+    mbuf_appendq(&af->af_sendq, q);
     if(!cork)
       do_write(af);
   } else {
-    htsbuf_queue_flush(q);
+    mbuf_clear(q);
     rval = 1;
   }
 
@@ -806,14 +806,14 @@ asyncio_sendq(async_fd_t *af, htsbuf_queue_t *q, int cork)
  */
 int
 asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
-                       htsbuf_queue_t *q, int cork)
+                       mbuf_t *q, int cork)
 {
   int rval = 0;
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
   if(af->af_fd != -1) {
-    int qempty = af->af_sendq.hq_size == 0;
+    int qempty = af->af_sendq.mq_size == 0;
 
     if(!cork && qempty) {
       int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL);
@@ -824,14 +824,14 @@ asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
     }
 
     if(hdr_len > 0) {
-      htsbuf_append(&af->af_sendq, hdr_buf, hdr_len);
+      mbuf_append(&af->af_sendq, hdr_buf, hdr_len);
       qempty = 0;
     }
-    htsbuf_appendq(&af->af_sendq, q);
+    mbuf_appendq(&af->af_sendq, q);
     if(!cork)
       do_write(af);
   } else {
-    htsbuf_queue_flush(q);
+    mbuf_clear(q);
     rval = 1;
   }
 
@@ -947,7 +947,7 @@ asyncio_enable_read(async_fd_t *af)
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
 
-  if(af->af_recvq.hq_size)
+  if(af->af_recvq.mq_size)
     af->af_bytes_avail(af->af_opaque, &af->af_recvq);
 }
 

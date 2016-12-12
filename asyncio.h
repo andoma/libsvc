@@ -23,7 +23,7 @@
 
 
 #include <sys/socket.h>
-#include "htsbuf.h"
+#include "mbuf.h"
 #include "atomic.h"
 
 /**************************************************************************
@@ -66,7 +66,7 @@ typedef int (asyncio_connect_cb_t)(void *opaque, const char *msg);
 
 typedef void (asyncio_error_cb_t)(void *opaque, int error);
 
-typedef void (asyncio_read_cb_t)(void *opaque, struct htsbuf_queue *hq);
+typedef void (asyncio_read_cb_t)(void *opaque, struct mbuf *hq);
 
 typedef void (asyncio_poll_cb_t)(struct async_fd *);
 
@@ -84,8 +84,8 @@ typedef struct async_fd {
 
   void *af_opaque;
 
-  htsbuf_queue_t af_sendq;
-  htsbuf_queue_t af_recvq;
+  mbuf_t af_sendq;
+  mbuf_t af_recvq;
 
   char *af_hostname;
 
@@ -141,10 +141,10 @@ int asyncio_send_with_hdr(async_fd_t *af,
                           const void *buf, size_t len,
                           int cork);
 
-int asyncio_sendq(async_fd_t *af, htsbuf_queue_t *hq, int cork);
+int asyncio_sendq(async_fd_t *af, mbuf_t *hq, int cork);
 
 int asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
-                           htsbuf_queue_t *q, int cork);
+                           mbuf_t *q, int cork);
 
 void asyncio_reconnect(async_fd_t *af, int delay);
 

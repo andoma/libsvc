@@ -23,13 +23,14 @@
 
 #pragma once
 
-#include "htsbuf.h"
+#include "mbuf.h"
 #include "atomic.h"
 #include "http_parser.h"
 #include "task.h"
 
 struct http_connection;
 struct ntv;
+struct mbuf;
 
 TAILQ_HEAD(http_arg_list, http_arg);
 
@@ -73,7 +74,7 @@ typedef struct http_request {
   char *hr_password;
 
 
-  htsbuf_queue_t hr_reply;
+  mbuf_t hr_reply;
 
   int64_t hr_req_received;
   int64_t hr_req_process;
@@ -170,7 +171,7 @@ void websocket_send(struct http_connection *hc,
                     int opcode, const void *data, size_t len);
 
 void websocket_sendq(struct http_connection *hc,
-                     int opcode, htsbuf_queue_t *hq);
+                     int opcode, struct mbuf *hq);
 
 
 void websocket_send_json(struct http_connection *hc, struct ntv *msg);
