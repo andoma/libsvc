@@ -138,8 +138,8 @@ setup_socket(int fd)
   setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof(val));
 #endif
 
-  //  val = 1;
-  //  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
+  val = 1;
+  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
 
   set_nonblocking(fd, 1);
 }
