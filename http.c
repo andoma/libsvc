@@ -22,6 +22,7 @@
 ******************************************************************************/
 
 #include <sys/types.h>
+#include <sys/param.h>
 #include <regex.h>
 #include <pthread.h>
 #include <assert.h>
@@ -38,6 +39,8 @@
 
 #include <openssl/evp.h>
 #include <openssl/sha.h>
+
+#include <zlib.h>
 
 #include "strtab.h"
 #include "misc.h"
@@ -116,11 +119,9 @@ typedef struct http_connection {
   size_t hc_body_size;
   uint64_t hc_body_received;
 
+  z_stream *hc_z_out;
+  z_stream *hc_z_in;
 
-
-
-
-  
 } http_connection_t;
 
 
@@ -160,7 +161,7 @@ static void get_session_cookie(http_request_t *hr, const char *str);
 static int websocket_upgrade(http_connection_t *hc);
 
 static int websocket_packet_input(void *opaque, int opcode,
-                                  uint8_t **data, int len);
+                                  uint8_t **data, int len, int flags);
 
 static int websocket_response(http_request_t *hr);
 
@@ -1232,6 +1233,17 @@ http_connection_destroy(http_connection_t *hc)
 
   websocket_free(&hc->hc_ws_state);
   free(hc->hc_peer_addr);
+
+  if(hc->hc_z_out != NULL) {
+    deflateEnd(hc->hc_z_out);
+    free(hc->hc_z_out);
+  }
+
+  if(hc->hc_z_in != NULL) {
+    inflateEnd(hc->hc_z_in);
+    free(hc->hc_z_in);
+  }
+
   free(hc);
 }
 
@@ -1726,14 +1738,64 @@ websocket_response(http_request_t *hr)
 int
 websocket_session_start(http_request_t *hr,
                         void *opaque,
-                        const char *selected_protocol)
+                        const char *selected_protocol,
+                        int compression_level)
 
 {
   http_connection_t *hc = hr->hr_connection;
-
   SHA_CTX shactx;
   char sig[64];
   uint8_t d[20];
+  const char *selected_extension = NULL;
+  char *exts =http_arg_get(&hr->hr_request_headers, "Sec-WebSocket-Extensions");
+
+  if(exts != NULL && compression_level > 0) {
+    compression_level = MIN(MAX(compression_level, 8), 15);
+    exts = mystrdupa(exts);
+    char *extv[8];
+    int extc = str_tokenize(exts, extv, 8, ',');
+
+    for(int i = 0; i < extc; i++) {
+      char *argv[32];
+      int argc = str_tokenize(extv[i], argv, 32, ';');
+
+      int per_message_deflate = 0;
+
+      for(int j = 0; j < argc; j++) {
+        if(!strcmp(argv[j], "permessage-deflate")) {
+          per_message_deflate = 1;
+        }
+      }
+
+      if(per_message_deflate) {
+        int r;
+        selected_extension = "permessage-deflate";
+
+        hc->hc_z_in = calloc(1, sizeof(z_stream));
+        r = inflateInit2(hc->hc_z_in, -15);
+        if(r) {
+          free(hc->hc_z_in);
+          hc->hc_z_in = NULL;
+          selected_extension = NULL;
+          continue;
+        }
+
+        hc->hc_z_out = calloc(1, sizeof(z_stream));
+        r = deflateInit2(hc->hc_z_out, 9, Z_DEFLATED, -compression_level,
+                         8, Z_DEFAULT_STRATEGY);
+        if(r) {
+          inflateEnd(hc->hc_z_in);
+          free(hc->hc_z_in);
+          hc->hc_z_in = NULL;
+          free(hc->hc_z_out);
+          hc->hc_z_out = NULL;
+          selected_extension = NULL;
+          continue;
+        }
+        break;
+      }
+    }
+  }
 
   hc->hc_ws_opaque = opaque;
   const char *k = http_arg_get(&hr->hr_request_headers, "Sec-WebSocket-Key");
@@ -1760,6 +1822,11 @@ websocket_session_start(http_request_t *hr,
   if(selected_protocol) {
     mbuf_qprintf(&out, "Sec-WebSocket-Protocol: %s\r\n",
                    selected_protocol);
+  }
+
+  if(selected_extension) {
+    mbuf_qprintf(&out, "Sec-WebSocket-Extensions: %s\r\n",
+                 selected_extension);
   }
 
   mbuf_qprintf(&out, "\r\n");
@@ -1796,6 +1863,7 @@ typedef struct ws_server_data {
   void *wsd_data;
   int wsd_opcode;
   int wsd_arg;
+  int wsd_flags;
 
 #define WSD_OPCODE_DISCONNECT -1
 
@@ -1812,6 +1880,46 @@ ws_dispatch(void *aux)
   http_connection_t *hc = wsd->wsd_hc;
   const ws_server_path_t *wsp = hc->hc_ws_path;
 
+  if(wsd->wsd_flags & WS_MESSAGE_COMPRESSED && hc->hc_z_in != NULL) {
+    z_stream *z = hc->hc_z_in;
+    z->avail_in = wsd->wsd_arg + 4;
+    z->next_in = wsd->wsd_data;
+    memcpy(wsd->wsd_data + wsd->wsd_arg, "\x00\x00\xff\xff", 4);
+
+    size_t used = 0;
+    size_t bufsize = 1000;
+    char *buf = malloc(bufsize + 1);
+
+    while(1) {
+      z->next_out = (void *)buf + used;
+      z->avail_out = bufsize - used;
+
+      size_t avail = z->avail_out;
+      int r = inflate(z, Z_SYNC_FLUSH);
+      if(r) {
+        goto out;
+      }
+
+      used += avail - z->avail_out;
+      if(z->avail_in == 0) {
+        buf[used] = 0;
+        break;
+      }
+
+      bufsize *= 2;
+
+      if(bufsize > 16 * 1024 * 1024) {
+        free(buf);
+        goto out;
+      }
+
+      buf = realloc(buf, bufsize + 1);
+    }
+    free(wsd->wsd_data);
+    wsd->wsd_data = buf;
+    wsd->wsd_arg = used;
+  }
+
   switch(wsd->wsd_opcode) {
   case WSD_OPCODE_DISCONNECT:
     wsp->wsp_disconnected(hc->hc_ws_opaque, wsd->wsd_arg);
@@ -1825,6 +1933,7 @@ ws_dispatch(void *aux)
     free(wsd->wsd_data);
     break;
   }
+ out:
   http_connection_release(hc);
   free(wsd);
 }
@@ -1835,13 +1944,13 @@ ws_dispatch(void *aux)
  *
  */
 static void
-ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg)
+ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg, int flags)
 {
   ws_server_data_t *wsd = malloc(sizeof(ws_server_data_t));
   wsd->wsd_data = data;
   wsd->wsd_opcode = opcode;
   wsd->wsd_arg = arg;
-
+  wsd->wsd_flags = flags;
   wsd->wsd_hc = hc;
   atomic_inc(&hc->hc_refcount);
 
@@ -1854,7 +1963,7 @@ websocket_send(struct http_connection *hc,
                int opcode, const void *data, size_t len)
 {
   uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
-  int hlen = websocket_build_hdr(hdr, opcode, len);
+  int hlen = websocket_build_hdr(hdr, opcode, len, 0);
   asyncio_send_with_hdr(hc->hc_af, hdr, hlen, data, len, 0);
 }
 
@@ -1865,7 +1974,47 @@ void
 websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq)
 {
   uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
-  int hlen = websocket_build_hdr(hdr, opcode, mq->mq_size);
+
+  if(hc->hc_z_out != NULL) {
+    z_stream *z = hc->hc_z_out;
+    mbuf_t comp;
+    mbuf_init(&comp);
+
+    mbuf_data_t *md;
+
+    asyncio_send_lock(hc->hc_af);
+
+    while((md = TAILQ_FIRST(&mq->mq_buffers)) != NULL) {
+      z->next_in  = md->md_data     + md->md_data_off;
+      z->avail_in = md->md_data_len - md->md_data_off;
+      int flush = TAILQ_NEXT(md, md_link) ? Z_NO_FLUSH : Z_SYNC_FLUSH;
+
+      do {
+        size_t bufsize = 4096;
+        void *buf = malloc(bufsize);
+        z->next_out = buf;
+        z->avail_out = bufsize;
+
+        int ret = deflate(z, flush);
+        assert(ret != Z_STREAM_ERROR);
+        size_t have = bufsize - z->avail_out;
+        mbuf_append_prealloc(&comp, buf, have);
+      } while(z->avail_out == 0);
+
+      assert(z->avail_in == 0);
+      mbuf_data_free(mq, md);
+    }
+
+    mbuf_drop_tail(&comp, 4); // Drop the flush trailer
+    //    printf("Compressed %zd to %zd\n", mq->mq_size, comp.mq_size);
+    mq->mq_size = 0;
+    int hlen = websocket_build_hdr(hdr, opcode, comp.mq_size, 1);
+    asyncio_sendq_with_hdr_locked(hc->hc_af, hdr, hlen, &comp, 0);
+    asyncio_send_unlock(hc->hc_af);
+    return;
+  }
+
+  int hlen = websocket_build_hdr(hdr, opcode, mq->mq_size, 0);
   asyncio_sendq_with_hdr(hc->hc_af, hdr, hlen, mq, 0);
 }
 
@@ -1906,7 +2055,8 @@ websocket_send_close(struct http_connection *hc, int code,
  *
  */
 static int
-websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len)
+websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
+                       int flags)
 {
   http_connection_t *hc = opaque;
 
@@ -1925,7 +2075,7 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len)
     return 0;
 
   default:
-    ws_enq_data(hc, opcode, *data, len);
+    ws_enq_data(hc, opcode, *data, len, flags);
     *data = NULL;
     return 0;
   }
@@ -1937,7 +2087,7 @@ websocket_timer(http_connection_t *hc)
 {
   if(hc->hc_ws_pong_wait >= 2) {
     asyncio_timer_disarm(&hc->hc_timer);
-    ws_enq_data(hc, WSD_OPCODE_DISCONNECT, NULL, 0);
+    ws_enq_data(hc, WSD_OPCODE_DISCONNECT, NULL, 0, 0);
     return;
   }
 

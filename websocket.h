@@ -28,15 +28,17 @@
 struct mbuf;
 
 typedef struct websocket_state {
-  uint8_t opcode;
-  int packet_size;
   uint8_t *packet;
+  int packet_size;
+  uint8_t opcode;
+  uint8_t flags;
+#define WS_MESSAGE_COMPRESSED 0x1
 } websocket_state_t;
 
 #define WEBSOCKET_MAX_HDR_LEN 14
 
 int websocket_build_hdr(uint8_t hdr[WEBSOCKET_MAX_HDR_LEN],
-                        int opcode, size_t len);
+                        int opcode, size_t len, int compressed);
 
 void websocket_append_hdr(struct mbuf *q, int opcode, size_t len);
 
@@ -49,7 +51,7 @@ void websocket_free(websocket_state_t *state);
  */
 int websocket_parse(struct mbuf *q,
                     int (*cb)(void *opaque, int opcode,
-                              uint8_t **data, int len),
+                              uint8_t **data, int len, int flags),
                     void *opaque, websocket_state_t *state);
 
 

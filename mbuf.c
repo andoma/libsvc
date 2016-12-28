@@ -30,6 +30,7 @@
 #include <sys/param.h>
 
 #include "mbuf.h"
+#include "trace.h"
 
 
 /**
@@ -53,7 +54,7 @@ mbuf_set_chunk_size(mbuf_t *m, size_t s)
 /**
  *
  */
-static void
+void
 mbuf_data_free(mbuf_t *mq, mbuf_data_t *md)
 {
   TAILQ_REMOVE(&mq->mq_buffers, md, md_link);
@@ -268,6 +269,33 @@ mbuf_drop(mbuf_t *mq, size_t len)
     c = MIN(md->md_data_len - md->md_data_off, len);
     len -= c;
     md->md_data_off += c;
+    mq->mq_size -= c;
+    r += c;
+    if(md->md_data_off == md->md_data_len)
+      mbuf_data_free(mq, md);
+  }
+  return r;
+}
+
+
+/**
+ *
+ */
+size_t
+mbuf_drop_tail(mbuf_t *mq, size_t len)
+{
+  size_t r = 0;
+  int c;
+  mbuf_data_t *md;
+
+  while(len > 0) {
+    md = TAILQ_LAST(&mq->mq_buffers, mbuf_data_queue);
+    if(md == NULL)
+      break;
+
+    c = MIN(md->md_data_len - md->md_data_off, len);
+    len -= c;
+    md->md_data_len -= c;
     mq->mq_size -= c;
     r += c;
     if(md->md_data_off == md->md_data_len)
@@ -500,4 +528,15 @@ mbuf_clear_to_string(mbuf_t *mq)
   mbuf_read(mq, r, mq->mq_size);
   mbuf_clear(mq);
   return r;
+}
+
+
+void
+mbuf_hexdump(const char *prefix, mbuf_t *mq)
+{
+  mbuf_data_t *md;
+  TAILQ_FOREACH(md, &mq->mq_buffers, md_link) {
+    hexdump(prefix, md->md_data + md->md_data_off,
+            md->md_data_len - md->md_data_off);
+  }
 }

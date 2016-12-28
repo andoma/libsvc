@@ -41,10 +41,10 @@ websocket_free(websocket_state_t *state)
  *
  */
 int
-websocket_build_hdr(uint8_t *hdr, int opcode, size_t len)
+websocket_build_hdr(uint8_t *hdr, int opcode, size_t len, int compressed)
 {
   int hlen;
-  hdr[0] = 0x80 | (opcode & 0xf);
+  hdr[0] = 0x80 | (opcode & 0xf) | (compressed ? 0x40 : 0);
   if(len <= 125) {
     hdr[1] = len;
     hlen = 2;
@@ -70,7 +70,7 @@ void
 websocket_append_hdr(mbuf_t *q, int opcode, size_t len)
 {
   uint8_t hdr[14]; // max header length
-  const int hlen = websocket_build_hdr(hdr, opcode, len);
+  const int hlen = websocket_build_hdr(hdr, opcode, len, 0);
   mbuf_append(q, hdr, hlen);
 }
 
@@ -80,7 +80,8 @@ websocket_append_hdr(mbuf_t *q, int opcode, size_t len)
  */
 int
 websocket_parse(mbuf_t *q,
-                int (*cb)(void *opaque, int opcode, uint8_t **data, int len),
+                int (*cb)(void *opaque, int opcode, uint8_t **data, int len,
+                          int flags),
                 void *opaque, websocket_state_t *ws)
 {
   uint8_t hdr[14]; // max header length
@@ -90,9 +91,10 @@ websocket_parse(mbuf_t *q,
 
     if(p < 2)
       return 0;
-    uint8_t fin = hdr[0] & 0x80;
-    int opcode  = hdr[0] & 0xf;
-    int64_t len = hdr[1] & 0x7f;
+    const uint8_t fin        = hdr[0] & 0x80;
+    const uint8_t compressed = hdr[0] & 0x40;
+    const int opcode         = hdr[0] & 0xf;
+    int64_t len              = hdr[1] & 0x7f;
     int hoff = 2;
     if(len == 126) {
       if(p < 4)
@@ -130,14 +132,18 @@ websocket_parse(mbuf_t *q,
       mbuf_read(q, p, len);
       if(m != NULL) for(int i = 0; i < len; i++) p[i] ^= m[i&3];
 
-      int err = cb(opaque, opcode, &p, len);
+      int err = cb(opaque, opcode, &p, len, 0);
       free(p);
       if(!err)
         continue;
       return 1;
     }
 
-    void *r = realloc(ws->packet, ws->packet_size + len+1);
+    // The four extra pad bytes are used for:
+    //  pad[0] is always 0 so the websocket payload can be parsed as a string
+    // or
+    //  All four bytes can be used to append the deflate flush trailer
+    void *r = realloc(ws->packet, ws->packet_size + len + 4);
     if(r == NULL)
       return 1;
     ws->packet = r;
@@ -148,16 +154,21 @@ websocket_parse(mbuf_t *q,
 
     if(m != NULL) for(int i = 0; i < len; i++) d[i] ^= m[i&3];
 
-    if(opcode != 0)
+    if(opcode != 0) {
       ws->opcode = opcode;
+      if(compressed) {
+        ws->flags |= WS_MESSAGE_COMPRESSED;
+      }
+    }
 
     ws->packet_size += len;
 
     if(!fin)
       continue;
 
-    int err = cb(opaque, ws->opcode, &ws->packet, ws->packet_size);
+    int err = cb(opaque, ws->opcode, &ws->packet, ws->packet_size, ws->flags);
     ws->packet_size = 0;
+    ws->flags = 0;
     if(!err)
       continue;
     return 1;

@@ -38,12 +38,13 @@ typedef struct mbuf_data {
   size_t md_data_off;  /* Offset in data, used for partial reads */
 } mbuf_data_t;
 
-
 typedef struct mbuf {
   struct mbuf_data_queue mq_buffers;
   size_t mq_size;
   size_t mq_alloc_size;
 } mbuf_t;
+
+void mbuf_data_free(mbuf_t *mq, mbuf_data_t *md);
 
 void mbuf_init(mbuf_t *m);
 
@@ -67,6 +68,8 @@ size_t mbuf_peek_tail(mbuf_t *mq, void *buf, size_t len);
 
 size_t mbuf_drop(mbuf_t *m, size_t len);
 
+size_t mbuf_drop_tail(mbuf_t *mq, size_t len);
+
 int mbuf_find(mbuf_t *m, uint8_t v);
 
 void mbuf_appendq(mbuf_t *m, mbuf_t *src);
@@ -79,6 +82,9 @@ void mbuf_append_and_escape_jsonstr(mbuf_t *m, const char *s);
 
 void mbuf_dump_raw_stderr(mbuf_t *m);
 
+void mbuf_hexdump(const char *prefix, mbuf_t *mq);
+
 const void *mbuf_pullup(mbuf_t *mq, size_t bytes);
 
 char *mbuf_clear_to_string(mbuf_t *mq);
+

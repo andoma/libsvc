@@ -804,13 +804,33 @@ asyncio_sendq(async_fd_t *af, mbuf_t *q, int cork)
 /**
  *
  */
-int
-asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
-                       mbuf_t *q, int cork)
+void
+asyncio_send_lock(async_fd_t *af)
 {
-  int rval = 0;
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_lock(&af->af_sendq_mutex);
+}
+
+
+/**
+ *
+ */
+void
+asyncio_send_unlock(async_fd_t *af)
+{
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
+}
+
+
+/**
+ *
+ */
+int
+asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
+                              size_t hdr_len, mbuf_t *q, int cork)
+{
+  int rval = 0;
 
   if(af->af_fd != -1) {
     int qempty = af->af_sendq.mq_size == 0;
@@ -835,6 +855,21 @@ asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
     rval = 1;
   }
 
+  return rval;
+}
+
+
+/**
+ *
+ */
+int
+asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
+                       mbuf_t *q, int cork)
+{
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+
+  int rval = asyncio_sendq_with_hdr_locked(af, hdr_buf, hdr_len, q, cork);
   if(af->af_flags & AF_SENDQ_MUTEX)
     pthread_mutex_unlock(&af->af_sendq_mutex);
   return rval;

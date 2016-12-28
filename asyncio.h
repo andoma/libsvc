@@ -146,6 +146,13 @@ int asyncio_sendq(async_fd_t *af, mbuf_t *hq, int cork);
 int asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
                            mbuf_t *q, int cork);
 
+void asyncio_send_lock(async_fd_t *af);
+
+void asyncio_send_unlock(async_fd_t *af);
+
+int asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
+                                  size_t hdr_len, mbuf_t *q, int cork);
+
 void asyncio_reconnect(async_fd_t *af, int delay);
 
 void asyncio_enable_read(async_fd_t *fd);
