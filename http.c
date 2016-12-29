@@ -1333,12 +1333,14 @@ http_connection_reenable(void *aux)
   http_connection_t *hc = aux;
 
   if(!hc->hc_closed) {
-    assert(hc->hc_read_disabled == 1);
-    hc->hc_read_disabled = 0;
     asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
     // This will make the asyncio socket retry the read callback if there is
     // data pending
-    asyncio_enable_read(hc->hc_af);
+
+    if(hc->hc_read_disabled) {
+      hc->hc_read_disabled = 0;
+      asyncio_enable_read(hc->hc_af);
+    }
   }
   http_connection_release(hc);
 }
