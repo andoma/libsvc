@@ -15,6 +15,8 @@
 #include "atomic.h"
 #include "sock.h"
 #include "misc.h"
+#include "bytestream.h"
+
 
 /**
  *
@@ -122,7 +124,6 @@ wsc_read(ws_client_t *wsc, struct htsbuf_queue *hq)
     int opcode  = hdr[0] & 0xf;
     int64_t len = hdr[1] & 0x7f;
     int hoff = 2;
-
     if(len == 126) {
       if(p < 4)
         return;
@@ -131,10 +132,7 @@ wsc_read(ws_client_t *wsc, struct htsbuf_queue *hq)
     } else if(len == 127) {
       if(p < 10)
         return;
-      memcpy(&len, hdr + 2, sizeof(uint64_t));
-#if defined(__LITTLE_ENDIAN__)
-      len = __builtin_bswap64(len);
-#endif
+      len = rd64_be(hdr + 2);
       hoff = 10;
     }
 
@@ -150,7 +148,6 @@ wsc_read(ws_client_t *wsc, struct htsbuf_queue *hq)
 
     if(hq->hq_size < hoff + len)
       return;
-
     uint8_t *d = malloc(len+1);
     htsbuf_drop(hq, hoff);
     htsbuf_read(hq, d, len);
