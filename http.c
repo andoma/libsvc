@@ -710,7 +710,8 @@ http_dispatch_request(http_request_t *hr)
       return;
     }
 
-    http_log(hr, 101, "Websocket upgrade");
+    http_log(hr, 101, hc->hc_z_out ? "Websocket upgrade, per-message-deflate"
+             : "Websocket upgrade");
     hr->hr_keep_alive = 2;
     return;
   }
@@ -1752,34 +1753,40 @@ websocket_session_start(http_request_t *hr,
   if(exts != NULL && compression_level > 0) {
     compression_level = MIN(MAX(compression_level, 8), 15);
     exts = mystrdupa(exts);
-    char *extv[8];
-    int extc = str_tokenize(exts, extv, 8, ',');
 
-    for(int i = 0; i < extc; i++) {
+    int per_message_deflate = 0;
+
+    while(1) {
+      char *ext = exts;
+      exts = strchr(exts, ',');
+      if(exts != NULL)
+        *exts++ = 0;
+
       char *argv[32];
-      int argc = str_tokenize(extv[i], argv, 32, ';');
+      int argc = str_tokenize(ext, argv, 32, ';');
 
-      int per_message_deflate = 0;
-
-      for(int j = 0; j < argc; j++) {
-        if(!strcmp(argv[j], "permessage-deflate")) {
+      if(argc > 0 && !strcmp(argv[0], "permessage-deflate")) {
+        if(argc == 1 ||
+           (argc == 2 && !strcmp(argv[1], "client_max_window_bits"))) {
           per_message_deflate = 1;
+          break;
         }
       }
 
-      if(per_message_deflate) {
-        int r;
-        selected_extension = "permessage-deflate";
+      if(exts == NULL)
+        break;
+    }
 
-        hc->hc_z_in = calloc(1, sizeof(z_stream));
-        r = inflateInit2(hc->hc_z_in, -15);
-        if(r) {
-          free(hc->hc_z_in);
-          hc->hc_z_in = NULL;
-          selected_extension = NULL;
-          continue;
-        }
-
+    if(per_message_deflate) {
+      int r;
+      selected_extension = "permessage-deflate";
+      hc->hc_z_in = calloc(1, sizeof(z_stream));
+      r = inflateInit2(hc->hc_z_in, -15);
+      if(r) {
+        free(hc->hc_z_in);
+        hc->hc_z_in = NULL;
+        selected_extension = NULL;
+      } else {
         hc->hc_z_out = calloc(1, sizeof(z_stream));
         r = deflateInit2(hc->hc_z_out, 9, Z_DEFLATED, -compression_level,
                          8, Z_DEFAULT_STRATEGY);
@@ -1790,9 +1797,7 @@ websocket_session_start(http_request_t *hr,
           free(hc->hc_z_out);
           hc->hc_z_out = NULL;
           selected_extension = NULL;
-          continue;
         }
-        break;
       }
     }
   }
@@ -1884,6 +1889,8 @@ ws_dispatch(void *aux)
     z_stream *z = hc->hc_z_in;
     z->avail_in = wsd->wsd_arg + 4;
     z->next_in = wsd->wsd_data;
+    // The websocket packet demuxer always leave 4
+    // extra bytes at the end for us to use for deflate's sync flush
     memcpy(wsd->wsd_data + wsd->wsd_arg, "\x00\x00\xff\xff", 4);
 
     size_t used = 0;
