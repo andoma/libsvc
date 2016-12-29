@@ -280,6 +280,8 @@ mod_poll_flags(async_fd_t *af, int set, int clr)
 #define EPOLLIN  0x1
 #define EPOLLOUT 0x2
 #define MSG_NOSIGNAL 0
+#define MSG_MORE 0
+
 /**
  *
  */
@@ -739,7 +741,7 @@ asyncio_send_with_hdr(async_fd_t *af,
     int qempty = af->af_sendq.mq_size == 0;
 
     if(!cork && qempty) {
-      int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL);
+      int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL | MSG_MORE);
       if(r > 0) {
         hdr_buf += r;
         hdr_len -= r;
@@ -836,7 +838,7 @@ asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
     int qempty = af->af_sendq.mq_size == 0;
 
     if(!cork && qempty) {
-      int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL);
+      int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL | MSG_MORE);
       if(r > 0) {
         hdr_buf += r;
         hdr_len -= r;
