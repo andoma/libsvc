@@ -84,6 +84,7 @@ TAILQ_HEAD(msg_target_queue, msg_target);
 typedef struct irc_out_msg {
   TAILQ_ENTRY(irc_out_msg) iom_link;
   int iom_length;
+  time_t iom_expire;
   char iom_data[0];
 } irc_out_msg_t;
 
@@ -129,7 +130,16 @@ typedef struct irc_client {
   struct pollfd ic_fds[2];
   tcp_stream_t *ic_ts;
 
-  char *ic_server;
+  char *ic_url;
+  char *ic_logid;
+
+  char *ic_server_hostname;
+  char *ic_server_password;
+  int ic_server_port;
+  int ic_server_ssl;
+
+  char *ic_username;
+  char *ic_userinfo;
 
   char ic_registered;                /* Set if we have successfully registered
                                         If this is not set we should not try
@@ -199,7 +209,46 @@ permute_nick(irc_client_t *ic)
   snprintf(buf, sizeof(buf), "%.*s%d", len, ic->ic_current_nick, v);
   free(ic->ic_current_nick);
   ic->ic_current_nick = strdup(buf);
-  trace(LOG_INFO, "IRC: %s: Switching current nick to %s", ic->ic_server, buf);
+  trace(LOG_INFO, "IRC: %s: Switching current nick to %s", ic->ic_logid, buf);
+}
+
+
+/**
+ *
+ */
+static int
+irc_expire_messages(irc_client_t *ic)
+{
+  channel_t *c;
+  time_t now = time(NULL);
+  int anything = 0;
+  LIST_FOREACH(c, &ic->ic_channels, c_link) {
+    msg_target_t *mt = &c->c_tgt;
+    irc_out_msg_t *msg, *next;
+
+    if(TAILQ_FIRST(&mt->mt_q) == NULL)
+      continue;
+
+    for(msg = TAILQ_FIRST(&mt->mt_q); msg != NULL; msg = next) {
+      next = TAILQ_NEXT(msg, iom_link);
+
+      if(msg->iom_expire < now) {
+        printf("Removed too old msg: %.*s\n", msg->iom_length,
+               msg->iom_data);
+        TAILQ_REMOVE(&mt->mt_q, msg, iom_link);
+        free(msg);
+      }
+    }
+
+    if(TAILQ_FIRST(&mt->mt_q)) {
+      anything = 1;
+    } else {
+      if(c->c_state == IRC_CHANNEL_JOINED) {
+        TAILQ_REMOVE(&ic->ic_msgq, mt, mt_link);
+      }
+    }
+  }
+  return anything;
 }
 
 
@@ -251,7 +300,6 @@ static void
 irc_handle_kick(irc_client_t *ic, const char *channel, const char *victim)
 {
   int self = !strcmp(ic->ic_current_nick, victim);
-  int need_check = 0;
 
   channel_t *c = find_channel(ic, channel);
   if(self) {
@@ -260,12 +308,9 @@ irc_handle_kick(irc_client_t *ic, const char *channel, const char *victim)
     if(TAILQ_FIRST(&c->c_tgt.mt_q) != NULL)
       TAILQ_REMOVE(&ic->ic_msgq, &c->c_tgt, mt_link);
 
-    trace(LOG_INFO, "IRC: %s: I was kicked from %s", ic->ic_server, channel);
-    need_check = 1;
+    trace(LOG_INFO, "IRC: %s: I was kicked from %s", ic->ic_logid, channel);
+    c->c_want_join = 0;
   }
-
-  if(need_check)
-    irc_check_channels(ic);
 }
 
 
@@ -280,9 +325,9 @@ irc_handle_join(irc_client_t *ic, const char *nick, const char *channel)
   channel_t *c = find_channel(ic, channel);
   if(self) {
     c->c_state = IRC_CHANNEL_JOINED;
-    trace(LOG_INFO, "IRC: %s: Joined %s%s", ic->ic_server, channel,
+    trace(LOG_INFO, "IRC: %s: Joined %s%s", ic->ic_logid, channel,
           TAILQ_FIRST(&c->c_tgt.mt_q) ?
-          ",for which I have some pending messages" : "");
+          ", for which I have some pending messages" : "");
     if(TAILQ_FIRST(&c->c_tgt.mt_q) != NULL)
       TAILQ_INSERT_TAIL(&ic->ic_msgq, &c->c_tgt, mt_link);
   }
@@ -299,7 +344,7 @@ irc_handle_unable_to_join(irc_client_t *ic, const char *channel, int code)
   assert(c->c_state == IRC_CHANNEL_JOIN_PENDING);
   c->c_state = code;
   trace(LOG_WARNING, "IRC: %s: Unable to join %s -- reason %d",
-        ic->ic_server, channel, c->c_state);
+        ic->ic_logid, channel, c->c_state);
 
   if(!ic->ic_next_channel_scan)
     ic->ic_next_channel_scan = DO_IN(IRC_CHANNEL_RETRY_INTERVAL);
@@ -314,7 +359,7 @@ irc_handle_nick(irc_client_t *ic, const char *srcnick, const char *newnick)
 {
   if(!strcmp(ic->ic_current_nick, srcnick)) {
     trace(LOG_INFO, "IRC: %s: Changed my nick from %s to %s",
-          ic->ic_server, ic->ic_current_nick, newnick);
+          ic->ic_logid, ic->ic_current_nick, newnick);
     free(ic->ic_current_nick);
     ic->ic_current_nick = strdup(newnick);
 
@@ -340,7 +385,7 @@ irc_recv_line(irc_client_t *ic, char *p)
     prefix = p + 1;
     if((x = strchr(p + 1, ' ')) == NULL) {
       trace(LOG_NOTICE, "IRC: %s: Protocol violation -- Missing space",
-            ic->ic_server);
+            ic->ic_logid);
       return 1;
     }
     *x++ = 0;
@@ -355,7 +400,7 @@ irc_recv_line(irc_client_t *ic, char *p)
     command = p;
     if((x = strchr(p, ' ')) == NULL) {
       trace(LOG_NOTICE, "IRC: %s: Protocol violation -- No space after command",
-            ic->ic_server);
+            ic->ic_logid);
       return 1;
     }
     *x++ = 0;
@@ -364,7 +409,7 @@ irc_recv_line(irc_client_t *ic, char *p)
 
   while(1) {
     if(argc == IRC_CMD_MAX_PARAMS) {
-      trace(LOG_NOTICE, "IRC: %s: Too many parameters", ic->ic_server);
+      trace(LOG_NOTICE, "IRC: %s: Too many parameters", ic->ic_logid);
       return 0;
     }
     if(*p == ':') {
@@ -385,7 +430,7 @@ irc_recv_line(irc_client_t *ic, char *p)
     code = str2val(command, IRC_cmdtab);
     if(code == -1) {
       if(ic->ic_dotrace)
-	trace(LOG_DEBUG, "IRC: %s: Unknown command %s", ic->ic_server, command);
+	trace(LOG_DEBUG, "IRC: %s: Unknown command %s", ic->ic_logid, command);
       return 0;
     }
   }
@@ -485,7 +530,7 @@ irc_parse_input(irc_client_t *ic, htsbuf_queue_t *q)
 
     line[ll] = 0;
     if(ic->ic_dotrace)
-      trace(LOG_DEBUG, "IRC: %s: RECV: %s", ic->ic_server, line);
+      trace(LOG_DEBUG, "IRC: %s: RECV: %s", ic->ic_logid, line);
 
     if(irc_recv_line(ic, line))
       return 1;
@@ -516,7 +561,6 @@ irc_client_cleanup(irc_client_t *ic)
   }
 }
 
-
 /**
  *
  */
@@ -524,7 +568,7 @@ static void
 refresh_cfg(irc_client_t *ic)
 {
   cfg_root(root);
-
+#if 0
   const char *nick = cfg_get_str(root, CFG("ircbot", ic->ic_server, "nick"),
                                  "doozer");
 
@@ -534,10 +578,9 @@ refresh_cfg(irc_client_t *ic)
     trace(LOG_INFO, "IRC: %s: Switching nick to %s", ic->ic_server, nick);
     irc_send(ic, "NICK %s", ic->ic_wanted_nick);
   }
+#endif
 
-  ic->ic_dotrace =
-    cfg_get_int(root, CFG("ircbot", "trace"), 0) ||
-    cfg_get_int(root, CFG("ircbot", ic->ic_server, "trace"), 0);
+  ic->ic_dotrace = cfg_get_int(root, CFG("ircbot", "trace"), 0);
 }
 
 
@@ -591,7 +634,7 @@ iom_write(irc_client_t *ic, struct irc_out_msg_queue *q)
   tcp_write(ic->ic_ts, iom->iom_data, iom->iom_length);
 
   if(ic->ic_dotrace)
-    trace(LOG_DEBUG, "IRC: %s: SEND: %.*s", ic->ic_server,
+    trace(LOG_DEBUG, "IRC: %s: SEND: %.*s", ic->ic_logid,
           iom->iom_length - 2, iom->iom_data);
   TAILQ_REMOVE(q, iom, iom_link);
   free(iom);
@@ -601,31 +644,24 @@ iom_write(irc_client_t *ic, struct irc_out_msg_queue *q)
 
 
 /**
- *
+ *   irc[s]://username:password@irc.freenote.net:6667
  */
 static tcp_stream_t *
 irc_do_connect(irc_client_t *ic, char *errbuf, size_t errlen)
 {
   cfg_root(root);
 
-  const char *host =
-    cfg_get_str(root, CFG("ircbot", ic->ic_server, "server"), ic->ic_server);
-
-
-  int port = cfg_get_int(root, CFG("ircbot", ic->ic_server, "port"), 6667);
-  int ssl  = cfg_get_int(root, CFG("ircbot", ic->ic_server, "ssl"), 0);
-  int timo = cfg_get_int(root, CFG("ircbot", ic->ic_server, "timeout"), 5);
-
   trace(LOG_INFO, "IRC: %s: Attempting to connect using %s:%d%s",
-        ic->ic_server, host, port, ssl ? " SSL" : "");
+        ic->ic_logid, ic->ic_server_hostname, ic->ic_server_port,
+        ic->ic_server_ssl ? " SSL" : "");
 
-  ic->ic_dotrace =
-    cfg_get_int(root, CFG("ircbot", "trace"), 0) ||
-    cfg_get_int(root, CFG("ircbot", ic->ic_server, "trace"), 0);
+  ic->ic_dotrace = cfg_get_int(root, CFG("ircbot", "trace"), 0);
 
   tcp_ssl_info_t tsi = {};
 
-  return dial(host, port, timo * 1000, ssl ? &tsi : NULL, errbuf, errlen);
+  int timo = 10;
+  return dial(ic->ic_server_hostname, ic->ic_server_port,
+              timo * 1000, ic->ic_server_ssl ? &tsi : NULL, errbuf, errlen);
 }
 
 
@@ -638,14 +674,17 @@ irc_register(irc_client_t *ic)
 {
   cfg_root(root);
 
-  const char *pw =
-    cfg_get_str(root, CFG("ircbot", ic->ic_server, "password"), NULL);
+  const char *username =
+    cfg_get_str(root, CFG("ircbot", "username"), ic->ic_wanted_nick);
 
-  if(pw != NULL)
-    irc_send(ic, "PASS %s", pw);
+  const char *userinfo =
+    cfg_get_str(root, CFG("ircbot", "userinfo"), "Just a lonely bot");
+
+  if(ic->ic_server_password != NULL)
+    irc_send(ic, "PASS %s", ic->ic_server_password);
 
   irc_send(ic, "NICK %s", ic->ic_wanted_nick);
-  irc_send(ic, "USER doozer unset unset :Doozer IRC bot");
+  irc_send(ic, "USER %s unset unset :%s", username, userinfo);
 }
 
 
@@ -674,12 +713,23 @@ irc_thread(void *aux)
     if(ic->ic_ts == NULL) {
       backoff = MIN(backoff * 2, 30);
       trace(LOG_ERR, "IRC: %s: Unable to connect -- %s -- Retry in %d seconds",
-            ic->ic_server, errbuf, backoff);
+            ic->ic_logid, errbuf, backoff);
       sleep(backoff);
-      continue;
+
+      pthread_mutex_lock(&irc_mutex);
+      int anything = irc_expire_messages(ic);
+      pthread_mutex_unlock(&irc_mutex);
+
+      if(anything)
+        continue;
+
+      trace(LOG_INFO,
+            "IRC: %s: No messages to send, stopping reconnect attempts",
+            ic->ic_logid);
+      break;
     }
 
-    trace(LOG_INFO, "IRC: %s: Connection established", ic->ic_server);
+    trace(LOG_INFO, "IRC: %s: Connection established", ic->ic_logid);
 
     backoff = 5;
 
@@ -761,7 +811,7 @@ irc_thread(void *aux)
         if(errno == EINTR)
           continue;
         trace(LOG_ERR, "IRC: %s: poll() -- %s",
-              ic->ic_server, strerror(errno));
+              ic->ic_logid, strerror(errno));
         break;
       }
 
@@ -769,7 +819,7 @@ irc_thread(void *aux)
         continue;
 
       if(ic->ic_fds[1].revents & (POLLERR | POLLHUP)) {
-        trace(LOG_NOTICE, "IRC: %s: Terminating session", ic->ic_server);
+        trace(LOG_NOTICE, "IRC: %s: Terminating session", ic->ic_logid);
         run = 0;
         break;
       }
@@ -777,7 +827,7 @@ irc_thread(void *aux)
       if(ic->ic_fds[1].revents & POLLIN) {
         char c;
         if(read(ic->ic_pipe[0], &c, 1) != 1) {
-          trace(LOG_ERR, "IRC: %s: Pipe error -- %s", ic->ic_server, strerror(errno));
+          trace(LOG_ERR, "IRC: %s: Pipe error -- %s", ic->ic_logid, strerror(errno));
           run = 0;
           break;
         }
@@ -792,7 +842,7 @@ irc_thread(void *aux)
 
         int err = tcp_get_errno(ic->ic_ts);
         trace(LOG_ERR, "IRC: %s: Connection lost -- %s",
-              ic->ic_server, strerror(err));
+              ic->ic_logid, strerror(err));
         break;
       }
 
@@ -805,7 +855,7 @@ irc_thread(void *aux)
           if(r == 0) {
             trace(LOG_ERR,
                   "IRC: %s: Connection lost -- Connection reset by peer",
-                  ic->ic_server);
+                  ic->ic_logid);
             goto disconnect;
           }
           if(r == -1) {
@@ -814,7 +864,7 @@ irc_thread(void *aux)
               break;
 
             trace(LOG_ERR, "IRC: %s: Connection lost -- %s",
-                  ic->ic_server, strerror(errno));
+                  ic->ic_logid, strerror(errno));
             goto disconnect;
           }
           htsbuf_append(&recvq, buf, r);
@@ -825,7 +875,7 @@ irc_thread(void *aux)
 
           if(r) {
             trace(LOG_ERR, "IRC: %s: Protocol violation, disconnecting",
-                  ic->ic_server);
+                  ic->ic_logid);
             goto disconnect;
           }
         }
@@ -837,9 +887,11 @@ irc_thread(void *aux)
     ic->ic_ts = NULL;
     if(!run)
       break;
+    pthread_mutex_lock(&irc_mutex);
     irc_client_cleanup(ic);
+    pthread_mutex_unlock(&irc_mutex);
     trace(LOG_INFO, "IRC: %s: Reconnect in %d seconds",
-          ic->ic_server, ic->ic_disconnect_sleep);
+          ic->ic_logid, ic->ic_disconnect_sleep);
     sleep(ic->ic_disconnect_sleep);
     ic->ic_disconnect_sleep = MIN(ic->ic_disconnect_sleep * 2, 120);
   }
@@ -847,11 +899,18 @@ irc_thread(void *aux)
   if(ic->ic_ts != NULL)
     tcp_close(ic->ic_ts);
 
-  irc_client_cleanup(ic);
   close(ic->ic_pipe[0]);
+
+  pthread_mutex_lock(&irc_mutex);
+  irc_client_cleanup(ic);
+  LIST_REMOVE(ic, ic_link);
+  free(ic->ic_server_hostname);
+  free(ic->ic_server_password);
   free(ic->ic_wanted_nick);
-  free(ic->ic_server);
+  free(ic->ic_logid);
+  free(ic->ic_url);
   free(ic);
+  pthread_mutex_unlock(&irc_mutex);
   return NULL;
 }
 
@@ -864,7 +923,7 @@ irc_client_notify(irc_client_t *ic, char cmd)
 {
   if(write(ic->ic_pipe[1], &cmd, 1) < 0) {
     trace(LOG_ERR, "IRC: %s: Pipe write failed -- %s",
-          ic->ic_server, strerror(errno));
+          ic->ic_logid, strerror(errno));
   }
 }
 
@@ -872,33 +931,88 @@ irc_client_notify(irc_client_t *ic, char cmd)
 /**
  *
  */
+static int
+irc_decode_url(irc_client_t *ic, const char *url)
+{
+  const char *x;
+  int ssl = 0;
+  x = mystrbegins(url, "ircs://");
+  if(x != NULL) {
+    ssl = 1;
+  } else {
+    x = mystrbegins(url, "irc://");
+    if(x == NULL) {
+      return -1;
+    }
+  }
+
+  char *username = mystrdupa(x);
+
+  char *hostname = strchr(username, '@');
+  if(hostname == NULL) {
+    return -1;
+  }
+  *hostname++ = 0;
+
+  char *password = strchr(username, ':');
+  if(password != NULL) {
+    *password++ = 0;
+    if(strlen(password) == 0)
+      password = NULL;
+  }
+
+
+  char *portstr = strchr(hostname, ':');
+  int port = ssl ? 6697 : 6667;
+  if(portstr != NULL) {
+    *portstr++ = 0;
+    port = atoi(portstr);
+  }
+
+  ic->ic_server_hostname = strdup(hostname);
+  ic->ic_server_password = password ? strdup(password) : NULL;
+  ic->ic_server_port = port;
+  ic->ic_server_ssl = ssl;
+  ic->ic_wanted_nick = strdup(username);
+  char logid[512];
+  snprintf(logid, sizeof(logid), "%s@%s:%d", username, hostname, port);
+  ic->ic_logid = strdup(logid);
+  return 0;
+
+}
+
+/**
+ *
+ */
 static irc_client_t *
-irc_get_server(const char *server)
+irc_get_server(const char *url)
 {
   irc_client_t *ic;
 
   LIST_FOREACH(ic, &irc_clients, ic_link)
-    if(!strcmp(server, ic->ic_server))
+    if(!strcmp(url, ic->ic_url))
       return ic;
 
   ic = calloc(1, sizeof(irc_client_t));
 
+  if(irc_decode_url(ic, url)) {
+    free(ic);
+    return NULL;
+  }
+
   if(pipe(ic->ic_pipe)) {
     trace(LOG_ERR, "IRC: %s: Unable create pipe -- %s",
-          server, strerror(errno));
+          ic->ic_logid, strerror(errno));
+    free(ic->ic_server_hostname);
+    free(ic->ic_server_password);
+    free(ic->ic_wanted_nick);
+    free(ic->ic_logid);
     free(ic);
     return NULL;
   }
 
   LIST_INSERT_HEAD(&irc_clients, ic, ic_link);
-
-  cfg_root(root);
-
-  const char *nick =
-    cfg_get_str(root, CFG("ircbot", server, "nick"), "doozer");
-
-  ic->ic_wanted_nick = strdup(nick);
-  ic->ic_server = strdup(server);
+  ic->ic_url = strdup(url);
   TAILQ_INIT(&ic->ic_cmdq);
   ic->ic_cmdq_mintime = 100000;
 
@@ -933,11 +1047,13 @@ irc_get_channel(irc_client_t *ic, const char *channel)
  *
  */
 void
-irc_msg_channel(const char *server, const char *channel, const char *str)
+irc_msg_channel(const char *url, const char *channel,
+                const char *key, const char *str,
+                int ttl)
 {
   pthread_mutex_lock(&irc_mutex);
 
-  irc_client_t *ic = irc_get_server(server);
+  irc_client_t *ic = irc_get_server(url);
   if(ic != NULL) {
 
     channel_t *c = irc_get_channel(ic, channel);
@@ -961,6 +1077,8 @@ irc_msg_channel(const char *server, const char *channel, const char *str)
         irc_out_msg_t *iom = malloc(sizeof(irc_out_msg_t) + len);
         iom->iom_length = len;
         memcpy(iom->iom_data, buf, len);
+        iom->iom_expire = time(NULL) + ttl;
+
         msg_target_t *mt = &c->c_tgt;
 
         if(TAILQ_FIRST(&mt->mt_q) == NULL && c->c_state == IRC_CHANNEL_JOINED)
@@ -974,6 +1092,7 @@ irc_msg_channel(const char *server, const char *channel, const char *str)
   pthread_mutex_unlock(&irc_mutex);
 }
 
+#if 0
 
 /**
  *
@@ -1008,7 +1127,6 @@ irc_reconnect_server(const char *server)
   pthread_mutex_unlock(&irc_mutex);
 }
 
-
 /**
  *
  */
@@ -1025,60 +1143,5 @@ irc_refresh_config(void)
   pthread_mutex_unlock(&irc_mutex);
 
 }
+#endif
 
-
-static int
-irc_say(const char *user,
-        int argc, const char **argv, int *intv,
-        void (*msg)(void *opaque, const char *fmt, ...),
-        void *opaque)
-{
-
-  irc_msg_channel(argv[0], argv[1], argv[2]);
-  return 0;
-}
-
-CMD(irc_say,
-    CMD_LITERAL("irc"),
-    CMD_LITERAL("say"),
-    CMD_VARSTR("server"),
-    CMD_VARSTR("channel"),
-    CMD_ROL("message")
-);
-
-
-static int
-irc_join(const char *user,
-         int argc, const char **argv, int *intv,
-         void (*msg)(void *opaque, const char *fmt, ...),
-         void *opaque)
-{
-
-  irc_join_channel(argv[0], argv[1]);
-  return 0;
-}
-
-CMD(irc_join,
-    CMD_LITERAL("irc"),
-    CMD_LITERAL("join"),
-    CMD_VARSTR("server"),
-    CMD_VARSTR("channel"));
-
-
-
-
-static int
-irc_reconnect(const char *user,
-              int argc, const char **argv, int *intv,
-              void (*msg)(void *opaque, const char *fmt, ...),
-              void *opaque)
-{
-
-  irc_reconnect_server(argv[0]);
-  return 0;
-}
-
-CMD(irc_reconnect,
-    CMD_LITERAL("irc"),
-    CMD_LITERAL("reconnect"),
-    CMD_VARSTR("server"));

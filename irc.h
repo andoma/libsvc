@@ -23,6 +23,6 @@
 
 #pragma once
 
-void irc_msg_channel(const char *server, const char *channel, const char *str);
-
-void irc_refresh_config(void);
+void irc_msg_channel(const char *url, const char *channel,
+                     const char *key, const char *message,
+                     int ttl_in_seconds);
