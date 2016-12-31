@@ -136,3 +136,7 @@ const char *html_enteties_escape_tmp(const char *src);
 char * str_replace_tokens(char *str, const char *tokenprefix,
 			  const char *tokenpostfix,
 			  const char **tokens);
+
+void freecharp(char **ptr);
+
+#define scoped_char char __attribute__((cleanup(freecharp)))

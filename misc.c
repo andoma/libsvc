@@ -1035,3 +1035,11 @@ bin2str(const void *src, size_t len)
   memcpy(r, src, len);
   return r;
 }
+
+
+void
+freecharp(char **ptr)
+{
+  free(*ptr);
+  *ptr = NULL;
+}
