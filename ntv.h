@@ -190,3 +190,5 @@ ntv_t *ntv_binary_deserialize_nocopy(const void *data, size_t length);
 #endif
 
 #define NTV_CLEANUP  __attribute__((cleanup(ntv_releasep)))
+
+#define scoped_ntv_t ntv_t __attribute__((cleanup(ntv_releasep)))
