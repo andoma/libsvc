@@ -109,6 +109,33 @@ strvec_copy(strvec_t *dst, const strvec_t *src)
 
   dst->v = malloc(dst->count * sizeof(dst->v[0]));
   for(int i = 0; i < dst->count; i++)
-    dst->v[i] = strdup(src->v[i]);
+    dst->v[i] = src->v[i] ? strdup(src->v[i]) : NULL;
 }
 
+
+char *
+strvec_join(const strvec_t *src, const char *sep)
+{
+  int totlen = 1;
+  const int seplen = strlen(sep);
+  for(int i = 0; i < src->count; i++) {
+    if(src->v[i])
+      totlen += strlen(src->v[i]) + (i ? seplen : 0);
+  }
+
+  char *r = malloc(totlen);
+  int off = 0;
+  for(int i = 0; i < src->count; i++) {
+    if(src->v[i]) {
+      if(i) {
+        memcpy(r + off, sep, seplen);
+        off += seplen;
+      }
+      const int len = strlen(src->v[i]);
+      memcpy(r + off, src->v[i], len);
+      off += len;
+    }
+  }
+  r[off] = 0;
+  return r;
+}
