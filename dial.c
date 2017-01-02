@@ -37,6 +37,7 @@
 
 #include "dial.h"
 #include "sock.h"
+#include "trace.h"
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -78,6 +79,8 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
   struct sockaddr_in6 in6;
   struct sockaddr_in in;
   socklen_t sockerrlen = sizeof(int);
+  char addrtxt[128];
+  addrtxt[0] = 0;
 
   if(!strcmp(hostname, "localhost")) {
     if((fd = getstreamsocket(AF_INET)) < 0) {
@@ -89,8 +92,8 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
     in.sin_family = AF_INET;
     in.sin_port = htons(port);
     in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    strcpy(addrtxt, "127.0.0.1");
     r = connect(fd, (struct sockaddr *)&in, sizeof(struct sockaddr_in));
-
   } else {
 
 #if defined(__APPLE__)
@@ -135,12 +138,14 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
       return NULL;
     }
 
+    int num_addr = 0;
+    int a;
     switch(hp->h_addrtype) {
     case AF_INET:
       memset(&in, 0, sizeof(in));
       in.sin_family = AF_INET;
       in.sin_port = htons(port);
-      int num_addr = 0;
+
       while(hp->h_addr_list[num_addr])
         num_addr++;
 
@@ -150,7 +155,8 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
         snprintf(errbuf, errlen, "No address");
         return NULL;
       }
-      int a = rand() % num_addr;
+      a = rand() % num_addr;
+      inet_ntop(AF_INET, hp->h_addr_list[a], addrtxt, sizeof(addrtxt));
       memcpy(&in.sin_addr, hp->h_addr_list[a], sizeof(struct in_addr));
       r = connect(fd, (struct sockaddr *)&in, sizeof(struct sockaddr_in));
       break;
@@ -159,14 +165,29 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
       memset(&in6, 0, sizeof(in6));
       in6.sin6_family = AF_INET6;
       in6.sin6_port = htons(port);
-      memcpy(&in6.sin6_addr, hp->h_addr_list[0], sizeof(struct in6_addr));
-      r = connect(fd, (struct sockaddr *)&in, sizeof(struct sockaddr_in6));
+
+      while(hp->h_addr_list[num_addr])
+        num_addr++;
+
+      if(num_addr == 0) {
+        close(fd);
+        free(tmphstbuf);
+        snprintf(errbuf, errlen, "No address");
+        return NULL;
+      }
+
+      a = rand() % num_addr;
+      inet_ntop(AF_INET6, hp->h_addr_list[a], addrtxt, sizeof(addrtxt));
+
+      memcpy(&in6.sin6_addr, hp->h_addr_list[a], sizeof(struct in6_addr));
+      r = connect(fd, (struct sockaddr *)&in6, sizeof(struct sockaddr_in6));
       break;
 
     default:
       close(fd);
       free(tmphstbuf);
-      snprintf(errbuf, errlen, "Address family not supported");
+      snprintf(errbuf, errlen, "Address family %d not supported",
+               hp->h_addrtype);
       return NULL;
     }
 
@@ -185,12 +206,14 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
       if(r == 0) {
         /* Timeout */
         close(fd);
-        snprintf(errbuf, errlen, "Connection timed out");
+        snprintf(errbuf, errlen, "Connection to %s timed out",
+                 addrtxt);
         return NULL;
       }
 
       if(r == -1) {
-        snprintf(errbuf, errlen, "Connection failed -- %s", strerror(errno));
+        snprintf(errbuf, errlen, "Connection to %s failed -- %s",
+                 addrtxt, strerror(errno));
         close(fd);
         return NULL;
       }
@@ -205,7 +228,8 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
 
   if(err != 0) {
     close(fd);
-    snprintf(errbuf, errlen, "Connection failed -- %s", strerror(err));
+    snprintf(errbuf, errlen, "Connection to %s failed -- %s",
+             addrtxt, strerror(err));
     return NULL;
   }
 
