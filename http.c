@@ -891,7 +891,7 @@ http_arg_set(struct http_arg_list *list, const char *key,
  */
 static int route_cmp(const http_route_t *a, const http_route_t *b)
 {
-  return a->hr_depth - b->hr_depth;
+  return b->hr_depth - a->hr_depth;
 }
 
 /**
