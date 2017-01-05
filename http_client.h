@@ -32,7 +32,8 @@ enum {
   HCR_TAG_PUTDATA,
   HCR_TAG_POSTDATA,
   HCR_TAG_POSTFIELDS,
-  HCR_TAG_POSTNTV,
+  HCR_TAG_POSTJSON,
+  HCR_TAG_POSTARGS,
   HCR_TAG_AUTHCB,
   HCR_TAG_VERB,
   HCR_TAG_USERNPASS,
@@ -52,7 +53,8 @@ enum {
 #define HCR_PUTDATA(data, len, ct)  HCR_TAG_PUTDATA, data, (size_t)(len), ct
 #define HCR_POSTDATA(data, len, ct)  HCR_TAG_POSTDATA, data, (size_t)(len), ct
 #define HCR_POSTFIELDS(data, len) HCR_TAG_POSTFIELDS, data, (size_t)(len)
-#define HCR_POSTJSON(ntv) HCR_TAG_POSTNTV, ntv
+#define HCR_POSTJSON(ntv) HCR_TAG_POSTJSON, ntv
+#define HCR_POSTARGS(ntv) HCR_TAG_POSTARGS, ntv
 #define HCR_AUTHCB(cb, opaque) HCR_TAG_AUTHCB, cb, opaque
 #define HCR_VERB(v) HCR_TAG_VERB, v
 #define HCR_USERNPASS(a, b) HCR_TAG_USERNPASS, a, b

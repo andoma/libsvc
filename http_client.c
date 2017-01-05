@@ -41,8 +41,9 @@
 #include "sock.h"
 #include "http_client.h"
 #include "ntv.h"
+#include "strvec.h"
+#include "dbl.h"
 #include "curlhelpers.h"
-
 
 static pthread_key_t http_client_key;
 
@@ -74,6 +75,34 @@ set_handle(CURL *c)
   pthread_setspecific(http_client_key, c);
 }
 
+
+
+static char *
+ntv_to_args(const ntv_t *ntv)
+{
+  char buf[32];
+  scoped_strvec(args);
+  NTV_FOREACH(f, ntv) {
+    const char *str;
+    switch(f->ntv_type) {
+    case NTV_STRING:
+      str = url_escape_tmp(f->ntv_string, URL_ESCAPE_PARAM);
+      break;
+    case NTV_DOUBLE:
+      my_double2str(buf, sizeof(buf), f->ntv_double);
+      str = buf;
+      break;
+    case NTV_INT:
+      snprintf(buf, sizeof(buf), "%" PRId64, f->ntv_s64);
+      str = buf;
+      break;
+    default:
+      continue;
+    }
+    strvec_push_alloced(&args, fmt("%s=%s", f->ntv_name, str));
+  }
+  return strvec_join(&args, "&");
+}
 
 
 /**
@@ -205,7 +234,15 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       break;
     }
 
-    case HCR_TAG_POSTNTV: {
+    case HCR_TAG_POSTARGS: {
+      char *str = ntv_to_args(va_arg(ap, const ntv_t *));
+      curl_easy_setopt(curl, CURLOPT_POST, 1L);
+      curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, str);
+      free(str);
+      break;
+    }
+
+    case HCR_TAG_POSTJSON: {
       char *json = ntv_json_serialize_to_str(va_arg(ap, const ntv_t *), 0);
       curl_easy_setopt(curl, CURLOPT_POST, 1L);
       curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, json);

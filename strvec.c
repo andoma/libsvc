@@ -5,14 +5,27 @@
 #include "strvec.h"
 
 
-void
-strvec_push(strvec_t *vec, const char *value)
+static void
+strvec_inc(strvec_t *vec)
 {
   if(vec->count + 1 >= vec->capacity) {
     vec->capacity = vec->capacity * 2 + 16;
     vec->v = realloc(vec->v, sizeof(vec->v[0]) * vec->capacity);
   }
+}
+
+void
+strvec_push(strvec_t *vec, const char *value)
+{
+  strvec_inc(vec);
   vec->v[vec->count++] = value ? strdup(value) : NULL;
+}
+
+void
+strvec_push_alloced(strvec_t *vec, char *value)
+{
+  strvec_inc(vec);
+  vec->v[vec->count++] = value;
 }
 
 void
