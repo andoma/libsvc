@@ -395,6 +395,32 @@ http_send_chunk(http_request_t *hr, const void *data, size_t len)
 }
 
 
+static void
+http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
+{
+  mbuf_qprintf(hdrs, "Server: %s\r\n", PROGNAME);
+
+  if(ntv_cmp(hr->hr_session, hr->hr_session_received)) {
+    const char *cookie = generate_session_cookie(hr);
+    if(cookie != NULL) {
+      mbuf_qprintf(hdrs,
+                   "Set-Cookie: %s.session=%s; Path=/; "
+                   "expires=%s; HttpOnly%s\r\n",
+                   PROGNAME, cookie,
+                   http_mktime(now, 365 * 86400),
+                   hr->hr_secure_cookies ? "; secure" : "");
+    } else {
+      mbuf_qprintf(hdrs,
+                   "Set-Cookie: %s.session=deleted; Path=/; "
+                   "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly%s\r\n",
+                   PROGNAME,
+                   hr->hr_secure_cookies ? "; secure" : "");
+    }
+  }
+}
+
+
+
 /**
  * Transmit a HTTP reply
  */
@@ -406,7 +432,7 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
 		 const char *disposition, const char *transfer_encoding)
 {
   mbuf_t hdrs;
-  time_t t = time(NULL);
+  time_t now = time(NULL);
 
   mbuf_init(&hdrs);
 
@@ -417,30 +443,13 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
                  http_req_ver_str(hr),
 		 rc, statustxt);
 
-  mbuf_qprintf(&hdrs, "Server: %s\r\n", PROGNAME);
 
-  if(ntv_cmp(hr->hr_session, hr->hr_session_received)) {
-    const char *cookie = generate_session_cookie(hr);
-    if(cookie != NULL) {
-      mbuf_qprintf(&hdrs,
-                     "Set-Cookie: %s.session=%s; Path=/; "
-                     "expires=%s; HttpOnly%s\r\n",
-                     PROGNAME, cookie,
-                     http_mktime(t, 365 * 86400),
-                     hr->hr_secure_cookies ? "; secure" : "");
-    } else {
-      mbuf_qprintf(&hdrs,
-                     "Set-Cookie: %s.session=deleted; Path=/; "
-                     "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly%s\r\n",
-                     PROGNAME,
-                     hr->hr_secure_cookies ? "; secure" : "");
-    }
-  }
+  http_send_common_headers(hr, &hdrs, now);
 
   if(maxage == 0) {
     mbuf_qprintf(&hdrs, "Cache-Control: no-cache\r\n");
   } else {
-    mbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", http_mktime(t, 0));
+    mbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", http_mktime(now, 0));
     mbuf_qprintf(&hdrs, "Cache-Control: public, max-age=%d\r\n", maxage);
   }
 
@@ -1835,6 +1844,8 @@ websocket_session_start(http_request_t *hr,
     mbuf_qprintf(&out, "Sec-WebSocket-Extensions: %s\r\n",
                  selected_extension);
   }
+
+  http_send_common_headers(hr, &out, time(NULL));
 
   mbuf_qprintf(&out, "\r\n");
   asyncio_sendq(hc->hc_af, &out, 0);
