@@ -112,6 +112,8 @@ void ntv_print(const ntv_t *ntv);
 ntv_t *ntv_copy(const ntv_t *src);
 int ntv_is_empty(const ntv_t *ntv);
 
+ntv_t *ntv_detach_field(ntv_t *n, const char *key);
+
 // Return non-zero if 'src' and 'dst' are not equal
 int ntv_cmp(const ntv_t *src, const ntv_t *dst);
 

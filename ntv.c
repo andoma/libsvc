@@ -155,7 +155,16 @@ ntv_delete_field(const ntv_t *parent, const char *fieldname)
     ntv_destroy(f);
 }
 
-
+ntv_t *
+ntv_detach_field(ntv_t *parent, const char *key)
+{
+  ntv_t *f = ntv_field_name_find(parent, key, -1);
+  if(f != NULL) {
+    TAILQ_REMOVE(&parent->ntv_children, f, ntv_link);
+    f->ntv_parent = NULL;
+  }
+  return f;
+}
 
 
 static ntv_t *
