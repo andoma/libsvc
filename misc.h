@@ -140,3 +140,5 @@ char * str_replace_tokens(char *str, const char *tokenprefix,
 void freecharp(char **ptr);
 
 #define scoped_char char __attribute__((cleanup(freecharp)))
+
+char *fmt(const char *fmt, ...);

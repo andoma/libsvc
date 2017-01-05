@@ -36,6 +36,7 @@
 #include <sys/param.h>
 #include <pthread.h>
 #include <dirent.h>
+#include <stdarg.h>
 
 #include "misc.h"
 #include "utf8.h"
@@ -702,6 +703,8 @@ url_escape_tmp(const char *src, int how)
   return r;
 }
 
+
+
 #if 0
 /**
  *
@@ -1042,4 +1045,17 @@ freecharp(char **ptr)
 {
   free(*ptr);
   *ptr = NULL;
+}
+
+
+char *
+fmt(const char *fmt, ...)
+{
+  va_list ap;
+  char *ret;
+  va_start(ap, fmt);
+  if(vasprintf(&ret, fmt, ap) == -1)
+    abort();
+  va_end(ap);
+  return ret;
 }
