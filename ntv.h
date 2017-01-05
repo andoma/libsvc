@@ -126,6 +126,9 @@ const void *ntv_get_bin(const ntv_t *ntv, const char *key, size_t *sizep);
 const ntv_t *ntv_get_map(const ntv_t *ntv, const char *key);
 const ntv_t *ntv_get_list(const ntv_t *ntv, const char *key);
 
+ntv_t *ntv_get_mutable_map(ntv_t *n, const char *key);
+ntv_t *ntv_get_mutable_list(ntv_t *n, const char *key);
+
 // Get operations on lists
 
 int     ntv_idx_int(const ntv_t *ntv, int idx, int default_value);

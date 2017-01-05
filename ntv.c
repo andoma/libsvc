@@ -267,6 +267,27 @@ ntv_get_list(const ntv_t *n, const char *key)
   return ntv_field_name_find(n, key, NTV_LIST);
 }
 
+ntv_t *
+ntv_get_mutable_map(ntv_t *n, const char *key)
+{
+  ntv_t *f = ntv_field_name_find(n, key, NTV_MAP);
+  if(f == NULL) {
+    f = ntv_create_map();
+    ntv_set_ntv(n, key, f);
+  }
+  return f;
+}
+
+ntv_t *
+ntv_get_mutable_list(ntv_t *n, const char *key)
+{
+  ntv_t *f = ntv_field_name_find(n, key, NTV_LIST);
+  if(f == NULL) {
+    f = ntv_create_list();
+    ntv_set_ntv(n, key, f);
+  }
+  return f;
+}
 
 void
 ntv_set_int(ntv_t *ntv, const char *key, int value)
