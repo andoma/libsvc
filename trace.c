@@ -20,7 +20,7 @@
 * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
-
+#define _GNU_SOURCE
 #include <stdarg.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -52,6 +52,10 @@ tracev(int level, const char *fmt, va_list ap)
   if(!isatty(2))
     return;
 
+  char *buf;
+  if(vasprintf(&buf, fmt, ap) == -1)
+    return;
+
   struct timeval tv;
   struct tm tm;
   gettimeofday(&tv, NULL);
@@ -81,7 +85,7 @@ tracev(int level, const char *fmt, va_list ap)
   }
 
 
-  fprintf(stderr, "%s%4d-%02d-%02d %02d:%02d:%02d.%03d ",
+  fprintf(stderr, "%s%4d-%02d-%02d %02d:%02d:%02d.%03d %s\033[0m\n",
           sgr,
           tm.tm_year + 1900,
           tm.tm_mon + 1,
@@ -89,10 +93,9 @@ tracev(int level, const char *fmt, va_list ap)
           tm.tm_hour,
           tm.tm_min,
           tm.tm_sec,
-          (int)tv.tv_usec / 1000);
-
-  vfprintf(stderr, fmt, ap);
-  fputs("\033[0m\n", stderr);
+          (int)tv.tv_usec / 1000,
+          buf);
+  free(buf);
 }
 
 
