@@ -565,7 +565,7 @@ ntv_print(const ntv_t *ntv)
 int
 ntv_is_empty(const ntv_t *ntv)
 {
-  return TAILQ_FIRST(&ntv->ntv_children) == NULL;
+  return ntv == NULL || TAILQ_FIRST(&ntv->ntv_children) == NULL;
 }
 
 #ifdef TEST
