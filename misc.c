@@ -485,23 +485,29 @@ rm_rf(const char *path, int remove_self)
   if(n < 0)
     return -1;
 
+  int err = 0;
   while(n--) {
     const char *name = namelist[n]->d_name;
     if(strcmp(name, ".") && strcmp(name, "..")) {
       snprintf(fullpath, sizeof(fullpath), "%s/%s", path, name);
       int type = namelist[n]->d_type;
       if(type == DT_FIFO || type == DT_LNK || type == DT_REG || type == DT_SOCK) {
-        unlink(fullpath);
+        if(unlink(fullpath)) {
+          err |= 1;
+        }
       }
       if(type == DT_DIR)
-        rm_rf(fullpath, 1);
+        err |= rm_rf(fullpath, 1);
     }
     free(namelist[n]);
   }
   free(namelist);
-  if(remove_self)
-    rmdir(path);
-  return 0;
+  if(remove_self) {
+    if(rmdir(path)) {
+      err |= 1;
+    }
+  }
+  return err;
 }
 
 
