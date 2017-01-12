@@ -183,6 +183,11 @@ ntv_field_name_prep(ntv_t *parent, const char *fieldname, ntv_type type)
   return f;
 }
 
+int
+ntv_has_field(const ntv_t *n, const char *key)
+{
+  return ntv_field_name_find(n, key, -1) ? 1 : 0;
+}
 
 static int64_t
 ntv_ret_int64(const ntv_t *f, int64_t default_value)
