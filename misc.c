@@ -1025,7 +1025,7 @@ str_replace_tokens(char *str, const char *tokenprefix,
     memcpy(n + (a - str) + replacelen, d, tlen - (d - str));
     n[newlen] = 0;
 
-    curpos = n + (d - str);
+    curpos = n + (a - str) + replacelen;
     tlen = newlen;
     free(str);
     str = n;
