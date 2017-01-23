@@ -89,9 +89,11 @@ typedef struct asyncio_task {
   TAILQ_ENTRY(asyncio_task) at_link;
   void (*at_fn)(void *aux);
   void *at_aux;
+  int at_block;
 } asyncio_task_t;
 
 static pthread_mutex_t asyncio_task_mutex;
+static pthread_cond_t asyncio_task_cond;
 static TAILQ_HEAD(, asyncio_task) asyncio_tasks;
 
 /**
@@ -1473,18 +1475,25 @@ asyncio_add_worker(void (*fn)(void))
 static void
 task_cb(void)
 {
+  pthread_mutex_lock(&asyncio_task_mutex);
   while(1) {
     asyncio_task_t *at;
-    pthread_mutex_lock(&asyncio_task_mutex);
     at = TAILQ_FIRST(&asyncio_tasks);
     if(at != NULL)
       TAILQ_REMOVE(&asyncio_tasks, at, at_link);
-    pthread_mutex_unlock(&asyncio_task_mutex);
     if(at == NULL)
       break;
+    pthread_mutex_unlock(&asyncio_task_mutex);
     at->at_fn(at->at_aux);
-    free(at);
+    pthread_mutex_lock(&asyncio_task_mutex);
+    if(at->at_block) {
+      at->at_block = 0;
+      pthread_cond_broadcast(&asyncio_task_cond);
+    } else {
+      free(at);
+    }
   }
+  pthread_mutex_unlock(&asyncio_task_mutex);
 }
 
 
@@ -1515,6 +1524,7 @@ asyncio_init(void)
 
   pthread_mutex_init(&asyncio_worker_mutex, NULL);
   pthread_mutex_init(&asyncio_task_mutex, NULL);
+  pthread_cond_init(&asyncio_task_cond, NULL);
 
   asyncio_dns_worker = asyncio_add_worker(adr_deliver_cb);
   asyncio_task_worker = asyncio_add_worker(task_cb);
@@ -1541,14 +1551,42 @@ asyncio_now(void)
 /**
  *
  */
-void
-asyncio_run_task(void (*fn)(void *aux), void *aux)
+static void
+asyncio_run_task0(void (*fn)(void *aux), void *aux, int block)
 {
   asyncio_task_t *at = malloc(sizeof(asyncio_task_t));
   at->at_fn = fn;
   at->at_aux = aux;
+  at->at_block = block;
   pthread_mutex_lock(&asyncio_task_mutex);
   TAILQ_INSERT_TAIL(&asyncio_tasks, at, at_link);
   pthread_mutex_unlock(&asyncio_task_mutex);
   asyncio_wakeup_worker(asyncio_task_worker);
+
+  if(block) {
+
+    pthread_mutex_lock(&asyncio_task_mutex);
+    while(at->at_block)
+      pthread_cond_wait(&asyncio_task_cond, &asyncio_task_mutex);
+    pthread_mutex_unlock(&asyncio_task_mutex);
+    free(at);
+  }
+}
+
+/**
+ *
+ */
+void
+asyncio_run_task(void (*fn)(void *aux), void *aux)
+{
+   asyncio_run_task0(fn, aux, 0);
+}
+
+/**
+ *
+ */
+void
+asyncio_run_task_blocking(void (*fn)(void *aux), void *aux)
+{
+  asyncio_run_task0(fn, aux, 1);
 }
