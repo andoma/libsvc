@@ -1498,6 +1498,8 @@ asyncio_init(void)
     perror("pipe");
     return;
   }
+  fcntl(asyncio_pipe[0], F_SETFD, fcntl(asyncio_pipe[0], F_GETFD) | FD_CLOEXEC);
+  fcntl(asyncio_pipe[1], F_SETFD, fcntl(asyncio_pipe[1], F_GETFD) | FD_CLOEXEC);
 
   TAILQ_INIT(&asyncio_dns_pending);
   TAILQ_INIT(&asyncio_dns_completed);
