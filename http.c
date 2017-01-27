@@ -450,7 +450,12 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
     mbuf_qprintf(&hdrs, "Cache-Control: no-cache\r\n");
   } else {
     mbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", http_mktime(now, 0));
-    mbuf_qprintf(&hdrs, "Cache-Control: public, max-age=%d\r\n", maxage);
+
+    if(maxage == INT32_MAX) {
+      mbuf_qprintf(&hdrs, "Cache-Control: max-age=365000000, immutable\r\n");
+    } else {
+      mbuf_qprintf(&hdrs, "Cache-Control: public, max-age=%d\r\n", maxage);
+    }
   }
 
   if(rc == HTTP_STATUS_UNAUTHORIZED)
