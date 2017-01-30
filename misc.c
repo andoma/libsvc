@@ -137,6 +137,9 @@ url_escape(char *dst, const int size, const char *src, int how)
 static const char b64[] =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+static const char b64url[] =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_/";
+
 static const uint8_t b64_reverse[256] = {
   0xfe,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfd,0xfd,0xfd,0xfd,0xff,0xff,
   0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
@@ -159,17 +162,29 @@ static const uint8_t b64_reverse[256] = {
 /**
  *
  */
-int
-base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
+static int
+base64_encode_mode(char *out, int out_size, const uint8_t *in, int in_size,
+                   int mode)
 {
+  const char *table;
+
+  switch(mode) {
+  case BASE64_URL:
+    table = b64url;
+    break;
+  default:
+    table = b64;
+    break;
+  }
+
   if(BASE64_SIZE(in_size) > out_size)
     return -1;
 
   while(in_size >= 3) {
-    *out++ = b64[in[0] >> 2];
-    *out++ = b64[((in[0] << 4) | (in[1] >> 4)) & 0x3f];
-    *out++ = b64[((in[1] << 2) | (in[2] >> 6)) & 0x3f];
-    *out++ = b64[in[2] & 0x3f];
+    *out++ = table[in[0] >> 2];
+    *out++ = table[((in[0] << 4) | (in[1] >> 4)) & 0x3f];
+    *out++ = table[((in[1] << 2) | (in[2] >> 6)) & 0x3f];
+    *out++ = table[in[2] & 0x3f];
     in += 3;
     in_size -= 3;
   }
@@ -179,15 +194,15 @@ base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
     break;
 
   case 2:
-    *out++ = b64[in[0] >> 2];
-    *out++ = b64[((in[0] << 4) | (in[1] >> 4)) & 0x3f];
-    *out++ = b64[(in[1] << 2) & 0x3f];
+    *out++ = table[in[0] >> 2];
+    *out++ = table[((in[0] << 4) | (in[1] >> 4)) & 0x3f];
+    *out++ = table[(in[1] << 2) & 0x3f];
     *out++ = '=';
     break;
 
   case 1:
-    *out++ = b64[in[0] >> 2];
-    *out++ = b64[(in[0] << 4) & 0x3f];
+    *out++ = table[in[0] >> 2];
+    *out++ = table[(in[0] << 4) & 0x3f];
     *out++ = '=';
     *out++ = '=';
     break;
@@ -196,6 +211,22 @@ base64_encode(char *out, int out_size, const uint8_t *in, int in_size)
   return 0;
 }
 
+int
+base64_encode(char *out, int out_size, const void *in, int in_size)
+{
+  return base64_encode_mode(out, out_size, in, in_size, 0);
+}
+
+
+char *
+base64_encode_a(const void *in, int in_size, int mode)
+{
+  size_t out_size = BASE64_SIZE(in_size);
+  char *out = malloc(out_size);
+  base64_encode_mode(out, out_size, in, in_size, mode);
+  return out;
+
+}
 
 /**
  *

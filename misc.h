@@ -35,11 +35,16 @@ int url_escape(char *dst, const int size, const char *src, int how);
 
 char *url_escape_tmp(const char *src, int how);
 
-int base64_encode(char *out, int out_size, const uint8_t *in, int in_size);
+#define BASE64_STANDARD 0
+#define BASE64_URL      1
 
-int  base64_decode(uint8_t *out, const char *in, int out_size);
+int base64_encode(char *out, int out_size, const void *in, int in_size);
+
+int base64_decode(uint8_t *out, const char *in, int out_size);
 
 #define BASE64_SIZE(x)  (((x)+2) / 3 * 4 + 1)
+
+char *base64_encode_a(const void *in, int in_size, int mode);
 
 int dictcmp(const char *a, const char *b);
 
