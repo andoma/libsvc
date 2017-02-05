@@ -215,6 +215,27 @@ cfg_get_s64(cfg_t *c, const char **path, int64_t def)
 /**
  *
  */
+double
+cfg_get_dbl(cfg_t *c, const char **path, double def)
+{
+  htsmsg_field_t *f = field_from_vec(c, path);
+  if(f == NULL)
+    return def;
+
+  switch(f->hmf_type) {
+  default:
+    return def;
+  case HMF_DBL:
+    return f->hmf_dbl;
+  case HMF_S64:
+    return f->hmf_s64;
+  }
+}
+
+
+/**
+ *
+ */
 int
 cfg_get_int(cfg_t *c, const char **path, int def)
 {

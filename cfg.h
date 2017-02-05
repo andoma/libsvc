@@ -45,6 +45,8 @@ int64_t cfg_get_s64(cfg_t *c, const char **path, int64_t def);
 
 int cfg_get_int(cfg_t *c, const char **path, int def);
 
+double cfg_get_dbl(cfg_t *c, const char **path, double def);
+
 cfg_t *cfg_get_map(cfg_t *c, const char *id);
 
 cfg_t *cfg_get_list(cfg_t *c, const char *id);
