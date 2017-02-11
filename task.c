@@ -123,6 +123,7 @@ task_thread(void *aux)
       t = TAILQ_FIRST(&tg->tg_tasks);
       pthread_mutex_unlock(&task_mutex);
       t->t_fn(t->t_opaque);
+      talloc_cleanup();
       pthread_mutex_lock(&task_mutex);
 
       // Note that we remove _after_ execution because we don't want
