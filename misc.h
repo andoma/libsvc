@@ -24,7 +24,7 @@
 #pragma once
 
 #include <alloca.h>
-
+#include <stdarg.h>
 #include <stdint.h>
 #include <sys/time.h>
 
@@ -145,5 +145,7 @@ char * str_replace_tokens(char *str, const char *tokenprefix,
 void freecharp(char **ptr);
 
 #define scoped_char char __attribute__((cleanup(freecharp)))
+
+char *fmtv(const char *fmt, va_list ap);
 
 char *fmt(const char *fmt, ...);

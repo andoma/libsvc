@@ -1086,13 +1086,23 @@ freecharp(char **ptr)
 
 
 char *
+fmtv(const char *fmt, va_list ap)
+{
+  char *ret;
+  if(vasprintf(&ret, fmt, ap) == -1)
+    abort();
+  return ret;
+}
+
+char *
 fmt(const char *fmt, ...)
 {
   va_list ap;
   char *ret;
   va_start(ap, fmt);
-  if(vasprintf(&ret, fmt, ap) == -1)
-    abort();
+  ret = fmtv(fmt, ap);
   va_end(ap);
   return ret;
 }
+
+
