@@ -68,6 +68,8 @@ typedef struct http_server {
   int hs_port;
   char *hs_bind_address;
 
+  async_fd_t *hs_fd;
+
 } http_server_t;
 
 
@@ -1441,9 +1443,10 @@ static void
 http_server_start(void *aux)
 {
   http_server_t *hs = aux;
+  hs->hs_fd = asyncio_bind(hs->hs_bind_address, hs->hs_port,
+                           http_server_accept, hs);
 
-  if(asyncio_bind(hs->hs_bind_address, hs->hs_port,
-                  http_server_accept, hs) == NULL) {
+  if(hs->hs_fd == NULL) {
     trace(LOG_ERR, "HTTP: Failed to bind %s:%d",
           hs->hs_bind_address, hs->hs_port);
   } else {
