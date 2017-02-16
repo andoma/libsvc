@@ -26,6 +26,7 @@ libsvc_SRCS += \
 	strvec.c \
 	murmur3.c \
 	mbuf.c \
+	trap.c \
 
 libsvc_INCS += \
 	libsvc.h \
@@ -55,6 +56,10 @@ libsvc_INCS += \
 
 CFLAGS  += $(shell pkg-config --cflags openssl)
 LDFLAGS += $(shell pkg-config --libs openssl)
+
+ifeq ($(shell uname),Linux)
+LDFLAGS += -ldl #for trap handler
+endif
 
 ##############################################################
 # Curl
