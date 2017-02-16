@@ -324,7 +324,8 @@ ws_client_t *
 ws_client_connect(const char *hostname, int port, const char *path,
                   const tcp_ssl_info_t *tsi,
                   void (*input)(void *aux, int opcode, const void *buf, size_t len),
-                  void *aux, int timeout, char *errbuf, size_t errlen)
+                  void *aux, int timeout, char *errbuf, size_t errlen,
+                  const char *username, const char *password)
 {
   char buf[1024];
   tcp_stream_t *ts = dial(hostname, port, timeout, tsi, errbuf, errlen);
@@ -336,7 +337,16 @@ ws_client_connect(const char *hostname, int port, const char *path,
   get_random_bytes(nonce, sizeof(nonce));
   char key[32];
   base64_encode(key, sizeof(key), nonce, sizeof(nonce));
-  
+  scoped_char *auth = NULL;
+
+  if(username != NULL && password != NULL) {
+    scoped_char *cat = fmt("%s:%s", username, password);
+    int size = BASE64_SIZE(strlen(cat));
+    char *b64 = alloca(size);
+    base64_encode(b64, size, (void *)cat, strlen(cat));
+    auth = fmt("Authorization: basic %s\r\n", b64);
+  }
+
   snprintf(buf, sizeof(buf),
            "GET %s HTTP/1.1\r\n"
            "Host: %s\r\n"
@@ -344,8 +354,9 @@ ws_client_connect(const char *hostname, int port, const char *path,
            "Upgrade: websocket\r\n"
            "Sec-WebSocket-Version: 13\r\n"
            "Sec-WebSocket-Key: %s\r\n"
+           "%s"
            "\r\n",
-           path, hostname, key);
+           path, hostname, key, auth ?: "");
 
   tcp_write(ts, buf, strlen(buf));
 
