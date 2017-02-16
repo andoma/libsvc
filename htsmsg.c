@@ -669,13 +669,15 @@ htsmsg_print0(htsmsg_t *msg, int indent)
     case HMF_MAP:
       printf("MAP) = {\n");
       htsmsg_print0(&f->hmf_msg, indent + 1);
-      for(i = 0; i < indent; i++) printf("\t"); printf("}\n");
+      for(i = 0; i < indent; i++) printf("\t");
+      printf("}\n");
       break;
 
     case HMF_LIST:
       printf("LIST) = {\n");
       htsmsg_print0(&f->hmf_msg, indent + 1);
-      for(i = 0; i < indent; i++) printf("\t"); printf("}\n");
+      for(i = 0; i < indent; i++) printf("\t");
+      printf("}\n");
       break;
       
     case HMF_STR:

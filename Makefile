@@ -2,6 +2,8 @@
 # Makefile to build shared library of libsvc
 #
 
+PROGNAME	?=example
+
 MAJOR_VERSION := 0
 MINOR_VERSION := 1
 PATCH_VERSION := 0
