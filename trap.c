@@ -43,20 +43,15 @@ static void
 addr2text(char *out, size_t outlen, void *ptr)
 {
   Dl_info dli = {};
-  //  char buf[256];
+
   int r = dladdr(ptr, &dli);
-  
+
   if(r && dli.dli_sname != NULL && dli.dli_saddr != NULL) {
     snprintf(out, outlen, "0x%016" PRIxPTR "  %s+0x%tx  (%s)",
 	     (intptr_t)ptr, dli.dli_sname, ptr - dli.dli_saddr, dli.dli_fname);
     return;
   }
-  /*
-  if(self[0] && !add2lineresolve(self, ptr, buf, sizeof(buf))) {
-    snprintf(out, outlen, "%s %p", buf, ptr);
-    return;
-  }
-  */
+
   if(dli.dli_fname != NULL && dli.dli_fbase != NULL) {
     snprintf(out, outlen, "0x%016" PRIxPTR "  %s",
              (intptr_t)ptr, dli.dli_fname);
