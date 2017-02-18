@@ -183,3 +183,5 @@ int websocket_session_start(struct http_request *hr,
                             void *opaque,
                             const char *selected_protocol,
                             int compression_level);
+
+const char *http_mktime(time_t t, int delta);

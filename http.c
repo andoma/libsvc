@@ -357,7 +357,7 @@ http_send_100_continue(http_request_t *hr)
 /**
  *
  */
-static const char *
+const char *
 http_mktime(time_t t, int delta)
 {
   struct tm tm0, *tm;
@@ -367,7 +367,7 @@ http_mktime(time_t t, int delta)
   tm = gmtime_r(&t, &tm0);
 
   return tsprintf("%s, %02d %s %d %02d:%02d:%02d GMT",
-                  httpdays[tm->tm_wday],	tm->tm_year + 1900,
+                  httpdays[tm->tm_wday], tm->tm_year + 1900,
                   httpmonths[tm->tm_mon], tm->tm_mday,
                   tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
