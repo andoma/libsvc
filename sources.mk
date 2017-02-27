@@ -116,6 +116,7 @@ libsvc_SRCS    += http.c http_parser.c websocket.c
 libsvc_INCS    += http.h http_parser.h websocket.h
 WITH_ASYNCIO   := yes
 CFLAGS += -DWITH_HTTP_SERVER
+LDFLAGS += -lz
 endif
 
 ##############################################################
