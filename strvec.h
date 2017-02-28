@@ -9,6 +9,8 @@ typedef struct strvec {
 
 void strvec_push(strvec_t *vec, const char *value);
 
+void strvec_pushf(strvec_t *vec, const char *fmt, ...);
+
 void strvec_push_alloced(strvec_t *vec, char *value);
 
 void strvec_reset(strvec_t *vec);

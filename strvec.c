@@ -2,8 +2,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include "strvec.h"
-
+#include "misc.h"
 
 static void
 strvec_inc(strvec_t *vec)
@@ -26,6 +27,16 @@ strvec_push_alloced(strvec_t *vec, char *value)
 {
   strvec_inc(vec);
   vec->v[vec->count++] = value;
+}
+
+
+void
+strvec_pushf(strvec_t *vec, const char *fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  strvec_push_alloced(vec, fmtv(fmt, ap));
+  va_end(ap);
 }
 
 void
