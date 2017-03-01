@@ -68,6 +68,8 @@ ifeq (${WITH_CURL},yes)
 
 CFLAGS  += -DWITH_CURL
 
+CFLAGS  += -DPROGNAME='"${PROGNAME}"'
+
 ifeq ($(shell uname),Darwin)
 LDFLAGS += -lcurl -lz -liconv
 endif
@@ -102,9 +104,10 @@ endif
 ##############################################################
 
 ifeq (${WITH_WS_CLIENT},yes)
-libsvc_SRCS    +=  websocket_client.c websocket.c
+libsvc_SRCS    +=  websocket_client.c
 libsvc_INCS    +=  websocket_client.h
 CFLAGS += -DWITH_WS_CLIENT
+WITH_WS_SOURCE=yes
 endif
 
 ##############################################################
@@ -112,10 +115,15 @@ endif
 ##############################################################
 
 ifeq (${WITH_HTTP_SERVER},yes)
-libsvc_SRCS    += http.c http_parser.c websocket.c
+libsvc_SRCS    += http.c http_parser.c
 libsvc_INCS    += http.h http_parser.h websocket.h
 WITH_ASYNCIO   := yes
 CFLAGS += -DWITH_HTTP_SERVER
+WITH_WS_SOURCE=yes
+endif
+
+ifeq (${WITH_WS_SOURCE},yes)
+libsvc_SRCS    +=  websocket.c
 endif
 
 ##############################################################

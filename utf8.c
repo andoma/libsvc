@@ -159,11 +159,11 @@ utf8_get(const char **s, const char *stop)
     while(l-- > 0) {
       if(*s == stop)
         return 0xfffd;
-        c = **s;
-        if((c & 0xc0) != 0x80)
+      c = **s;
+      if((c & 0xc0) != 0x80)
             return 0xfffd;
-        *s = *s + 1;
-        r = r << 6 | (c & 0x3f);
+      *s = *s + 1;
+      r = r << 6 | (c & 0x3f);
     }
     if(r < m)
         return 0xfffd; // overlong sequence
