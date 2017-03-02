@@ -33,4 +33,4 @@ void talloc_cleanup(void);
 
 char *tstrdup(const char *str);
 
-char *tsprintf(const char *fmt, ...);
+char *tsprintf(const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));

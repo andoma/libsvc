@@ -148,4 +148,4 @@ void freecharp(char **ptr);
 
 char *fmtv(const char *fmt, va_list ap);
 
-char *fmt(const char *fmt, ...);
+char *fmt(const char *fmt, ...)  __attribute__ ((format (printf, 1, 2)));

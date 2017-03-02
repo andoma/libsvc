@@ -150,7 +150,9 @@ void ntv_set_double(ntv_t *ntv, const char *key, double value);
 void ntv_set_null(ntv_t *ntv, const char *key);
 void ntv_set_boolean(ntv_t *ntv, const char *key, bool value);
 void ntv_set_str(ntv_t *ntv, const char *key, const char *value);
-void ntv_set_strf(ntv_t *ntv, const char *key, const char *fmt, ...);
+void ntv_set_strf(ntv_t *ntv, const char *key, const char *fmt, ...)
+   __attribute__ ((format (printf, 3, 4)));
+
 void ntv_set_bin(ntv_t *ntv, const char *key, const void *data,
                  size_t datalen);
 void ntv_set_bin_prealloc(ntv_t *ntv, const char *key, void *data,

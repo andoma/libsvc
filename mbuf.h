@@ -54,7 +54,8 @@ void mbuf_clear(mbuf_t *m);
 
 void mbuf_vqprintf(mbuf_t *m, const char *fmt, va_list ap);
 
-void mbuf_qprintf(mbuf_t *m, const char *fmt, ...);
+void mbuf_qprintf(mbuf_t *m, const char *fmt, ...)
+   __attribute__ ((format (printf, 2, 3)));
 
 void mbuf_append(mbuf_t *m, const void *buf, size_t len);
 
