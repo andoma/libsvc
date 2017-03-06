@@ -111,6 +111,7 @@ void ntv_releasep(ntv_t **ntv);
 void ntv_print(const ntv_t *ntv);
 ntv_t *ntv_copy(const ntv_t *src);
 int ntv_is_empty(const ntv_t *ntv);
+int ntv_num_children(const ntv_t *ntv);
 
 ntv_t *ntv_detach_field(ntv_t *n, const char *key);
 
@@ -180,6 +181,12 @@ ntv_t *ntv_json_deserialize(const char *src, char *errbuf, size_t errlen);
 void ntv_binary_serialize(const ntv_t *msg, struct mbuf *m);
 ntv_t *ntv_binary_deserialize(const void *data, size_t length);
 ntv_t *ntv_binary_deserialize_nocopy(const void *data, size_t length);
+
+void ntv_msgpack_serialize(const ntv_t *msg, struct mbuf *m);
+ntv_t *ntv_msgpack_deserialize(const void *data, size_t length,
+                               char *errbuf, size_t errlen);
+ntv_t *ntv_msgpack_deserialize_nocopy(const void *data, size_t length,
+                                      char *errbuf, size_t errlen);
 
 
 #if __STDC_VERSION__ >= 201112L

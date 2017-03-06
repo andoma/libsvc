@@ -573,6 +573,16 @@ ntv_is_empty(const ntv_t *ntv)
   return ntv == NULL || TAILQ_FIRST(&ntv->ntv_children) == NULL;
 }
 
+int
+ntv_num_children(const ntv_t *ntv)
+{
+  const ntv_t *f;
+  int r = 0;
+  TAILQ_FOREACH(f, &ntv->ntv_children, ntv_link)
+    r++;
+  return r;
+}
+
 #ifdef TEST
 
 int
