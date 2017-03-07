@@ -505,14 +505,14 @@ mbuf_pullup(mbuf_t *mq, size_t bytes)
   }
 
   void *data = malloc(bytes);
-  mbuf_read(mq, data, avail);
-
+  mbuf_read(mq, data, bytes);
   md = malloc(sizeof(mbuf_data_t));
   TAILQ_INSERT_HEAD(&mq->mq_buffers, md, md_link);
   md->md_data = data;
   md->md_data_size = bytes;
   md->md_data_len = bytes;
   md->md_data_off = 0;
+  mq->mq_size += bytes;
   return data;
 }
 
