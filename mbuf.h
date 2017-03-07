@@ -28,6 +28,8 @@
 #include <inttypes.h>
 #include <sys/queue.h>
 
+#define MBUF_DEFAULT_DATA_SIZE 4096
+
 TAILQ_HEAD(mbuf_data_queue, mbuf_data);
 
 typedef struct mbuf_data {
@@ -44,6 +46,9 @@ typedef struct mbuf {
   size_t mq_alloc_size;
 } mbuf_t;
 
+#define	MBUF_INITIALIZER(m) \
+  { { NULL, &(m).mq_buffers.tqh_first }, 0, MBUF_DEFAULT_DATA_SIZE }
+
 void mbuf_data_free(mbuf_t *mq, mbuf_data_t *md);
 
 void mbuf_init(mbuf_t *m);
@@ -51,6 +56,8 @@ void mbuf_init(mbuf_t *m);
 void mbuf_set_chunk_size(mbuf_t *m, size_t s);
 
 void mbuf_clear(mbuf_t *m);
+
+#define scoped_mbuf_t mbuf_t __attribute__((cleanup(mbuf_clear)))
 
 void mbuf_vqprintf(mbuf_t *m, const char *fmt, va_list ap);
 

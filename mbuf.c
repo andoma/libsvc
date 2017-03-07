@@ -41,7 +41,7 @@ mbuf_init(mbuf_t *mq)
 {
   TAILQ_INIT(&mq->mq_buffers);
   mq->mq_size = 0;
-  mq->mq_alloc_size = 4096;
+  mq->mq_alloc_size = MBUF_DEFAULT_DATA_SIZE;
 }
 
 
