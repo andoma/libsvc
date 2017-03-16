@@ -145,7 +145,6 @@ msgpack_write_double(mbuf_t *m, double d)
 {
   union { double d; uint64_t u64; } u;
   u.d = d;
-  printf("u64=%lx\n", u.u64);
   msgpack_write_byte(m, 0xcb);
   msgpack_write_u64(m, u.u64);
 }
@@ -321,7 +320,6 @@ static const uint8_t *
 decode_sub(const uint8_t *data, const uint8_t *dataend,
            ntv_t **fp, uint32_t num, int nocopy, int havekeys, errctx_t *ec)
 {
-  printf("Decoding sub num=%d\n", num);
   ntv_t *f = ntv_create(havekeys ? NTV_MAP : NTV_LIST);
   for(uint32_t i = 0; i < num; i++) {
     ntv_t *sub;
