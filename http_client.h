@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdio.h>
 
 typedef struct http_client_response {
 
