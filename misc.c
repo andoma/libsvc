@@ -1084,6 +1084,13 @@ freecharp(char **ptr)
   *ptr = NULL;
 }
 
+void
+freeuint8p(uint8_t **ptr)
+{
+  free(*ptr);
+  *ptr = NULL;
+}
+
 
 char *
 fmtv(const char *fmt, va_list ap)

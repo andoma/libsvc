@@ -144,7 +144,11 @@ char * str_replace_tokens(char *str, const char *tokenprefix,
 
 void freecharp(char **ptr);
 
+void freeuint8p(uint8_t **ptr);
+
 #define scoped_char char __attribute__((cleanup(freecharp)))
+
+#define scoped_uint8_t uint8_t __attribute__((cleanup(freeuint8p)))
 
 char *fmtv(const char *fmt, va_list ap);
 
