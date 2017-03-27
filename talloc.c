@@ -135,6 +135,8 @@ talloc_zalloc(size_t s)
 char *
 tstrdup(const char *str)
 {
+  if(str == NULL)
+    return NULL;
   size_t len = strlen(str);
   char *r = talloc_malloc(len + 1);
   memcpy(r, str, len);
