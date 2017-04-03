@@ -111,6 +111,13 @@ mbuf_append(mbuf_t *mq, const void *buf, size_t len)
   memcpy(md->md_data, buf, len);
 }
 
+
+void
+mbuf_append_str(mbuf_t *m, const char *str)
+{
+  mbuf_append(m, str, strlen(str));
+}
+
 /**
  *
  */
