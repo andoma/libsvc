@@ -94,6 +94,7 @@ typedef struct async_fd {
   asyncio_timer_t af_timer;
 
   pthread_mutex_t af_sendq_mutex;
+  pthread_cond_t af_sendq_cond;
 
   atomic_t af_refcount;
   int af_fd;
@@ -104,6 +105,7 @@ typedef struct async_fd {
 #define AF_SENDQ_MUTEX        0x1
 
   uint8_t af_pending_shutdown;
+  int af_pending_error;
 
 } async_fd_t;
 
@@ -164,6 +166,8 @@ void asyncio_shutdown(async_fd_t *fd);
 void async_fd_retain(async_fd_t *af);
 
 void async_fd_release(async_fd_t *af);
+
+int asyncio_wait_send_buffer(async_fd_t *af, int size);
 
 /*************************************************************************
  * Workers

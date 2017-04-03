@@ -131,6 +131,8 @@ void http_send_raw(http_request_t *hc, const void *data, size_t len);
 
 int http_send_chunk(http_request_t *hc, const void *data, size_t len);
 
+int http_wait_send_buffe(http_request_t *hr, int bytes);
+
 typedef int (http_callback_t)(http_request_t *hc,
 			      const char *remain, void *opaque);
 

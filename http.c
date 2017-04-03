@@ -397,6 +397,13 @@ http_send_chunk(http_request_t *hr, const void *data, size_t len)
 }
 
 
+int
+http_wait_send_buffe(http_request_t *hr, int bytes)
+{
+  return asyncio_wait_send_buffer(hr->hr_connection->hc_af, bytes);
+}
+
+
 static void
 http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
 {

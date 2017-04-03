@@ -362,8 +362,10 @@ async_fd_release(async_fd_t *af)
   assert(af->af_timer.at_expire == 0);
   assert(af->af_fd == -1);
 
-  if(af->af_flags & AF_SENDQ_MUTEX)
+  if(af->af_flags & AF_SENDQ_MUTEX) {
     pthread_mutex_destroy(&af->af_sendq_mutex);
+    pthread_cond_destroy(&af->af_sendq_cond);
+  }
 
   mbuf_clear(&af->af_sendq);
   mbuf_clear(&af->af_recvq);
@@ -405,6 +407,10 @@ do_write(async_fd_t *af)
     }
 
     mbuf_drop(&af->af_sendq, r);
+
+    if(af->af_flags & AF_SENDQ_MUTEX)
+      pthread_cond_signal(&af->af_sendq_cond);
+
     if(r != avail)
       break;
   }
@@ -424,6 +430,47 @@ do_write_lock(async_fd_t *af)
   pthread_mutex_unlock(&af->af_sendq_mutex);
 }
 
+/**
+ *
+ */
+int
+asyncio_wait_send_buffer(async_fd_t *af, int size)
+{
+  int r = 0;
+  pthread_mutex_lock(&af->af_sendq_mutex);
+
+  while(1) {
+    if(af->af_pending_error) {
+      r = af->af_pending_error;
+      break;
+    }
+
+    if(size > af->af_sendq.mq_size)
+      break;
+
+    pthread_cond_wait(&af->af_sendq_cond, &af->af_sendq_mutex);
+  }
+  pthread_mutex_unlock(&af->af_sendq_mutex);
+  return r;
+}
+
+
+/**
+ *
+ */
+static void
+do_error(async_fd_t *af, int error)
+{
+  if(af->af_flags & AF_SENDQ_MUTEX) {
+    pthread_mutex_lock(&af->af_sendq_mutex);
+    af->af_pending_error = error;
+    pthread_cond_signal(&af->af_sendq_cond);
+    pthread_mutex_unlock(&af->af_sendq_mutex);
+  }
+  if(af->af_error != NULL)
+    af->af_error(af->af_opaque, error);
+  af->af_error = NULL;
+}
 
 /**
  *
@@ -435,7 +482,7 @@ do_read(async_fd_t *af)
   while(1) {
     int r = read(af->af_fd, tmp, sizeof(tmp));
     if(r == 0) {
-      af->af_error(af->af_opaque, ECONNRESET);
+      do_error(af, ECONNRESET);
       return;
     }
 
@@ -443,7 +490,7 @@ do_read(async_fd_t *af)
       break;
 
     if(r == -1) {
-      af->af_error(af->af_opaque, errno);
+      do_error(af, errno);
       return;
     }
 
@@ -568,14 +615,12 @@ asyncio_loop(void *aux)
       }
 
       if(ev[i].events & EPOLLHUP) {
-        if(af->af_error != NULL)
-          af->af_error(af->af_opaque, ECONNRESET);
+        do_error(af, ECONNRESET);
         continue;
       }
 
       if(ev[i].events & EPOLLERR) {
-        if(af->af_error != NULL)
-          af->af_error(af->af_opaque, ENOTCONN);
+        do_error(af, ENOTCONN;
         continue;
       }
 
@@ -622,9 +667,7 @@ asyncio_loop(void *aux)
       async_fd_t *af = events[i].udata;
       if(events[i].filter == EVFILT_READ) {
         if(events[i].flags & EV_EOF) {
-          if(af->af_error != NULL) {
-            af->af_error(af->af_opaque, ECONNRESET);
-          }
+          do_error(af, ECONNRESET);
         } else {
           af->af_pollin(af);
         }
@@ -632,9 +675,7 @@ asyncio_loop(void *aux)
 
       if(events[i].filter == EVFILT_WRITE) {
         if(events[i].flags & EV_EOF) {
-          if(af->af_error != NULL) {
-            af->af_error(af->af_opaque, ECONNRESET);
-          }
+          do_error(af, ECONNRESET);
         } else {
           af->af_pollout(af);
         }
@@ -960,6 +1001,7 @@ asyncio_stream_mt(int fd,
 
   af->af_flags = AF_SENDQ_MUTEX;
   pthread_mutex_init(&af->af_sendq_mutex, NULL);
+  pthread_cond_init(&af->af_sendq_cond, NULL);
 
   af->af_pollin  = &do_read;
   af->af_pollout = &do_write_lock;
