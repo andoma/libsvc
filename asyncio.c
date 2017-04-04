@@ -620,7 +620,7 @@ asyncio_loop(void *aux)
       }
 
       if(ev[i].events & EPOLLERR) {
-        do_error(af, ENOTCONN;
+        do_error(af, ENOTCONN);
         continue;
       }
 

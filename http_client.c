@@ -490,7 +490,7 @@ hof_seek(void *fh, off64_t *offsetp, int whence)
   return 0;
 }
 
-static hof_io_functions_t hof_functions = {
+static cookie_io_functions_t hof_functions = {
   .read  = hof_read,
   .seek  = hof_seek,
   .close = hof_close,
@@ -510,7 +510,7 @@ http_open_file(const char *url)
 #ifdef __APPLE__
   fp = funopen(hcf, hof_read2, NULL, hof_seek, hof_close);
 #else
-  fp = fopencookie(hcf, "rb", http_open_file_functions);
+  fp = fopencookie(hcf, "rb", hof_functions);
 #endif
   if(fp != NULL) {
     void *buf = malloc(65536);
@@ -560,6 +560,17 @@ hsf_write(void *aux, const char *data, int size)
   return size;
 }
 
+static ssize_t
+hsf_write2(void *cookie, const char *buf, size_t size)
+{
+  return hsf_write(cookie, buf, size);
+}
+
+
+static cookie_io_functions_t hsf_write_functions = {
+  .write  = hsf_write2,
+};
+
 static void *
 http_stream_file_thread(void *aux)
 {
@@ -569,7 +580,7 @@ http_stream_file_thread(void *aux)
 #ifdef __APPLE__
   fp = funopen(hsf, NULL, hsf_write, NULL, NULL);
 #else
-  #error fixme
+  fp = fopencookie(hsf, "wb", hsf_write_functions);
 #endif
 
   scoped_http_result(hcr);
@@ -605,7 +616,6 @@ hsf_read(void *aux, char *data, int size)
 
   int r = mbuf_read(&hsf->hsf_buffer, data, size);
   hsf->hsf_read += r;
-  //  printf("Got %d  eof=%d\n", r, hsf->hsf_eof);
   pthread_cond_signal(&hsf->hsf_cond);
   pthread_mutex_unlock(&hsf->hsf_mutex);
   return r;
@@ -633,6 +643,17 @@ hsf_close(void *aux)
 
 
 
+static ssize_t
+hsf_read2(void *fh, char *buf, size_t size)
+{
+  return hsf_read(fh, buf, size);
+}
+
+
+static cookie_io_functions_t hsf_read_functions = {
+  .read  = hsf_read2,
+  .close = hsf_close,
+};
 
 /**
  *
@@ -651,7 +672,7 @@ http_stream_file(const char *url)
 #ifdef __APPLE__
   fp = funopen(hsf, hsf_read, NULL, NULL, hsf_close);
 #else
-  fp = fopencookie(hcf, "rb", hcf_functions);
+  fp = fopencookie(hsf, "rb", hsf_read_functions);
 #endif
   if(fp != NULL) {
     void *buf = malloc(65536);
