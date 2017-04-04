@@ -38,6 +38,7 @@ enum {
   HCR_TAG_AUTHCB,
   HCR_TAG_VERB,
   HCR_TAG_USERNPASS,
+  HCR_TAG_OUTPUTFILE,
 };
 
 
@@ -59,6 +60,7 @@ enum {
 #define HCR_AUTHCB(cb, opaque) HCR_TAG_AUTHCB, cb, opaque
 #define HCR_VERB(v) HCR_TAG_VERB, v
 #define HCR_USERNPASS(a, b) HCR_TAG_USERNPASS, a, b
+#define HCR_OUTPUTFILE(a) HCR_TAG_OUTPUTFILE, a
 
 int http_client_request(http_client_response_t *hcr, const char *url, ...)
   __attribute__((__sentinel__(0)));
@@ -70,3 +72,5 @@ void http_client_response_free(http_client_response_t *hcr);
   __attribute__((cleanup(http_client_response_free))) = {}
 
 FILE *http_open_file(const char *url);
+
+FILE *http_stream_file(const char *url);

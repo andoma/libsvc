@@ -44,6 +44,7 @@
 #include "strvec.h"
 #include "dbl.h"
 #include "curlhelpers.h"
+#include "mbuf.h"
 
 static pthread_key_t http_client_key;
 
@@ -158,8 +159,9 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   http_client_auth_cb_t *auth_cb = NULL;
   void *auth_opaque = NULL;
-
+  FILE *outfile = NULL;
   va_list apx, ap;
+  int memfile = 0;
   va_start(apx, url);
 
   CURL *curl = get_handle();
@@ -260,6 +262,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       curl_easy_setopt(curl, CURLOPT_PASSWORD, va_arg(ap, const char *));
       break;
 
+    case HCR_TAG_OUTPUTFILE:
+      outfile = va_arg(ap, FILE *);
+      break;
+
     default:
       abort();
     }
@@ -267,7 +273,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   va_end(ap);
 
-  FILE *f = open_buffer(&hcr->hcr_body, &hcr->hcr_bodysize);
+  if(outfile == NULL) {
+    outfile = open_buffer(&hcr->hcr_body, &hcr->hcr_bodysize);
+    memfile = 1;
+  }
 
   curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 
@@ -276,7 +285,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   if(!(flags & HCR_NO_FOLLOW_REDIRECT))
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, outfile);
   curl_easy_setopt(curl, CURLOPT_USERAGENT, PROGNAME);
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, hdrfunc);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, hcr);
@@ -316,10 +325,13 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     curl_slist_free_all(slist);
     slist = NULL;
   }
+  fflush(outfile);
+  if(memfile) {
+    fwrite("", 1, 1, outfile); // Write one extra byte to null terminate
+    fclose(outfile);
+    hcr->hcr_bodysize--; // Adjust for extra null termination
+  }
 
-  fwrite("", 1, 1, f); // Write one extra byte to null terminate
-  fclose(f);
-  hcr->hcr_bodysize--; // Adjust for extra null termination
 
   long long_http_code = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &long_http_code);
@@ -347,7 +359,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       hcr->hcr_transport_status = curl_easy_strerror(result);
     }
     rval = 1;
-  } else {
+  } else if(memfile) {
     rval = 0;
     if(flags & HCR_DECODE_BODY_AS_JSON) {
       if((hcr->hcr_json_result =
@@ -389,7 +401,7 @@ typedef struct http_client_file {
  *
  */
 static ssize_t
-cookie_read(void *fh, char *buf, size_t size)
+hof_read(void *fh, char *buf, size_t size)
 {
   http_client_file_t *hcf = fh;
   char range[100];
@@ -418,7 +430,7 @@ cookie_read(void *fh, char *buf, size_t size)
  *
  */
 static int
-cookie_close(void *fh)
+hof_close(void *fh)
 {
   http_client_file_t *hcf = fh;
   free(hcf->url);
@@ -430,9 +442,9 @@ cookie_close(void *fh)
 #ifdef __APPLE__
 
 static int
-fun_read(void *fh, char *buf, int size)
+hof_read2(void *fh, char *buf, int size)
 {
-  return cookie_read(fh, buf, size);
+  return hof_read(fh, buf, size);
 }
 
 
@@ -440,7 +452,7 @@ fun_read(void *fh, char *buf, int size)
  *
  */
 static fpos_t
-fun_seek(void *fh, fpos_t offset, int whence)
+hof_seek(void *fh, fpos_t offset, int whence)
 {
   http_client_file_t *hcf = fh;
   switch(whence) {
@@ -451,7 +463,6 @@ fun_seek(void *fh, fpos_t offset, int whence)
     hcf->fpos += offset;
     break;
   case SEEK_END:
-    printf("CANT SEEK TO END HELP\n");
     return -1;
   }
   return hcf->fpos;
@@ -462,7 +473,7 @@ fun_seek(void *fh, fpos_t offset, int whence)
  *
  */
 static int
-cookie_seek(void *fh, off64_t *offsetp, int whence)
+hof_seek(void *fh, off64_t *offsetp, int whence)
 {
   http_client_file_t *hcf = fh;
   switch(whence) {
@@ -473,17 +484,16 @@ cookie_seek(void *fh, off64_t *offsetp, int whence)
     hcf->fpos += *offsetp;
     break;
   case SEEK_END:
-    printf("CANT SEEK TO END HELP\n");
     return -1;
   }
   *offsetp = hcf->fpos;
   return 0;
 }
 
-static cookie_io_functions_t cookie_functions = {
-  .read  = cookie_read,
-  .seek  = cookie_seek,
-  .close = cookie_close,
+static hof_io_functions_t hof_functions = {
+  .read  = hof_read,
+  .seek  = hof_seek,
+  .close = hof_close,
 };
 #endif
 
@@ -498,9 +508,9 @@ http_open_file(const char *url)
 
   FILE *fp;
 #ifdef __APPLE__
-  fp = funopen(hcf, fun_read, NULL, fun_seek, cookie_close);
+  fp = funopen(hcf, hof_read2, NULL, hof_seek, hof_close);
 #else
-  fp = fopencookie(hcf, "rb", cookie_functions);
+  fp = fopencookie(hcf, "rb", http_open_file_functions);
 #endif
   if(fp != NULL) {
     void *buf = malloc(65536);
@@ -510,6 +520,146 @@ http_open_file(const char *url)
 }
 
 
+
+
+typedef struct http_streamed_file {
+
+  pthread_t hsf_thread;
+  pthread_mutex_t hsf_mutex;
+  pthread_cond_t hsf_cond;
+  char *hsf_url;
+
+  mbuf_t hsf_buffer;
+  int hsf_open;
+  int hsf_eof;
+  int hsf_need;
+
+  int hsf_read_status;
+  char hsf_errmsg[512];
+
+  int hsf_written;
+  int hsf_read;
+
+} http_streamed_file_t;
+
+
+static int
+hsf_write(void *aux, const char *data, int size)
+{
+  http_streamed_file_t *hsf = aux;
+  pthread_mutex_lock(&hsf->hsf_mutex);
+  while(hsf->hsf_buffer.mq_size > hsf->hsf_need && hsf->hsf_open)
+    pthread_cond_wait(&hsf->hsf_cond, &hsf->hsf_mutex);
+  mbuf_append(&hsf->hsf_buffer, data, size);
+  hsf->hsf_written += size;
+  pthread_cond_signal(&hsf->hsf_cond);
+  pthread_mutex_unlock(&hsf->hsf_mutex);
+
+  if(!hsf->hsf_open)
+    return 0;
+  return size;
+}
+
+static void *
+http_stream_file_thread(void *aux)
+{
+  http_streamed_file_t *hsf = aux;
+
+  FILE *fp;
+#ifdef __APPLE__
+  fp = funopen(hsf, NULL, hsf_write, NULL, NULL);
+#else
+  #error fixme
+#endif
+
+  scoped_http_result(hcr);
+  hsf->hsf_read_status =
+    http_client_request(&hcr, hsf->hsf_url,
+                        HCR_OUTPUTFILE(fp),
+                        HCR_ERRBUF(hsf->hsf_errmsg, sizeof(hsf->hsf_errmsg)),
+                        HCR_FLAGS(HCR_ACCEPT_GZIP),
+                        NULL);
+
+  pthread_mutex_lock(&hsf->hsf_mutex);
+  hsf->hsf_eof = 1;
+  pthread_cond_signal(&hsf->hsf_cond);
+  pthread_mutex_unlock(&hsf->hsf_mutex);
+
+  fclose(fp);
+  return NULL;
+}
+
+
+
+static int
+hsf_read(void *aux, char *data, int size)
+{
+  http_streamed_file_t *hsf = aux;
+  //  printf("want %d\n", size);
+  pthread_mutex_lock(&hsf->hsf_mutex);
+
+  hsf->hsf_need = MIN(size, 65536);
+  while(!hsf->hsf_eof && hsf->hsf_buffer.mq_size < hsf->hsf_need) {
+    pthread_cond_wait(&hsf->hsf_cond, &hsf->hsf_mutex);
+  }
+
+  int r = mbuf_read(&hsf->hsf_buffer, data, size);
+  hsf->hsf_read += r;
+  //  printf("Got %d  eof=%d\n", r, hsf->hsf_eof);
+  pthread_cond_signal(&hsf->hsf_cond);
+  pthread_mutex_unlock(&hsf->hsf_mutex);
+  return r;
+}
+
+
+static int
+hsf_close(void *aux)
+{
+  http_streamed_file_t *hsf = aux;
+
+  pthread_mutex_lock(&hsf->hsf_mutex);
+  hsf->hsf_open = 0;
+  pthread_cond_signal(&hsf->hsf_cond);
+  pthread_mutex_unlock(&hsf->hsf_mutex);
+
+
+  pthread_join(hsf->hsf_thread, NULL);
+
+  mbuf_clear(&hsf->hsf_buffer);
+  free(hsf->hsf_url);
+  free(hsf);
+  return 0;
+}
+
+
+
+
+/**
+ *
+ */
+FILE *
+http_stream_file(const char *url)
+{
+  http_streamed_file_t *hsf = calloc(1, sizeof(http_streamed_file_t));
+  hsf->hsf_url = strdup(url);
+
+  pthread_mutex_init(&hsf->hsf_mutex, NULL);
+  pthread_cond_init(&hsf->hsf_cond, NULL);
+  hsf->hsf_open = 1;
+  mbuf_init(&hsf->hsf_buffer);
+  FILE *fp;
+#ifdef __APPLE__
+  fp = funopen(hsf, hsf_read, NULL, NULL, hsf_close);
+#else
+  fp = fopencookie(hcf, "rb", hcf_functions);
+#endif
+  if(fp != NULL) {
+    void *buf = malloc(65536);
+    setvbuf(fp, buf, _IOFBF, 65536);
+  }
+  pthread_create(&hsf->hsf_thread, NULL, http_stream_file_thread, hsf);
+  return fp;
+}
 
 /**
  *
