@@ -106,6 +106,8 @@ int http_arg_get_int(struct http_arg_list *list, const char *name,
 void http_arg_set(struct http_arg_list *list,
                   const char *key, const char *val);
 
+void http_log(http_request_t *hr, int status, const char *str);
+
 void http_error(http_request_t *hc, int error);
 
 int http_err(http_request_t *hc, int error, const char *str);

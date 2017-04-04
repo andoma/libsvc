@@ -313,7 +313,7 @@ http_req_ver_str(const http_request_t *hr)
 /**
  *
  */
-static void
+void
 http_log(http_request_t *hr, int status, const char *str)
 {
   cfg_root(cr);
