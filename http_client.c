@@ -560,6 +560,7 @@ hsf_write(void *aux, const char *data, int size)
   return size;
 }
 
+#ifndef __APPLE__
 static ssize_t
 hsf_write2(void *cookie, const char *buf, size_t size)
 {
@@ -570,6 +571,7 @@ hsf_write2(void *cookie, const char *buf, size_t size)
 static cookie_io_functions_t hsf_write_functions = {
   .write  = hsf_write2,
 };
+#endif
 
 static void *
 http_stream_file_thread(void *aux)
@@ -642,6 +644,7 @@ hsf_close(void *aux)
 }
 
 
+#ifndef __APPLE__
 
 static ssize_t
 hsf_read2(void *fh, char *buf, size_t size)
@@ -654,6 +657,7 @@ static cookie_io_functions_t hsf_read_functions = {
   .read  = hsf_read2,
   .close = hsf_close,
 };
+#endif
 
 /**
  *
