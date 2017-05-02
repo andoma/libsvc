@@ -151,8 +151,7 @@ struct http_server *http_server_init(const char *config);
 
 int http_access_verify(http_request_t *hc);
 
-void http_serve_static(const char *path, const char *filebundle,
-                       int send_index_html_on_404);
+void http_serve_static(const char *path, const char *filebundle);
 
 void http_server_init_session_cookie(const char *password, uint8_t generation);
 

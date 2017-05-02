@@ -1497,8 +1497,6 @@ http_server_init(const char *config_prefix)
 
 
 
-#if 0
-
 struct bundleserve {
   const char *filepath;
   int send_index_html_on_404;
@@ -1510,7 +1508,7 @@ struct bundleserve {
  *
  */
 static int
-serve_file(http_connection_t *hc, const char *remain, void *opaque)
+serve_file(http_request_t *hr, const char *remain, void *opaque)
 {
   const struct bundleserve *bs = opaque;
   char path[1024];
@@ -1554,9 +1552,9 @@ serve_file(http_connection_t *hc, const char *remain, void *opaque)
     }
   }
 
-  mbuf_append(&hc->hc_reply, data, size);
+  mbuf_append(&hr->hr_reply, data, size);
 
-  http_output_content(hc, ct);
+  http_output_content(hr, ct);
   filebundle_free(data);
   return 0;
 }
@@ -1566,15 +1564,13 @@ serve_file(http_connection_t *hc, const char *remain, void *opaque)
  *
  */
 void
-http_serve_static(const char *path, const char *filebundle,
-                  int send_index_html_on_404)
+http_serve_static(const char *path, const char *filebundle)
 {
   struct bundleserve *bs = calloc(1, sizeof(struct bundleserve));
   bs->filepath = strdup(filebundle);
-  bs->send_index_html_on_404 = send_index_html_on_404;
   http_path_add(path, bs, serve_file);
 }
-#endif
+
 
 
 #define COOKIE_NONCE_LEN 13
