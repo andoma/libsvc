@@ -971,6 +971,22 @@ asyncio_bind(const char *bindaddr, int port,
  *
  */
 async_fd_t *
+asyncio_dgram(int fd,
+              asyncio_poll_cb_t *input,
+              void *opaque)
+{
+  set_nonblocking(fd, 1);
+  async_fd_t *af = async_fd_create(fd, EPOLLIN);
+  af->af_pollin  = input;
+  af->af_opaque = opaque;
+  return af;
+}
+
+
+/**
+ *
+ */
+async_fd_t *
 asyncio_stream(int fd,
 	       asyncio_read_cb_t *read,
 	       asyncio_error_cb_t *err,
