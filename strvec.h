@@ -30,6 +30,9 @@ void strvec_copy(strvec_t *dst, const strvec_t *src);
 
 char *strvec_join(const strvec_t *src, const char *sep);
 
+void strvec_split(strvec_t *dst, const char *str,
+                  const char *sep, int include_empty);
+
 #define strvec_get(x, i) (x)->v[i]
 
 #define scoped_strvec(x) strvec_t x __attribute__((cleanup(strvec_reset))) = {}

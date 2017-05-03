@@ -15,6 +15,7 @@ strvec_inc(strvec_t *vec)
   }
 }
 
+
 void
 strvec_push(strvec_t *vec, const char *value)
 {
@@ -27,6 +28,16 @@ strvec_push_alloced(strvec_t *vec, char *value)
 {
   strvec_inc(vec);
   vec->v[vec->count++] = value;
+}
+
+
+static void
+strvec_pushl(strvec_t *vec, const char *value, size_t len)
+{
+  char *x = malloc(len + 1);
+  memcpy(x, value, len);
+  x[len] = 0;
+  strvec_push_alloced(vec, x);
 }
 
 
@@ -162,4 +173,22 @@ strvec_join(const strvec_t *src, const char *sep)
   }
   r[off] = 0;
   return r;
+}
+
+
+void
+strvec_split(strvec_t *dst, const char *str, const char *sep, int include_empty)
+{
+  size_t seplen = strlen(sep);
+  while(str) {
+    const char *next = strstr(str, sep);
+    size_t len = next ? next - str : strlen(str);
+    if(len > 0 || include_empty)
+      strvec_pushl(dst, str, len);
+
+    if(next)
+      next += seplen;
+    str = next;
+  }
+
 }
