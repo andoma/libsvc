@@ -513,8 +513,7 @@ http_open_file(const char *url)
   fp = fopencookie(hcf, "rb", hof_functions);
 #endif
   if(fp != NULL) {
-    void *buf = malloc(65536);
-    setvbuf(fp, buf, _IOFBF, 65536);
+    setvbuf(fp, NULL, _IOFBF, 65536);
   }
   return fp;
 }
@@ -679,8 +678,7 @@ http_stream_file(const char *url)
   fp = fopencookie(hsf, "rb", hsf_read_functions);
 #endif
   if(fp != NULL) {
-    void *buf = malloc(65536);
-    setvbuf(fp, buf, _IOFBF, 65536);
+    setvbuf(fp, NULL, _IOFBF, 65536);
   }
   pthread_create(&hsf->hsf_thread, NULL, http_stream_file_thread, hsf);
   return fp;
