@@ -60,7 +60,7 @@ static struct asyncio_timer_list timerwheel[TW_SLOTS];
 static int                timerwheel_read_pos;
 
 static int asyncio_pipe[2];
-
+static async_fd_t *pipe_af;
 static int epfd;
 
 static int asyncio_dns_worker;
@@ -1587,8 +1587,8 @@ asyncio_init(void)
   asyncio_dns_worker = asyncio_add_worker(adr_deliver_cb);
   asyncio_task_worker = asyncio_add_worker(task_cb);
 
-  async_fd_t *af = async_fd_create(asyncio_pipe[0], EPOLLIN);
-  af->af_pollin = &asyncio_handle_pipe;
+  pipe_af = async_fd_create(asyncio_pipe[0], EPOLLIN);
+  pipe_af->af_pollin = &asyncio_handle_pipe;
 
   pthread_create(&asyncio_tid, NULL, asyncio_loop, NULL);
 }
