@@ -394,6 +394,37 @@ ntv_set_ntv(ntv_t *n, const char *key, ntv_t *sub)
 }
 
 
+static void
+ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
+{
+  switch(f->ntv_type) {
+  case NTV_NULL:
+    ntv_set_null(dst, dstname);
+    break;
+  case NTV_BOOLEAN:
+    ntv_set_boolean(dst, dstname, f->ntv_boolean);
+    break;
+  case NTV_MAP:
+  case NTV_LIST:
+    ntv_set_ntv(dst, dstname, ntv_copy(f));
+    break;
+  case NTV_STRING:
+    ntv_set_str(dst, dstname, f->ntv_string);
+    break;
+  case NTV_BINARY:
+    ntv_set_bin(dst, dstname, f->ntv_bin, f->ntv_binsize);
+    break;
+  case NTV_INT:
+    ntv_set_int64(dst, dstname, f->ntv_s64);
+    break;
+  case NTV_DOUBLE:
+    ntv_set_double(dst, dstname, f->ntv_double);
+    break;
+  }
+}
+
+
+
 ntv_t *
 ntv_copy(const ntv_t *src)
 {
@@ -401,37 +432,23 @@ ntv_copy(const ntv_t *src)
   ntv_t *dst = ntv_create(src->ntv_type);
 
   TAILQ_FOREACH(f, &src->ntv_children, ntv_link) {
-    switch(f->ntv_type) {
-    case NTV_NULL:
-      ntv_set_null(dst, f->ntv_name);
-      break;
-    case NTV_BOOLEAN:
-      ntv_set_boolean(dst, f->ntv_name, f->ntv_boolean);
-      break;
-
-    case NTV_MAP:
-    case NTV_LIST:
-      ntv_set_ntv(dst, f->ntv_name, ntv_copy(f));
-      break;
-
-    case NTV_STRING:
-      ntv_set_str(dst, f->ntv_name, f->ntv_string);
-      break;
-
-    case NTV_BINARY:
-      ntv_set_bin(dst, f->ntv_name, f->ntv_bin, f->ntv_binsize);
-      break;
-
-    case NTV_INT:
-      ntv_set_int64(dst, f->ntv_name, f->ntv_s64);
-      break;
-
-    case NTV_DOUBLE:
-      ntv_set_double(dst, f->ntv_name, f->ntv_double);
-      break;
-    }
+    ntv_set_from_field(dst, f->ntv_name, f);
   }
   return dst;
+}
+
+
+void
+ntv_copy_field(ntv_t *dst, const char *dstfieldname,
+               const ntv_t *src, const char *srcfieldname)
+{
+
+  src = ntv_field_name_find(src, srcfieldname, -1);
+  if(src == NULL) {
+    ntv_delete_field(dst, dstfieldname);
+  } else {
+    ntv_set_from_field(dst, dstfieldname, src);
+  }
 }
 
 

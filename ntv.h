@@ -170,6 +170,8 @@ void ntv_set_idx_boolean(ntv_t *ntv, int key, bool value);
 void ntv_set_idx_str(ntv_t *ntv, int key, const char *value);
 void ntv_set_idx_ntv(ntv_t *ntv, int key, struct ntv *sub);
 
+void ntv_copy_field(ntv_t *dst, const char *dstfieldname,
+                    const ntv_t *src, const char *srcfieldname);
 
 
 struct mbuf;
