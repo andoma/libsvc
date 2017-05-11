@@ -90,7 +90,7 @@ static struct ws_server_path_list websocket_paths;
 
 typedef struct http_connection {
   atomic_t hc_refcount;
-  int hc_error;
+  int hc_errno;
   asyncio_timer_t hc_timer;
 
   http_server_t *hc_server;
@@ -1293,9 +1293,11 @@ http_connection_shutdown_task(void *aux)
 {
   http_connection_t *hc = aux;
 
-  if(hc->hc_ws_path != NULL && hc->hc_ws_opaque != NULL)
-    hc->hc_ws_path->wsp_disconnected(hc->hc_ws_opaque, hc->hc_error, NULL);
-
+  if(hc->hc_ws_path != NULL && hc->hc_ws_opaque != NULL) {
+    hc->hc_ws_path->wsp_disconnected(hc->hc_ws_opaque,
+                                     WS_STATUS_ABNORMALLY_CLOSED,
+                                     strerror(hc->hc_errno));
+  }
   http_connection_release(hc);
 }
 
@@ -1376,7 +1378,7 @@ static void
 http_server_error(void *opaque, int error)
 {
   http_connection_t *hc = opaque;
-  hc->hc_error = error;
+  hc->hc_errno = error;
   http_connection_close(hc);
 }
 
