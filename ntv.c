@@ -428,6 +428,9 @@ ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
 ntv_t *
 ntv_copy(const ntv_t *src)
 {
+  if(src == NULL)
+    return NULL;
+
   const ntv_t *f;
   ntv_t *dst = ntv_create(src->ntv_type);
 
