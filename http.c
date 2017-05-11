@@ -1294,7 +1294,7 @@ http_connection_shutdown_task(void *aux)
   http_connection_t *hc = aux;
 
   if(hc->hc_ws_path != NULL && hc->hc_ws_opaque != NULL)
-    hc->hc_ws_path->wsp_disconnected(hc->hc_ws_opaque, hc->hc_error);
+    hc->hc_ws_path->wsp_disconnected(hc->hc_ws_opaque, hc->hc_error, NULL);
 
   http_connection_release(hc);
 }
@@ -1953,7 +1953,9 @@ ws_dispatch(void *aux)
 
   switch(wsd->wsd_opcode) {
   case WSD_OPCODE_DISCONNECT:
-    wsp->wsp_disconnected(hc->hc_ws_opaque, wsd->wsd_arg);
+    wsp->wsp_disconnected(hc->hc_ws_opaque, wsd->wsd_arg,
+                          wsd->wsd_data);
+    free(wsd->wsd_data);
     hc->hc_ws_path = NULL;
     asyncio_shutdown(hc->hc_af);
     break;
@@ -2118,7 +2120,8 @@ websocket_timer(http_connection_t *hc)
 {
   if(hc->hc_ws_pong_wait >= 2) {
     asyncio_timer_disarm(&hc->hc_timer);
-    ws_enq_data(hc, WSD_OPCODE_DISCONNECT, NULL, 0, 0);
+    ws_enq_data(hc, WSD_OPCODE_DISCONNECT, strdup("Connection timed out"),
+                1006, 0);
     return;
   }
 

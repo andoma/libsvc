@@ -163,7 +163,8 @@ typedef int (websocket_connected_t)(struct http_request *hr);
 typedef void (websocket_receive_t)(void *opaque, int opcode,
                                    const uint8_t *data, size_t len);
 
-typedef void (websocket_disconnected_t)(void *opaque, int error);
+typedef void (websocket_disconnected_t)(void *opaque, int error,
+                                        const char *errmsg);
 
 void websocket_route_add(const char *path,
                          websocket_connected_t *connected,
