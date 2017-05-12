@@ -1296,7 +1296,9 @@ http_connection_shutdown_task(void *aux)
   if(hc->hc_ws_path != NULL && hc->hc_ws_opaque != NULL) {
     hc->hc_ws_path->wsp_disconnected(hc->hc_ws_opaque,
                                      WS_STATUS_ABNORMALLY_CLOSED,
-                                     strerror(hc->hc_errno));
+                                     hc->hc_errno ?
+                                     strerror(hc->hc_errno) :
+                                     "Connection closed");
   }
   http_connection_release(hc);
 }
