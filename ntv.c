@@ -394,6 +394,67 @@ ntv_set_ntv(ntv_t *n, const char *key, ntv_t *sub)
 }
 
 
+ntv_t *
+ntv_int(int64_t value)
+{
+  ntv_t *ntv = ntv_create(NTV_INT);
+  ntv->ntv_s64 = value;
+  return ntv;
+}
+
+ntv_t *
+ntv_double(double value)
+{
+  ntv_t *ntv = ntv_create(NTV_DOUBLE);
+  ntv->ntv_double = value;
+  return ntv;
+}
+
+ntv_t *
+ntv_str(const char *str)
+{
+  if(str == NULL)
+    return NULL;
+  ntv_t *ntv = ntv_create(NTV_STRING);
+  ntv->ntv_string = strdup(str);
+  return ntv;
+}
+
+ntv_t *
+ntv_strf(const char *fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  ntv_t *ntv = ntv_create(NTV_STRING);
+  if(vasprintf(&ntv->ntv_string, fmt, ap) == -1)
+    ntv->ntv_type = NTV_NULL;
+  va_end(ap);
+  return ntv;
+}
+
+ntv_t *
+ntv_map(const char *key, ...)
+{
+  ntv_t *ntv = ntv_create_map();
+  va_list ap;
+  va_start(ap, key);
+
+  while(key != NULL) {
+    ntv_t *f = va_arg(ap, ntv_t *);
+
+    if(f != NULL) {
+      f->ntv_name = strdup(key);
+      TAILQ_INSERT_TAIL(&ntv->ntv_children, f, ntv_link);
+      f->ntv_parent = ntv;
+    }
+    key = va_arg(ap, const char *);
+  }
+
+  return ntv;
+}
+
+
+
 static void
 ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
 {

@@ -143,6 +143,16 @@ const char *ntv_idx_str(const ntv_t *ntv, int idx);
 const ntv_t *ntv_idx_map(const ntv_t *ntv, int idx);
 const ntv_t *ntv_idx_list(const ntv_t *ntv, int idx);
 
+// Unparanted field creation
+
+ntv_t *ntv_int(int64_t value);
+ntv_t *ntv_double(double value);
+ntv_t *ntv_str(const char *str);
+ntv_t *ntv_strf(const char *fmt, ...);
+ntv_t *ntv_map(const char *key, ...)   __attribute__((__sentinel__(0)));
+
+
+
 // Set operations on maps
 
 void ntv_set_int(ntv_t *ntv, const char *key, int value);
