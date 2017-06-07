@@ -546,51 +546,26 @@ rm_rf(const char *path, int remove_self)
  *
  */
 int
-makedirs(const char *path)
+mkdir_p(const char *path, int mode)
 {
-  struct stat st;
-  char *p;
-  int l, r;
-
-  if(path == NULL)
-    return EINVAL;
-
-  if(stat(path, &st) == 0 && S_ISDIR(st.st_mode))
-    return 0; /* Dir already there */
-
-  if(mkdir(path, 0777) == 0)
-    return 0; /* Dir created ok */
-
-  if(errno == ENOENT) {
-
-    /* Parent does not exist, try to create it */
-    /* Allocate new path buffer and strip off last directory component */
-
-    l = strlen(path);
-    p = alloca(l + 1);
-    memcpy(p, path, l);
-    p[l--] = 0;
-
-    for(; l >= 0; l--)
-      if(p[l] == '/')
-        break;
-    if(l == 0) {
-      return ENOENT;
-    }
-    p[l] = 0;
-
-    if((r = makedirs(p)) != 0)
-      return r;
-
-    /* Try again */
-    if(mkdir(path, 0777) == 0)
-      return 0; /* Dir created ok */
+  if(*path == 0) {
+    errno = EINVAL;
+    return -1;
   }
-  r = errno;
-  return r;
+  char *s = mystrdupa(path);
+
+  for(char *p = s + 1; *p; p++) {
+    if(*p == '/') {
+      *p = 0;
+      if(mkdir(s, mode) == -1 && errno != EEXIST)
+        return -1;
+      *p = '/';
+    }
+  }
+  if(mkdir(s, mode) == -1 && errno != EEXIST)
+    return -1;
+  return 0;
 }
-
-
 
 
 /**

@@ -61,7 +61,7 @@ void url_split(char *proto, int proto_size,
                char *path, int path_size,
                const char *url);
 
-int makedirs(const char *path);
+int mkdir_p(const char *path, int mode);
 
 int rm_rf(const char *path, int remove_self);
 
