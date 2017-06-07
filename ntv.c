@@ -516,6 +516,67 @@ ntv_copy_field(ntv_t *dst, const char *dstfieldname,
 }
 
 
+static int
+ntv_sort_cmp(const void *A, const void *B)
+{
+  const ntv_t *a = *(const ntv_t **)A;
+  const ntv_t *b = *(const ntv_t **)B;
+
+  return strcmp(a->ntv_name, b->ntv_name);
+}
+
+static int
+ntv_cmp_map(const ntv_t *aa, const ntv_t *bb)
+{
+  const ntv_t **av, **bv;
+  int num = 0, i, num_b = 0;
+
+  NTV_FOREACH(a, aa) {
+    if(a->ntv_name == NULL) {
+      return 1;
+    }
+    num++;
+  }
+  NTV_FOREACH(b, bb) {
+    if(b->ntv_name == NULL) {
+      return 1;
+    }
+    num_b++;
+  }
+
+  if(num != num_b)
+    return 1;
+
+  if(num == 0)
+    return 0;
+
+  av = malloc(num * sizeof(ntv_t *));
+  bv = malloc(num * sizeof(ntv_t *));
+
+  i = 0;
+  NTV_FOREACH(a, aa)
+    av[i++] = a;
+
+  i = 0;
+  NTV_FOREACH(b, bb)
+    bv[i++] = b;
+
+
+  qsort(av, num, sizeof(ntv_t *), ntv_sort_cmp);
+  qsort(bv, num, sizeof(ntv_t *), ntv_sort_cmp);
+
+  for(i = 0; i < num; i++) {
+    if(strcmp(av[i]->ntv_name, bv[i]->ntv_name))
+      break;
+    if(ntv_cmp(av[i], bv[i]))
+      break;
+  }
+
+  free(av);
+  free(bv);
+  return i != num;
+}
+
 int
 ntv_cmp(const ntv_t *src, const ntv_t *dst)
 {
@@ -537,8 +598,8 @@ ntv_cmp(const ntv_t *src, const ntv_t *dst)
     return src->ntv_boolean != dst->ntv_boolean;
 
   case NTV_MAP:
-    // Map check should work differently than this
-    // but is enuf for now
+    return ntv_cmp_map(src, dst);
+
   case NTV_LIST:
     s = TAILQ_FIRST(&src->ntv_children);
     d = TAILQ_FIRST(&dst->ntv_children);
@@ -546,12 +607,6 @@ ntv_cmp(const ntv_t *src, const ntv_t *dst)
     while(!s == !d) {
       if(s == NULL)
         return 0;
-
-      if(src->ntv_type == NTV_MAP) {
-        if(!s->ntv_name != !d->ntv_name ||
-           strcmp(s->ntv_name, d->ntv_name))
-          return 1;
-      }
 
       if(ntv_cmp(s, d))
         return 1;
