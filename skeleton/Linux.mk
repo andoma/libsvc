@@ -1,0 +1,5 @@
+CFLAGS_deps := $(shell PKG_CONFIG_PATH='$(PKG_CONFIG_PATH)' PKG_CONFIG_SYSROOT_DIR='$(PKG_CONFIG_SYSROOT_DIR)' pkg-config openssl --cflags)
+
+LDFLAGS += $(shell PKG_CONFIG_PATH='$(PKG_CONFIG_PATH)'  PKG_CONFIG_SYSROOT_DIR='$(PKG_CONFIG_SYSROOT_DIR)' pkg-config openssl --libs)
+
+CFLAGS += ${CFLAGS_deps}

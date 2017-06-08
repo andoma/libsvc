@@ -103,8 +103,9 @@ endif
 ##############################################################
 
 ifeq (${WITH_WS_CLIENT},yes)
-libsvc_SRCS    +=  websocket_client.c websocket.c
+libsvc_SRCS    +=  websocket_client.c
 libsvc_INCS    +=  websocket_client.h
+WITH_WEBSOCKET := yes
 CFLAGS += -DWITH_WS_CLIENT
 endif
 
@@ -113,9 +114,10 @@ endif
 ##############################################################
 
 ifeq (${WITH_HTTP_SERVER},yes)
-libsvc_SRCS    += http.c http_parser.c websocket.c
-libsvc_INCS    += http.h http_parser.h websocket.h
+libsvc_SRCS    += http.c http_parser.c
+libsvc_INCS    += http.h http_parser.h
 WITH_ASYNCIO   := yes
+WITH_WEBSOCKET := yes
 CFLAGS += -DWITH_HTTP_SERVER
 LDFLAGS += -lz
 endif
@@ -146,4 +148,14 @@ ifeq (${WITH_CTRLSOCK},yes)
 libsvc_SRCS +=  ctrlsock.c
 libsvc_INCS +=  ctrlsock.h
 CFLAGS += -DWITH_CTRLSOCK
+endif
+
+##############################################################
+# Websocket common
+##############################################################
+
+ifeq (${WITH_WEBSOCKET},yes)
+libsvc_SRCS    += websocket.c
+libsvc_INCS    += websocket.h
+LDFLAGS += -lz
 endif

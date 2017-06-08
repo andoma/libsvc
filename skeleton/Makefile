@@ -19,7 +19,19 @@
 PROGNAME := example
 
 WITH_HTTP_SERVER := yes
-WITH_CTRL_SOCK := yes
+WITH_CTRL_SOCK   := yes
+WITH_CURL        := yes
+WITH_WS_CLIENT   := yes
+WITH_ASYNCIO     := yes
+
+CC=gcc
+
+BUILD ?= $(shell uname)
+
+-include mk/${BUILD}.mk
+
+CSTANDARD  := gnu11
+CFLAGS_opt := -O2
 
 BUILDDIR = ${CURDIR}/build
 
@@ -27,6 +39,7 @@ PROG=${BUILDDIR}/${PROGNAME}
 
 SRCS =  src/main.c \
 
+LDFLAGS += -lz
 
 install: ${PROG}
 	install -D ${PROG} "${prefix}/bin/${PROGNAME}"
