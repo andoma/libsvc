@@ -23,6 +23,8 @@
 
 #pragma once
 
+void set_thread_namef(const char *fmt, ...);
+
 extern void mutex_unlock_ptr(pthread_mutex_t **p);
 
 #define scoped_lock(x) \
