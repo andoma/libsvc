@@ -114,6 +114,28 @@ buf_read(void *aux, char *data, int len)
 }
 
 
+/**
+ *
+ */
+static fpos_t
+buf_seek(void *aux, fpos_t offset, int whence)
+{
+  readhelper_t *rh = aux;
+  switch(whence) {
+  case SEEK_SET:
+    rh->pos = offset;
+    break;
+  case SEEK_CUR:
+    rh->pos += offset;
+    break;
+  case SEEK_END:
+    rh->pos = rh->size;
+    break;
+  }
+  return rh->pos;
+}
+
+
 FILE *
 open_buffer_read(void *buf, size_t len)
 {
@@ -121,7 +143,7 @@ open_buffer_read(void *buf, size_t len)
   rh->data = buf;
   rh->size = len;
   rh->pos = 0;
-  return funopen(rh, buf_read, NULL, NULL, buf_close);
+  return funopen(rh, buf_read, NULL, buf_seek, buf_close);
 }
 
 
