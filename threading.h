@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <pthread.h>
+
 void set_thread_namef(const char *fmt, ...);
 
 extern void mutex_unlock_ptr(pthread_mutex_t **p);
