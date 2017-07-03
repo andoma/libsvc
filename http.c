@@ -124,6 +124,9 @@ typedef struct http_connection {
   z_stream *hc_z_out;
   z_stream *hc_z_in;
 
+  int hc_max_backlog;
+  atomic_t hc_backlog;
+
 } http_connection_t;
 
 
@@ -1766,8 +1769,8 @@ int
 websocket_session_start(http_request_t *hr,
                         void *opaque,
                         const char *selected_protocol,
-                        int compression_level)
-
+                        int compression_level,
+                        int max_backlog)
 {
   http_connection_t *hc = hr->hr_connection;
   SHA_CTX shactx;
@@ -1828,6 +1831,7 @@ websocket_session_start(http_request_t *hr,
     }
   }
 
+  hc->hc_max_backlog = max_backlog;
   hc->hc_ws_opaque = opaque;
   const char *k = http_arg_get(&hr->hr_request_headers, "Sec-WebSocket-Key");
 
@@ -1913,6 +1917,8 @@ ws_dispatch(void *aux)
   http_connection_t *hc = wsd->wsd_hc;
   const ws_server_path_t *wsp = hc->hc_ws_path;
 
+  atomic_dec(&hc->hc_backlog);
+
   if(wsd->wsd_flags & WS_MESSAGE_COMPRESSED && hc->hc_z_in != NULL) {
     z_stream *z = hc->hc_z_in;
     z->avail_in = wsd->wsd_arg + 4;
@@ -1983,6 +1989,16 @@ ws_dispatch(void *aux)
 static void
 ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg, int flags)
 {
+  if(hc->hc_max_backlog &&
+     atomic_add_and_fetch(&hc->hc_backlog, 1) == hc->hc_max_backlog) {
+
+    ws_enq_data(hc, WSD_OPCODE_DISCONNECT, strdup("Message backlog exceeded"),
+                1006, 0);
+
+    free(data);
+    return;
+  }
+
   ws_server_data_t *wsd = malloc(sizeof(ws_server_data_t));
   wsd->wsd_data = data;
   wsd->wsd_opcode = opcode;
@@ -2084,6 +2100,7 @@ websocket_send_close(struct http_connection *hc, int code,
   if(reason)
     mbuf_append(&hq, reason, strlen(reason));
 
+  mbuf_hexdump("CLOSE", &hq);
   websocket_sendq(hc, 8, &hq);
 }
 

@@ -186,6 +186,7 @@ void websocket_send_close(struct http_connection *hc, int code,
 int websocket_session_start(struct http_request *hr,
                             void *opaque,
                             const char *selected_protocol,
-                            int compression_level);
+                            int compression_level,
+                            int max_backlog);
 
 const char *http_mktime(time_t t, int delta);
