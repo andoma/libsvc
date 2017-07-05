@@ -32,6 +32,8 @@ void task_run(task_fn_t *fn, void *opaque);
 
 task_group_t *task_group_create(void);
 
+task_group_t *task_group_create_with_concurrency(int max_concurrency);
+
 void task_group_destroy(task_group_t *tg);
 
 void task_run_in_group(task_fn_t *fn, void *opaque, task_group_t *tg);

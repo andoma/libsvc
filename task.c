@@ -46,6 +46,8 @@ struct task_group {
   atomic_t tg_refcount;
   struct task_queue tg_tasks;
   TAILQ_ENTRY(task_group) tg_link;
+  int tg_max_concurrency;
+  int tg_num_processing;
 };
 
 
@@ -75,6 +77,7 @@ task_group_release(task_group_t *tg)
   if(atomic_dec(&tg->tg_refcount))
     return;
   assert(TAILQ_FIRST(&tg->tg_tasks) == NULL);
+  assert(tg->tg_num_processing == 0);
   free(tg);
 }
 
@@ -116,25 +119,26 @@ task_thread(void *aux)
     }
 
     if(tg != NULL) {
-      // Remove task group while processing as we don't want anyone
-      // else to dispatch from this group
-      TAILQ_REMOVE(&task_groups, tg, tg_link);
-
       t = TAILQ_FIRST(&tg->tg_tasks);
+      TAILQ_REMOVE(&tg->tg_tasks, t, t_link);
+
+      tg->tg_num_processing++;
+
+      if(TAILQ_FIRST(&tg->tg_tasks) == NULL ||
+         tg->tg_num_processing == tg->tg_max_concurrency) {
+        // Remove if we are at max concurrency or there no more tasks to do
+        TAILQ_REMOVE(&task_groups, tg, tg_link);
+      }
+
       pthread_mutex_unlock(&task_mutex);
       t->t_fn(t->t_opaque);
-      talloc_cleanup();
       pthread_mutex_lock(&task_mutex);
-
-      // Note that we remove _after_ execution because we don't want
-      // any newly inserted task in this group to cause the group
-      // to activate (ie, get inserted in task_groups)
-      TAILQ_REMOVE(&tg->tg_tasks, t, t_link);
       free(t);
 
-      if(TAILQ_FIRST(&tg->tg_tasks) != NULL) {
-        // Still more tasks to work on in this group
-        // Reinsert group at tail to maintain fairness between groups
+      assert(tg->tg_num_processing > 0);
+      tg->tg_num_processing--;
+      if(TAILQ_FIRST(&tg->tg_tasks) != NULL &&
+         tg->tg_num_processing == tg->tg_max_concurrency - 1) {
         TAILQ_INSERT_TAIL(&task_groups, tg, tg_link);
       }
 
@@ -207,13 +211,26 @@ task_run(task_fn_t *fn, void *opaque)
  *
  */
 task_group_t *
-task_group_create(void)
+task_group_create_with_concurrency(int max_concurrency)
 {
   task_group_t *tg = calloc(1, sizeof(task_group_t));
   atomic_set(&tg->tg_refcount, 1);
+  tg->tg_max_concurrency = max_concurrency;
   TAILQ_INIT(&tg->tg_tasks);
   return tg;
 }
+
+
+/**
+ *
+ */
+task_group_t *
+task_group_create(void)
+{
+  return task_group_create_with_concurrency(1);
+}
+
+
 
 
 /**
@@ -241,9 +258,10 @@ task_run_in_group(task_fn_t *fn, void *opaque, task_group_t *tg)
     t->t_group = tg;
     atomic_inc(&tg->tg_refcount);
 
-    if(TAILQ_FIRST(&tg->tg_tasks) == NULL)
+    if(TAILQ_FIRST(&tg->tg_tasks) == NULL &&
+       tg->tg_num_processing < tg->tg_max_concurrency) {
       TAILQ_INSERT_TAIL(&task_groups, tg, tg_link);
-
+    }
     TAILQ_INSERT_TAIL(&tg->tg_tasks, t, t_link);
     task_schedule();
   } else {
