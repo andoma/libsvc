@@ -502,7 +502,7 @@ ntv_copy(const ntv_t *src)
 }
 
 
-void
+int
 ntv_copy_field(ntv_t *dst, const char *dstfieldname,
                const ntv_t *src, const char *srcfieldname)
 {
@@ -510,8 +510,10 @@ ntv_copy_field(ntv_t *dst, const char *dstfieldname,
   src = ntv_field_name_find(src, srcfieldname, -1);
   if(src == NULL) {
     ntv_delete_field(dst, dstfieldname);
+    return 0;
   } else {
     ntv_set_from_field(dst, dstfieldname, src);
+    return 1;
   }
 }
 
