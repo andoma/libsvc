@@ -399,7 +399,7 @@ get_random_bytes(void *out, size_t len)
   static int fd = -1;
 
   int r;
-#ifdef __linux__
+#if defined(__linux__) && defined(SYS_getrandom)
   while(len > 0) {
     r = syscall(SYS_getrandom, out, len, 0);
     if(r == -1) {
