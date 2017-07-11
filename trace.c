@@ -32,8 +32,7 @@
 #include "misc.h"
 
 static int dosyslog;
-
-
+static int dostdout;
 
 
 /**
@@ -49,13 +48,18 @@ tracev(int level, const char *fmt, va_list ap)
     va_end(aq);
   }
 
-  if(!isatty(2))
+  const int dostderr = isatty(2);
+
+  if(!(dostderr || dostdout))
     return;
 
-  char *buf;
-  if(vasprintf(&buf, fmt, ap) == -1)
-    return;
+  scoped_char *buf = fmtv(fmt, ap);
 
+  if(dostdout) {
+    printf("%s\n", buf);
+    fflush(stdout);
+  }
+  if(dostderr) {
   struct timeval tv;
   struct tm tm;
   gettimeofday(&tv, NULL);
@@ -95,7 +99,7 @@ tracev(int level, const char *fmt, va_list ap)
           tm.tm_sec,
           (int)tv.tv_usec / 1000,
           buf);
-  free(buf);
+  }
 }
 
 
@@ -192,5 +196,14 @@ hexdump(const char *pfx, const void *data_, int len)
     buf[p] = 0;
     trace(LOG_DEBUG, "%s: %s", pfx, buf);
   }
+}
+
+/**
+ *
+ */
+void
+trace_enable_stdout(void)
+{
+  dostdout = 1;
 }
 

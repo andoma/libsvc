@@ -43,3 +43,5 @@ void tracev(int level, const char *fmt, va_list ap);
 void enable_syslog(const char *program, const char *facility);
 
 void hexdump(const char *pfx, const void *data_, int len);
+
+void trace_enable_stdout(void);
