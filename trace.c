@@ -33,7 +33,7 @@
 
 static int dosyslog;
 static int dostdout;
-
+static void (*tracecb)(int level, const char *msg);
 
 /**
  *
@@ -44,16 +44,19 @@ tracev(int level, const char *fmt, va_list ap)
   if(dosyslog) {
     va_list aq;
     va_copy(aq, ap);
-    vsyslog(level, fmt, aq);
+    vsyslog(level & 7, fmt, aq);
     va_end(aq);
   }
 
   const int dostderr = isatty(2);
 
-  if(!(dostderr || dostdout))
+  if(!(dostderr || dostdout || tracecb))
     return;
 
   scoped_char *buf = fmtv(fmt, ap);
+
+  if(tracecb)
+    tracecb(level, buf);
 
   if(dostdout) {
     printf("%s\n", buf);
@@ -67,7 +70,7 @@ tracev(int level, const char *fmt, va_list ap)
     localtime_r(&tim, &tm);
 
     const char *sgr = "";
-    switch(level) {
+    switch(level & 7) {
     case LOG_EMERG:
     case LOG_ALERT:
     case LOG_CRIT:
@@ -207,3 +210,12 @@ trace_enable_stdout(void)
   dostdout = 1;
 }
 
+
+/**
+ *
+ */
+void
+trace_set_callback(void (*cb)(int level, const char *msg))
+{
+  tracecb = cb;
+}
