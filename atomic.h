@@ -37,6 +37,13 @@ atomic_set(atomic_t *a, int v)
   return a->v = v;
 }
 
+static inline int
+atomic_get_and_set(atomic_t *a, int v)
+{
+  return __sync_lock_test_and_set(&a->v, v);
+}
+
+
 
 #else
 #error Missing atomic ops
