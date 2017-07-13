@@ -89,13 +89,9 @@ static inline const char *mystrbegins(const char *s1, const char *s2)
 }
 
 
-static inline int64_t
-get_ts(void)
-{
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  return (int64_t)tv.tv_sec * 1000000LL + tv.tv_usec;
-}
+int64_t get_ts(void);
+
+int64_t get_ts_mono(void);
 
 void strset(char **p, const char *s);
 

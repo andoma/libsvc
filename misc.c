@@ -1101,3 +1101,22 @@ set_thread_namef(const char *fmt, ...)
   prctl(PR_SET_NAME, name, 0, 0, 0);
 #endif
 }
+
+
+
+int64_t
+get_ts(void)
+{
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (int64_t)tv.tv_sec * 1000000LL + tv.tv_usec;
+}
+
+
+int64_t
+get_ts_mono(void)
+{
+  struct timespec tv;
+  clock_gettime(CLOCK_MONOTONIC, &tv);
+  return (int64_t)tv.tv_sec * 1000000LL + (tv.tv_nsec / 1000);
+}
