@@ -92,10 +92,8 @@ libsvc_init(void)
   asyncio_init();
 #endif
 
-  tcp_init();  // Also does OpenSSL init
-
 #ifdef WITH_CURL
-  curl_global_init(0);
+  curl_global_init(CURL_GLOBAL_ALL);
 #endif
 
 #ifdef WITH_TCP_SERVER
