@@ -209,7 +209,6 @@ ntv_t *ntv_msgpack_deserialize_nocopy(const void *data, size_t length,
 #define ntv_set(ntv, key, val)                                          \
   _Generic(val,                                                         \
            int64_t: ntv_set_int64,                                      \
-           long long: ntv_set_int64,                                    \
            int: ntv_set_int,                                            \
            unsigned int: ntv_set_int,                                   \
            float: ntv_set_double,                                       \
@@ -224,6 +223,7 @@ ntv_t *ntv_msgpack_deserialize_nocopy(const void *data, size_t length,
 #define ntv_set(ntv, key, val)                                          \
   _Generic(val,                                                         \
            int64_t: ntv_set_int64,                                      \
+           long long: ntv_set_int64,                                    \
            int: ntv_set_int,                                            \
            unsigned int: ntv_set_int,                                   \
            float: ntv_set_double,                                       \
