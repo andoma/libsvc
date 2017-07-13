@@ -92,6 +92,8 @@ libsvc_init(void)
   asyncio_init();
 #endif
 
+  tcp_init();
+
 #ifdef WITH_CURL
   curl_global_init(CURL_GLOBAL_ALL);
 #endif
