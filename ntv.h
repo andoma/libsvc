@@ -150,6 +150,7 @@ ntv_t *ntv_double(double value);
 ntv_t *ntv_str(const char *str);
 ntv_t *ntv_strf(const char *fmt, ...);
 ntv_t *ntv_map(const char *key, ...)   __attribute__((__sentinel__(0)));
+ntv_t *ntv_list(ntv_t *f, ...)   __attribute__((__sentinel__(0)));
 
 
 

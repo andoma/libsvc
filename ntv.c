@@ -455,6 +455,24 @@ ntv_map(const char *key, ...)
 
 
 
+ntv_t *
+ntv_list(ntv_t *f, ...)
+{
+  ntv_t *ntv = ntv_create_list();
+  va_list ap;
+  va_start(ap, f);
+
+  while(f != NULL) {
+    TAILQ_INSERT_TAIL(&ntv->ntv_children, f, ntv_link);
+    f->ntv_parent = ntv;
+    f = va_arg(ap, ntv_t *);
+  }
+  va_end(ap);
+  return ntv;
+}
+
+
+
 static void
 ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
 {
