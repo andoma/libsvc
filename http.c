@@ -2100,7 +2100,6 @@ websocket_send_close(struct http_connection *hc, int code,
   if(reason)
     mbuf_append(&hq, reason, strlen(reason));
 
-  mbuf_hexdump("CLOSE", &hq);
   websocket_sendq(hc, 8, &hq);
 }
 
