@@ -503,6 +503,19 @@ ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
 }
 
 
+void
+ntv_merge(ntv_t *dst, const ntv_t *src)
+{
+  if(src == NULL)
+    return;
+
+  const ntv_t *f;
+  TAILQ_FOREACH(f, &src->ntv_children, ntv_link) {
+    ntv_set_from_field(dst, f->ntv_name, f);
+  }
+}
+
+
 
 ntv_t *
 ntv_copy(const ntv_t *src)
@@ -510,12 +523,8 @@ ntv_copy(const ntv_t *src)
   if(src == NULL)
     return NULL;
 
-  const ntv_t *f;
   ntv_t *dst = ntv_create(src->ntv_type);
-
-  TAILQ_FOREACH(f, &src->ntv_children, ntv_link) {
-    ntv_set_from_field(dst, f->ntv_name, f);
-  }
+  ntv_merge(dst, src);
   return dst;
 }
 

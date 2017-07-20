@@ -110,6 +110,7 @@ void ntv_release(ntv_t *ntv);
 void ntv_releasep(ntv_t **ntv);
 void ntv_print(const ntv_t *ntv);
 ntv_t *ntv_copy(const ntv_t *src);
+void ntv_merge(ntv_t *dst, const ntv_t *src);
 int ntv_is_empty(const ntv_t *ntv);
 int ntv_num_children(const ntv_t *ntv);
 
