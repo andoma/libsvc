@@ -307,28 +307,29 @@ dictcmp(const char *a, const char *b)
  *
  */
 int
-writefile(const char *path, const void *buf, int size)
+writefile(const char *path, const void *buf, int size, int checksame)
 {
   int r, fd;
 
-  fd = open(path, O_RDONLY | O_CLOEXEC);
-  if(fd != -1) {
-    struct stat st;
-    if(!fstat(fd, &st)) {
-      if(st.st_size == size) {
-        void *tmp = malloc(size);
-        int r = read(fd, tmp, size);
-        int same = r == size && !memcmp(tmp, buf, size);
-        free(tmp);
-        if(same) {
-          close(fd);
-          return WRITEFILE_NO_CHANGE;
+  if(checksame) {
+    fd = open(path, O_RDONLY | O_CLOEXEC);
+    if(fd != -1) {
+      struct stat st;
+      if(!fstat(fd, &st)) {
+        if(st.st_size == size) {
+          void *tmp = malloc(size);
+          int r = read(fd, tmp, size);
+          int same = r == size && !memcmp(tmp, buf, size);
+          free(tmp);
+          if(same) {
+            close(fd);
+            return WRITEFILE_NO_CHANGE;
+          }
         }
       }
+      close(fd);
     }
-    close(fd);
   }
-
   char pathtmp[PATH_MAX];
   snprintf(pathtmp, sizeof(pathtmp), "%s.tmp", path);
 
@@ -356,21 +357,19 @@ writefile(const char *path, const void *buf, int size)
  *
  */
 char *
-readfile(const char *path, int *errptr, time_t *tsp)
+readfile(const char *path, time_t *tsp)
 {
   struct stat st;
 
   int fd = open(path, O_RDONLY | O_CLOEXEC);
   if(fd == -1) {
-    if(errptr)
-      *errptr = errno;
     return NULL;
   }
 
   if(fstat(fd, &st)) {
-    if(errptr)
-      *errptr = errno;
+    const int errsave = errno;
     close(fd);
+    errno = errsave;
     return NULL;
   }
 
@@ -380,10 +379,11 @@ readfile(const char *path, int *errptr, time_t *tsp)
   char *mem = malloc(st.st_size + 1);
   mem[st.st_size] = 0;
   if(read(fd, mem, st.st_size) != st.st_size) {
-    if(errptr)
-      *errptr = errno;
+    const int errsave = errno;
     free(mem);
-    mem = NULL;
+    close(fd);
+    errno = errsave;
+    return NULL;
   }
   close(fd);
   return mem;

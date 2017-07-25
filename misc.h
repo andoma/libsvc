@@ -50,9 +50,9 @@ int dictcmp(const char *a, const char *b);
 
 #define WRITEFILE_NO_CHANGE 1000000
 
-int writefile(const char *path, const void *buf, int size);
+int writefile(const char *path, const void *buf, int size, int checksame);
 
-char *readfile(const char *path, int *intptr, time_t *ts);
+char *readfile(const char *path, time_t *ts);
 
 void url_split(char *proto, int proto_size,
                char *authorization, int authorization_size,

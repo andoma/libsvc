@@ -102,7 +102,6 @@ cfg_releasep(cfg_t **p)
 int
 cfg_load(const char *filename, char *errbuf, size_t errlen)
 {
-  int err;
   static char *lastfilename;
 
   pthread_mutex_lock(&cfg_mutex);
@@ -124,10 +123,11 @@ cfg_load(const char *filename, char *errbuf, size_t errlen)
 
   trace(LOG_NOTICE, "About to load config form %s", filename);
 
-  char *cfgtxt = readfile(filename, &err, NULL);
+  char *cfgtxt = readfile(filename, NULL);
   if(cfgtxt == NULL) {
-    snprintf(errbuf, errlen, "Unable to read file %s -- %s", filename, strerror(err));
-    trace(LOG_ERR, "Unable to read file %s -- %s", filename, strerror(err));
+    const char *errstr = strerror(errno);
+    snprintf(errbuf, errlen, "Unable to read file %s -- %s", filename, errstr);
+    trace(LOG_ERR, "Unable to read file %s -- %s", filename, errstr);
     trace(LOG_ERR, "Config not updated");
     return -1;
   }
