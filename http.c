@@ -410,7 +410,8 @@ http_wait_send_buffe(http_request_t *hr, int bytes)
 static void
 http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
 {
-  mbuf_qprintf(hdrs, "Server: %s\r\n", PROGNAME);
+  extern const char *libsvc_app_version;
+  mbuf_qprintf(hdrs, "Server: %s\r\n", libsvc_app_version ?: PROGNAME);
 
   if(ntv_cmp(hr->hr_session, hr->hr_session_received)) {
     const char *cookie = generate_session_cookie(hr);

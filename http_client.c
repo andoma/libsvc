@@ -149,6 +149,8 @@ append_header(struct curl_slist *slist, const char *a, const char *b)
 int
 http_client_request(http_client_response_t *hcr, const char *url, ...)
 {
+  extern const char *libsvc_app_version;
+
   char *errbuf = NULL;
   size_t errsize = 0;
   int flags = 0;
@@ -286,7 +288,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, outfile);
-  curl_easy_setopt(curl, CURLOPT_USERAGENT, PROGNAME);
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, libsvc_app_version ?: PROGNAME);
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, hdrfunc);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, hcr);
 

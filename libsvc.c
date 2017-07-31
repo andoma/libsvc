@@ -76,6 +76,19 @@ inithelper_register(void (*init)(void), void (*fini)(void), int prio)
 }
 
 
+char *libsvc_app_version;
+char *libsvc_app_version_only;
+
+
+void
+libsvc_set_app_version(const char *version)
+{
+  libsvc_app_version = fmt("%s-%s", PROGNAME, version);
+  libsvc_app_version_only = strdup(version);
+}
+
+
+
 
 void
 libsvc_init(void)
