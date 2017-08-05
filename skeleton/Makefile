@@ -33,7 +33,7 @@ BUILD ?= $(shell uname)
 CSTANDARD  := gnu11
 CFLAGS_opt := -O2
 
-BUILDDIR = ${CURDIR}/build
+BUILDDIR = ${CURDIR}/build.${BUILD}
 
 PROG=${BUILDDIR}/${PROGNAME}
 
