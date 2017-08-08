@@ -54,6 +54,7 @@
 #include "asyncio.h"
 #include "websocket.h"
 #include "mbuf.h"
+#include "bytestream.h"
 
 LIST_HEAD(http_connection_list, http_connection);
 
@@ -2107,6 +2108,28 @@ websocket_send_close(struct http_connection *hc, int code,
 /**
  *
  */
+static void
+websocket_close(http_connection_t *hc, const uint8_t *data, int len)
+{
+  int close_code = WS_STATUS_NORMAL_CLOSE;
+  char *msg = NULL;
+  if(len >= 2) {
+    close_code = rd16_be(data);
+    if(len >= 3) {
+      msg = malloc(len - 1);
+      len -= 2;
+      memcpy(msg, data + 2, len);
+      msg[len] = 0;
+    }
+  }
+  asyncio_timer_disarm(&hc->hc_timer);
+  ws_enq_data(hc, WSD_OPCODE_DISCONNECT, msg, close_code, 0);
+}
+
+
+/**
+ *
+ */
 static int
 websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
                        int flags)
@@ -2117,7 +2140,7 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
 
   switch(opcode) {
   case WS_OPCODE_CLOSE:
-    http_connection_close(hc);
+    websocket_close(hc, *data, len);
     return 0;
 
   case WS_OPCODE_PING:
@@ -2141,7 +2164,7 @@ websocket_timer(http_connection_t *hc)
   if(hc->hc_ws_pong_wait >= 2) {
     asyncio_timer_disarm(&hc->hc_timer);
     ws_enq_data(hc, WSD_OPCODE_DISCONNECT, strdup("Connection timed out"),
-                1006, 0);
+                WS_STATUS_ABNORMALLY_CLOSED, 0);
     return;
   }
 

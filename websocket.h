@@ -59,7 +59,6 @@ int websocket_parse(struct mbuf *q,
 #define WS_OPCODE_PING  9
 #define WS_OPCODE_PONG  10
 
-#define WS_STATUS_PING_TIMEOUT      999
 #define WS_STATUS_NORMAL_CLOSE      1000
 #define WS_STATUS_GOING_AWAY        1001
 #define WS_STATUS_PROTOCOL_ERROR    1002
