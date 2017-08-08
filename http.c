@@ -1993,11 +1993,10 @@ ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg, int flags)
   if(hc->hc_max_backlog &&
      atomic_add_and_fetch(&hc->hc_backlog, 1) == hc->hc_max_backlog) {
 
-    ws_enq_data(hc, WSD_OPCODE_DISCONNECT, strdup("Message backlog exceeded"),
-                1006, 0);
-
     free(data);
-    return;
+    data = strdup("Message backlog exceeded");
+    arg = WS_STATUS_ABNORMALLY_CLOSED;
+    opcode = WSD_OPCODE_DISCONNECT;
   }
 
   ws_server_data_t *wsd = malloc(sizeof(ws_server_data_t));
