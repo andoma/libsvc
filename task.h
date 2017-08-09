@@ -39,3 +39,11 @@ void task_group_destroy(task_group_t *tg);
 void task_run_in_group(task_fn_t *fn, void *opaque, task_group_t *tg);
 
 void task_stop(void);
+
+typedef struct task_stats {
+  uint32_t num_threads;
+  uint32_t idle_threads;
+  uint64_t tasks_enqueued;
+} task_stats_t;
+
+void task_get_stats(task_stats_t *stats);

@@ -25,6 +25,7 @@
 #include <pthread.h>
 #include <sys/queue.h>
 #include <assert.h>
+#include <errno.h>
 #include "task.h"
 #include "atomic.h"
 #include "talloc.h"
@@ -67,6 +68,7 @@ static pthread_mutex_t task_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t task_cond = PTHREAD_COND_INITIALIZER;
 static int task_sys_running = 1;
 static struct task_thread_list task_threads;
+static uint64_t tasks_enqueued;
 
 /**
  *
@@ -98,12 +100,26 @@ task_thread(void *aux)
     tg = TAILQ_FIRST(&task_groups);
 
     if(t == NULL && tg == NULL) {
-      if(num_task_threads_avail >= MAX_IDLE_TASK_THREADS)
-        break;
+      if(num_task_threads_avail >= MAX_IDLE_TASK_THREADS) {
 
-      num_task_threads_avail++;
-      pthread_cond_wait(&task_cond, &task_mutex);
-      num_task_threads_avail--;
+        struct timespec timeout;
+
+        timeout.tv_sec = time(NULL) + 5;
+        timeout.tv_nsec = 0;
+
+        num_task_threads_avail++;
+        int r = pthread_cond_timedwait(&task_cond, &task_mutex, &timeout);
+        num_task_threads_avail--;
+
+        if(r == ETIMEDOUT) {
+          break;
+        }
+
+      } else {
+        num_task_threads_avail++;
+        pthread_cond_wait(&task_cond, &task_mutex);
+        num_task_threads_avail--;
+      }
       continue;
     }
 
@@ -148,7 +164,6 @@ task_thread(void *aux)
   }
 
   num_task_threads--;
-
   if(task_sys_running) {
     pthread_detach(tt->tid);
     LIST_REMOVE(tt, link);
@@ -202,6 +217,7 @@ task_run(task_fn_t *fn, void *opaque)
   pthread_mutex_lock(&task_mutex);
   TAILQ_INSERT_TAIL(&tasks, t, t_link);
   task_schedule();
+  tasks_enqueued++;
   pthread_mutex_unlock(&task_mutex);
 }
 
@@ -254,6 +270,8 @@ task_run_in_group(task_fn_t *fn, void *opaque, task_group_t *tg)
   t->t_opaque = opaque;
   pthread_mutex_lock(&task_mutex);
 
+  tasks_enqueued++;
+
   if(task_sys_running) {
     t->t_group = tg;
     atomic_inc(&tg->tg_refcount);
@@ -290,5 +308,21 @@ task_stop(void)
     pthread_mutex_lock(&task_mutex);
     free(tt);
   }
+  pthread_mutex_unlock(&task_mutex);
+}
+
+
+/**
+ *
+ */
+void
+task_get_stats(task_stats_t *stats)
+{
+  pthread_mutex_lock(&task_mutex);
+
+  stats->num_threads = num_task_threads;
+  stats->idle_threads = num_task_threads_avail;
+  stats->tasks_enqueued = tasks_enqueued;
+
   pthread_mutex_unlock(&task_mutex);
 }
