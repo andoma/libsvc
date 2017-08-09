@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <stdint.h>
 
 typedef struct task_group task_group_t;
 
