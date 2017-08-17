@@ -473,7 +473,7 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
   }
 
   if(rc == HTTP_STATUS_UNAUTHORIZED)
-    mbuf_qprintf(&hdrs, "WWW-Authenticate: Basic realm=\"doozer\"\r\n");
+    mbuf_qprintf(&hdrs, "WWW-Authenticate: Basic realm=\"%s\"\r\n", PROGNAME);
 
   if(contentlen > 0)
     mbuf_qprintf(&hdrs, "Content-Length: %"PRId64"\r\n", contentlen);
