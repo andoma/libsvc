@@ -57,6 +57,8 @@ typedef struct http_request {
   char *hr_remain;
   char *hr_args;
 
+  int hr_route_flags;  // Copy of flags from route
+
   struct http_arg_list hr_request_headers;
 
   struct http_arg_list hr_response_headers;
@@ -144,6 +146,7 @@ typedef int (http_callback2_t)(http_request_t *hc, int argc, char **argv,
                                int flags);
 
 #define HTTP_ROUTE_HANDLE_100_CONTINUE 0x1
+#define HTTP_ROUTE_DISABLE_LOG         0x2
 
 void http_route_add(const char *path, http_callback2_t *callback, int flags);
 

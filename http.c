@@ -261,6 +261,8 @@ http_resolve_route(http_request_t *req, int cont)
     memcpy(s, req->hr_path + match[argc].rm_so, len);
   }
 
+  req->hr_route_flags = hr->hr_flags;
+
   return hr->hr_callback(req, argc, argv,
                          cont ? HTTP_ROUTE_HANDLE_100_CONTINUE : 0);
 }
@@ -320,6 +322,9 @@ http_req_ver_str(const http_request_t *hr)
 void
 http_log(http_request_t *hr, int status, const char *str)
 {
+  if(hr->hr_route_flags & HTTP_ROUTE_DISABLE_LOG)
+    return;
+
   cfg_root(cr);
   const http_server_t *hs = hr->hr_connection->hc_server;
 
