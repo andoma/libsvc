@@ -148,6 +148,7 @@ const ntv_t *ntv_idx_list(const ntv_t *ntv, int idx);
 
 ntv_t *ntv_int(int64_t value);
 ntv_t *ntv_double(double value);
+ntv_t *ntv_boolean(int value);
 ntv_t *ntv_str(const char *str);
 ntv_t *ntv_strf(const char *fmt, ...);
 ntv_t *ntv_map(const char *key, ...)   __attribute__((__sentinel__(0)));
