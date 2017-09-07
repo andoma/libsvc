@@ -56,7 +56,7 @@ ZBUNDLES += $(sort $(ZBUNDLES-yes))
 ZBUNDLE_SRCS=$(ZBUNDLES:%=$(BUILDDIR)/zbundles/%.c)
 
 DEPS += $(BUNDLE_SRCS:%.c=%.d) $(ZBUNDLE_SRCS:%.c=%.d)
-BUNDLE_OBJS=$(BUNDLE_SRCS:%.c=%.o) $(ZBUNDLE_SRCS:%.c=%.o)
+BUNDLE_OBJS += $(BUNDLE_SRCS:%.c=%.o) $(ZBUNDLE_SRCS:%.c=%.o)
 .PRECIOUS: ${BUNDLE_SRCS} ${ZBUNDLE_SRCS}
 
 
