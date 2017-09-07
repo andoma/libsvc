@@ -1,4 +1,4 @@
-.DEFAULT_GOAL := ${PROG}
+.DEFAULT_GOAL := $(if $(GOAL),$(GOAL),$(PROG))
 
 prefix ?= /usr/local
 
