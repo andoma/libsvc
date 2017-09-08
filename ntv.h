@@ -222,6 +222,8 @@ ntv_t *ntv_msgpack_deserialize_nocopy(const void *data, size_t length,
 
 #else
 
+#if UINTPTR_MAX == 0xffffffffffffffff
+
 #define ntv_set(ntv, key, val)                                          \
   _Generic(val,                                                         \
            int64_t: ntv_set_int64,                                      \
@@ -234,6 +236,22 @@ ntv_t *ntv_msgpack_deserialize_nocopy(const void *data, size_t length,
            const char *: ntv_set_str,                                   \
            ntv_t *: ntv_set_ntv                                         \
            )(ntv, key, val)
+
+#else
+
+#define ntv_set(ntv, key, val)                                          \
+  _Generic(val,                                                         \
+           int64_t: ntv_set_int64,                                      \
+           int: ntv_set_int,                                            \
+           unsigned int: ntv_set_int,                                   \
+           float: ntv_set_double,                                       \
+           double: ntv_set_double,                                      \
+           char *: ntv_set_str,                                         \
+           const char *: ntv_set_str,                                   \
+           ntv_t *: ntv_set_ntv                                         \
+           )(ntv, key, val)
+
+#endif
 
 #endif
 
