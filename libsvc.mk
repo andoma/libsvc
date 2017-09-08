@@ -29,7 +29,7 @@ OBJS +=  $(SRCS:%.c=$(BUILDDIR)/%.o)
 DEPS +=  ${OBJS:%.o=%.d}
 
 # Common CFLAGS for all files
-CFLAGS_com  = -g -funsigned-char -D_FILE_OFFSET_BITS=64
+CFLAGS_com += -g -funsigned-char -D_FILE_OFFSET_BITS=64
 CFLAGS_com += -I${BUILDDIR} -I${CURDIR}
 CFLAGS_opt ?= -O2
 
