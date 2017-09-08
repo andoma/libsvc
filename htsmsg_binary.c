@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include "htsmsg_binary.h"
+#include "misc.h"
 
 /*
  *
@@ -62,7 +63,7 @@ htsmsg_binary_des0(htsmsg_t *msg, const uint8_t *buf, size_t len)
     f->hmf_type  = type;
 
     if(namelen > 0) {
-      n = malloc(namelen + 1);
+      n = malloc_add(namelen, 1);
       memcpy(n, buf, namelen);
       n[namelen] = 0;
 
@@ -79,7 +80,7 @@ htsmsg_binary_des0(htsmsg_t *msg, const uint8_t *buf, size_t len)
 
     switch(type) {
     case HMF_STR:
-      f->hmf_str = n = malloc(datalen + 1);
+      f->hmf_str = n = malloc_add(datalen, 1);
       memcpy(n, buf, datalen);
       n[datalen] = 0;
       f->hmf_flags |= HMF_ALLOCED;
@@ -274,7 +275,7 @@ htsmsg_binary_serialize(htsmsg_t *msg, void **datap, size_t *lenp, int maxlen)
   if(len + 4 > maxlen)
     return -1;
 
-  data = malloc(len + 4);
+  data = malloc_add(len, 4);
 
   data[0] = len >> 24;
   data[1] = len >> 16;

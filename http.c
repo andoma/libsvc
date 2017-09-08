@@ -945,7 +945,7 @@ http_route_add(const char *path, http_callback2_t *callback, int flags)
     if(path[i] == '/')
       hr->hr_depth++;
 
-  char *p = malloc(len + 2);
+  char *p = malloc_add(len, 2);
   p[0] = '^';
   strcpy(p+1, path);
 
@@ -1192,7 +1192,7 @@ http_headers_complete(http_parser *p)
       return -1;
     }
     assert(hc->hc_body == NULL);
-    hc->hc_body = malloc(p->content_length + 1);
+    hc->hc_body = malloc_add(p->content_length, 1);
     if(hc->hc_body == NULL)
       return -1;
 
@@ -1936,7 +1936,7 @@ ws_dispatch(void *aux)
 
     size_t used = 0;
     size_t bufsize = 1000;
-    char *buf = malloc(bufsize + 1);
+    char *buf = malloc_add(bufsize, 1);
 
     while(1) {
       z->next_out = (void *)buf + used;

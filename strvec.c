@@ -34,7 +34,7 @@ strvec_push_alloced(strvec_t *vec, char *value)
 static void
 strvec_pushl(strvec_t *vec, const char *value, size_t len)
 {
-  char *x = malloc(len + 1);
+  char *x = malloc_add(len, 1);
   memcpy(x, value, len);
   x[len] = 0;
   strvec_push_alloced(vec, x);
@@ -142,7 +142,7 @@ strvec_copy(strvec_t *dst, const strvec_t *src)
   // We trim the capacity down to the actual size here
   dst->count = dst->capacity = src->count;
 
-  dst->v = malloc(dst->count * sizeof(dst->v[0]));
+  dst->v = malloc_mul(dst->count, sizeof(dst->v[0]));
   for(int i = 0; i < dst->count; i++)
     dst->v[i] = src->v[i] ? strdup(src->v[i]) : NULL;
 }

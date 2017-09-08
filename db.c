@@ -818,7 +818,7 @@ db_upgrade_schema(const char *schema_bundle)
       return -1;
     }
 
-    char *x = malloc(len + 1);
+    char *x = malloc_add(len, 1);
     memcpy(x, q, len);
     filebundle_free(q);
     x[len] = 0;

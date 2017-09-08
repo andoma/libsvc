@@ -30,6 +30,7 @@
 #include <sys/param.h>
 
 #include "htsbuf.h"
+#include "misc.h"
 
 /**
  *
@@ -418,7 +419,7 @@ htsbuf_append_and_escape_jsonstr(htsbuf_queue_t *hq, const char *str)
 char *
 htsbuf_to_string(htsbuf_queue_t *hq)
 {
-  char *r = malloc(hq->hq_size + 1);
+  char *r = malloc_add(hq->hq_size, 1);
   r[hq->hq_size] = 0;
   htsbuf_read(hq, r, hq->hq_size);
   return r;

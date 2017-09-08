@@ -28,6 +28,7 @@
 #include <stdarg.h>
 
 #include "talloc.h"
+#include "misc.h"
 
 typedef struct talloc_item {
   struct talloc_item *next;
@@ -111,7 +112,7 @@ talloc_insert(talloc_item_t *t)
 void *
 talloc_malloc(size_t s)
 {
-  talloc_item_t *t = malloc(s + sizeof(talloc_item_t));
+  talloc_item_t *t = malloc_add(s, sizeof(talloc_item_t));
   talloc_insert(t);
   return t + 1;
 }
@@ -123,9 +124,10 @@ talloc_malloc(size_t s)
 void *
 talloc_zalloc(size_t s)
 {
-  talloc_item_t *t = calloc(1, s + sizeof(talloc_item_t));
-  talloc_insert(t);
-  return t + 1;
+  void *x = talloc_malloc(s);
+  if(x != NULL)
+    memset(x, 0, s);
+  return x;
 }
 
 

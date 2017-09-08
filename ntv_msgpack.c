@@ -28,6 +28,7 @@
 #include "ntv.h"
 #include "mbuf.h"
 #include "bytestream.h"
+#include "misc.h"
 
 static void
 msgpack_write_byte(mbuf_t *hq, uint8_t c)
@@ -247,7 +248,7 @@ msgpack_read_data(const uint8_t *data, const uint8_t *dataend, void *res,
   if(length > dataend - data)
     return msgpack_err(data, ec, "EOF, trying to read %d bytes", length);
 
-  char *r = malloc(length + 1);
+  char *r = malloc_add(length, 1);
   if(r == NULL)
     return msgpack_err(data, ec, "Out of memory");
 

@@ -27,7 +27,7 @@
 
 #include "ntv.h"
 #include "mbuf.h"
-
+#include "misc.h"
 
 // These values are selected based on bytes that must never occur in
 // UTF8 strings. Just to accidentally avoid parsing text as NTV for
@@ -195,7 +195,7 @@ ntv_read_string(const uint8_t *data, const uint8_t *dataend, char **res)
   if(data == NULL)
     return NULL;
 
-  char *r = *res = malloc(u64 + 1);
+  char *r = *res = malloc_add(u64, 1);
   if(r == NULL)
     return NULL;
 

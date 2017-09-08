@@ -31,6 +31,8 @@
 #include <inttypes.h>
 #include <sys/param.h>
 #include "ntv.h"
+#include "misc.h"
+
 
 ntv_t *
 ntv_create(ntv_type type)
@@ -589,8 +591,8 @@ ntv_cmp_map(const ntv_t *aa, const ntv_t *bb)
   if(num == 0)
     return 0;
 
-  av = malloc(num * sizeof(ntv_t *));
-  bv = malloc(num * sizeof(ntv_t *));
+  av = malloc_mul(num, sizeof(ntv_t *));
+  bv = malloc_mul(num, sizeof(ntv_t *));
 
   i = 0;
   NTV_FOREACH(a, aa)

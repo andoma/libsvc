@@ -190,7 +190,7 @@ irc_send(irc_client_t *ic, const char *fmt, ...)
   buf[l++]  = '\r';
   buf[l++]  = '\n';
 
-  irc_out_msg_t *iom = malloc(sizeof(irc_out_msg_t) + l);
+  irc_out_msg_t *iom = malloc_add(sizeof(irc_out_msg_t), l);
   iom->iom_length = l;
   memcpy(iom->iom_data, buf, l);
   TAILQ_INSERT_TAIL(&ic->ic_cmdq, iom, iom_link);
@@ -1074,7 +1074,7 @@ irc_msg_channel(const char *url, const char *channel,
 
         if(*str == '\n')
           str++;
-        irc_out_msg_t *iom = malloc(sizeof(irc_out_msg_t) + len);
+        irc_out_msg_t *iom = malloc_add(sizeof(irc_out_msg_t), len);
         iom->iom_length = len;
         memcpy(iom->iom_data, buf, len);
         iom->iom_expire = time(NULL) + ttl;

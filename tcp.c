@@ -46,6 +46,7 @@
 #include <openssl/x509v3.h>
 
 #include "tcp.h"
+#include "misc.h"
 
 static SSL_CTX *ssl_ctx;
 static pthread_mutex_t *ssl_locks;
@@ -788,7 +789,7 @@ tcp_init1(const char *extra_ca, int init_ssl)
     SSL_load_error_strings();
 
     int i, n = CRYPTO_num_locks();
-    ssl_locks = malloc(sizeof(pthread_mutex_t) * n);
+    ssl_locks = malloc_mul(sizeof(pthread_mutex_t), n);
     for(i = 0; i < n; i++)
       pthread_mutex_init(&ssl_locks[i], NULL);
 

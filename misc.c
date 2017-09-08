@@ -376,7 +376,7 @@ readfile(const char *path, time_t *tsp)
   if(tsp != NULL)
     *tsp = st.st_mtime;
 
-  char *mem = malloc(st.st_size + 1);
+  char *mem = malloc_add(st.st_size, 1);
   mem[st.st_size] = 0;
   if(read(fd, mem, st.st_size) != st.st_size) {
     const int errsave = errno;
@@ -915,7 +915,7 @@ str_replace_tokens(char *str, const char *tokenprefix,
     int replacelen = strlen(tokens[i + 1]);
     int newlen = tlen - (d - a) + replacelen;
 
-    char *n = malloc(newlen + 1);
+    char *n = malloc_add(newlen, 1);
     memcpy(n, str, a - str);
     memcpy(n + (a - str), tokens[i + 1], replacelen);
     memcpy(n + (a - str) + replacelen, d, tlen - (d - str));
@@ -933,9 +933,7 @@ str_replace_tokens(char *str, const char *tokenprefix,
 char *
 bin2str(const void *src, size_t len)
 {
-  if(len > 1024L * 1024L * 1024L * 3L)
-    return NULL;
-  char *r = malloc(len + 1);
+  char *r = malloc_add(len, 1);
   r[len] = 0;
   memcpy(r, src, len);
   return r;
@@ -1008,4 +1006,23 @@ get_ts_mono(void)
   struct timespec tv;
   clock_gettime(CLOCK_MONOTONIC, &tv);
   return (int64_t)tv.tv_sec * 1000000LL + (tv.tv_nsec / 1000);
+}
+
+
+void *
+malloc_add(size_t a, size_t b)
+{
+  size_t c;
+  if(__builtin_add_overflow(a, b, &c))
+    return NULL;
+  return malloc(c);
+}
+
+void *
+malloc_mul(size_t a, size_t b)
+{
+  size_t c;
+  if(__builtin_mul_overflow(a, b, &c))
+    return NULL;
+  return malloc(c);
 }

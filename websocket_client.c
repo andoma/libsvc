@@ -148,7 +148,7 @@ wsc_read(ws_client_t *wsc, struct htsbuf_queue *hq)
 
     if(hq->hq_size < hoff + len)
       return;
-    uint8_t *d = malloc(len+1);
+    uint8_t *d = malloc_add(len, 1);
     htsbuf_drop(hq, hoff);
     htsbuf_read(hq, d, len);
     d[len] = 0;

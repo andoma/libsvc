@@ -28,6 +28,7 @@
 #include "json.h"
 #include "utf8.h"
 #include "dbl.h"
+#include "misc.h"
 
 #define NOT_THIS_TYPE ((void *)-1)
 
@@ -108,7 +109,7 @@ json_parse_string(const char *s, const char **endp,
 
       /* End */
       l = s - start;
-      r = malloc(l + 1);
+      r = malloc_add(l, 1);
       memcpy(r, start, l);
       r[l] = 0;
 
