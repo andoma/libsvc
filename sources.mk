@@ -28,6 +28,7 @@ libsvc_SRCS += \
 	murmur3.c \
 	mbuf.c \
 	trap.c \
+	err.c \
 
 libsvc_INCS += \
 	libsvc.h \

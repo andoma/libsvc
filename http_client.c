@@ -45,6 +45,7 @@
 #include "dbl.h"
 #include "curlhelpers.h"
 #include "mbuf.h"
+#include "err.h"
 
 static pthread_key_t http_client_key;
 
@@ -150,7 +151,7 @@ int
 http_client_request(http_client_response_t *hcr, const char *url, ...)
 {
   extern const char *libsvc_app_version;
-
+  err_t **err = NULL;
   char *errbuf = NULL;
   size_t errsize = 0;
   int flags = 0;
@@ -180,6 +181,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     case HCR_TAG_ERRBUF:
       errbuf  = va_arg(ap, char *);
       errsize = va_arg(ap, size_t);
+      break;
+
+    case HCR_TAG_ERR:
+      err     = va_arg(ap, err_t **);
       break;
 
     case HCR_TAG_AUTHCB:
@@ -356,16 +361,25 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       snprintf(hcr->hcr_errbuf, sizeof(hcr->hcr_errbuf), "HTTP Error %lu",
                long_http_code);
       hcr->hcr_transport_status = hcr->hcr_errbuf;
+      err_push(err, "HTTP Error %lu", long_http_code);
     } else {
       snprintf(errbuf, errsize, "%s", curl_easy_strerror(result));
       hcr->hcr_transport_status = curl_easy_strerror(result);
+      err_push(err, "%s", curl_easy_strerror(result));
     }
     rval = 1;
   } else if(memfile) {
     rval = 0;
     if(flags & HCR_DECODE_BODY_AS_JSON) {
+      char e[512];
       if((hcr->hcr_json_result =
-          ntv_json_deserialize(hcr->hcr_body, errbuf, errsize)) == NULL) {
+          ntv_json_deserialize(hcr->hcr_body, e, sizeof(e))) == NULL) {
+
+        err_push(err, "%s", e);
+
+        if(errbuf != NULL)
+          snprintf(errbuf, errsize, "%s", e);
+
         if(errbuf != NULL)
           hcr->hcr_transport_status = errbuf;
         else

@@ -27,6 +27,7 @@ typedef const char *(http_client_auth_cb_t)(void *opaque, int http_status);
 enum {
   HCR_TAG_END,
   HCR_TAG_ERRBUF,
+  HCR_TAG_ERR,
   HCR_TAG_FLAGS,
   HCR_TAG_HEADER,
   HCR_TAG_TIMEOUT,
@@ -49,6 +50,7 @@ enum {
 #define HCR_ACCEPT_GZIP                 0x10
 
 #define HCR_ERRBUF(a, b)      HCR_TAG_ERRBUF, a, (size_t)(b)
+#define HCR_ERR(a)            HCR_TAG_ERR, a
 #define HCR_FLAGS(a)          HCR_TAG_FLAGS, a
 #define HCR_HEADER(a, b)      HCR_TAG_HEADER, a, b
 #define HCR_TIMEOUT(a)        HCR_TAG_TIMEOUT, a
