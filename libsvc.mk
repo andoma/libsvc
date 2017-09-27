@@ -26,6 +26,8 @@ endif
 ALLDEPS += libsvc/libsvc.mk Makefile libsvc/sources.mk
 
 OBJS +=  $(SRCS:%.c=$(BUILDDIR)/%.o)
+OBJS :=  $(OBJS:%.cc=$(BUILDDIR)/%.o)
+
 DEPS +=  ${OBJS:%.o=%.d}
 
 # Common CFLAGS for all files
@@ -75,6 +77,10 @@ ${PROG}.installable: $(OBJS) $(BUNDLE_OBJS) $(ALLDEPS) ${BUILDDIR}/libsvc/filebu
 ${BUILDDIR}/%.o: %.c  $(ALLDEPS)
 	@mkdir -p $(dir $@)
 	$(CC) -MD -MP $(CFLAGS_com) $(CFLAGS) ${CFLAGS_opt} -c -o $@ $(CURDIR)/$<
+
+${BUILDDIR}/%.o: %.cc  $(ALLDEPS)
+	@mkdir -p $(dir $@)
+	$(CXX) -MD -MP $(CXXFLAGS_com) $(CXXFLAGS) ${CXXFLAGS_opt} -c -o $@ $(CURDIR)/$<
 
 .PHONY:	clean distclean
 
