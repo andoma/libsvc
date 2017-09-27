@@ -980,12 +980,14 @@ fmt(const char *fmt, ...)
 void
 set_thread_namef(const char *fmt, ...)
 {
-#ifdef __linux__
   va_list ap;
   va_start(ap, fmt);
   scoped_char *name = fmtv(fmt, ap);
   va_end(ap);
+#if defined(__linux__)
   prctl(PR_SET_NAME, name, 0, 0, 0);
+#elif defined(__APPLE__)
+  pthread_setname_np(name);
 #endif
 }
 
