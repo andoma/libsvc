@@ -27,6 +27,7 @@ ALLDEPS += libsvc/libsvc.mk Makefile libsvc/sources.mk
 
 OBJS +=  $(SRCS:%.c=$(BUILDDIR)/%.o)
 OBJS :=  $(OBJS:%.cc=$(BUILDDIR)/%.o)
+OBJS :=  $(OBJS:%.cpp=$(BUILDDIR)/%.o)
 
 DEPS +=  ${OBJS:%.o=%.d}
 
@@ -78,7 +79,11 @@ ${BUILDDIR}/%.o: %.c  $(ALLDEPS)
 	@mkdir -p $(dir $@)
 	$(CC) -MD -MP $(CFLAGS_com) $(CFLAGS) ${CFLAGS_opt} -c -o $@ $(CURDIR)/$<
 
-${BUILDDIR}/%.o: %.cc  $(ALLDEPS)
+${BUILDDIR}/%.o: %.cc $(ALLDEPS)
+	@mkdir -p $(dir $@)
+	$(CXX) -MD -MP $(CXXFLAGS_com) $(CXXFLAGS) ${CXXFLAGS_opt} -c -o $@ $(CURDIR)/$<
+
+${BUILDDIR}/%.o: %.cpp $(ALLDEPS)
 	@mkdir -p $(dir $@)
 	$(CXX) -MD -MP $(CXXFLAGS_com) $(CXXFLAGS) ${CXXFLAGS_opt} -c -o $@ $(CURDIR)/$<
 
