@@ -1102,6 +1102,8 @@ http_create_request(http_connection_t *hc, int continue_check)
   hr->hr_connection = hc;
   atomic_inc(&hc->hc_refcount);
 
+  hr->hr_secure_cookies = hc->hc_server->hs_secure_cookies;
+
   mbuf_init(&hr->hr_reply);
 
   TAILQ_INIT(&hr->hr_query_args);
