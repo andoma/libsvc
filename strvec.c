@@ -190,5 +190,17 @@ strvec_split(strvec_t *dst, const char *str, const char *sep, int include_empty)
       next += seplen;
     str = next;
   }
+}
 
+
+int
+strvec_eq(const strvec_t *a, const strvec_t *b)
+{
+  if(a->count != b->count)
+    return 0;
+  for(int i = 0; i < a->count; i++) {
+    if(strcmp(strvec_get(a, i), strvec_get(b, i)))
+      return 0;
+  }
+  return 1;
 }

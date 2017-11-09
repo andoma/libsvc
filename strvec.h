@@ -28,6 +28,8 @@ int strvec_find(const strvec_t *vec, const char *value);
 
 void strvec_copy(strvec_t *dst, const strvec_t *src);
 
+int strvec_eq(const strvec_t *a, const strvec_t *b);
+
 char *strvec_join(const strvec_t *src, const char *sep);
 
 void strvec_split(strvec_t *dst, const char *str,
