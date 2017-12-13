@@ -75,6 +75,102 @@ skip_ws(const char *s, const json_deserializer_t *jd,
   return s;
 }
 
+
+/**
+ *
+ */
+static int
+utf8_putp(char **p, int c)
+{
+  int l = utf8_put(*p, c);
+  if(*p)
+    *p += l;
+  return l;
+}
+
+
+/**
+ *
+ */
+static ssize_t
+parse_string_inner(const char *a, char *out, const char **endp,
+                   const char **failp, const char **failmsg)
+{
+  size_t bytes_generated = 0;
+
+  while(*a) {
+
+    if(*a == '"') {
+      if(endp != NULL)
+        *endp = a + 1;
+      return bytes_generated;
+    }
+    if(*a != '\\') {
+      bytes_generated += utf8_putp(&out, *a);
+      a++;
+      continue;
+    }
+
+    a++;
+    // Now at start of escape sequence
+    if(*a == 0)
+      break;
+
+    int uc = 0;
+    if(*a == '"')
+      uc = '"';
+    else if(*a == '\\')
+      uc = '\\';
+    else if(*a == '/')
+      uc = '/';
+    else if(*a == 'b')
+      uc = '\b';
+    else if(*a == 'f')
+      uc = '\f';
+    else if(*a == 'n')
+      uc = '\n';
+    else if(*a == 'r')
+      uc = '\r';
+    else if(*a == 't')
+      uc = '\t';
+    else if(*a == 'u') {
+      // Unicode character
+      int i;
+
+      a++;
+      for(i = 0; i < 4; i++) {
+        uc = uc << 4;
+        switch(a[i]) {
+        case '0' ... '9':
+          uc |= a[i] - '0';
+          break;
+        case 'a' ... 'f':
+          uc |= a[i] - 'a' + 10;
+          break;
+        case 'A' ... 'F':
+          uc |= a[i] - 'F' + 10;
+          break;
+        default:
+          *failmsg = "Incorrect escape sequence";
+          *failp = a;
+          return -1;
+        }
+      }
+      a+=3;
+    } else {
+      *failmsg = "Incorrect escape sequence";
+      *failp = a;
+      return -1;
+    }
+    bytes_generated += utf8_putp(&out, uc);
+    a++;
+  }
+  *failmsg = "Unepxected end of JSON message";
+  *failp = a;
+  return -1;
+}
+
+
 /**
  * Returns a newly allocated string
  */
@@ -82,103 +178,21 @@ static char *
 json_parse_string(const char *s, const char **endp,
 		  const char **failp, const char **failmsg)
 {
-  const char *start;
-  char *r, *a, *b;
-  int l, esc = 0;
-
   s = skip_ws(s, NULL, NULL, NULL);
 
   if(*s != '"')
     return NOT_THIS_TYPE;
 
   s++;
-  start = s;
 
-  while(1) {
-    if(*s == 0) {
-      *failmsg = "Unexpected end of JSON message";
-      *failp = s;
-      return NULL;
-    }
+  ssize_t out_bytes = parse_string_inner(s, NULL, NULL, failp, failmsg);
+  if(out_bytes < 0)
+    return NULL; // String parsing failed
 
-    if(*s == '\\') {
-      esc = 1;
-
-      // Find string end
-    } else if(*s == '"' && (s[-1] != '\\' ||
-                            (s[-1] == '\\' && s[-2] == '\\'))) {
-
-      *endp = s + 1;
-
-      /* End */
-      l = s - start;
-      r = malloc_add(l, 1);
-      memcpy(r, start, l);
-      r[l] = 0;
-
-      if(esc) {
-	/* Do deescaping inplace */
-
-	a = b = r;
-
-	while(*a) {
-	  if(*a == '\\') {
-	    a++;
-            if(*a == 0) {
-              free(r);
-              *failmsg = "Incorrect escape sequence";
-              *failp = (a - 1 - r) + start;
-              return NULL;
-            } else if(*a == 'b')
-	      *b++ = '\b';
-	    else if(*a == 'f')
-	      *b++ = '\f';
-	    else if(*a == 'n')
-	      *b++ = '\n';
-	    else if(*a == 'r')
-	      *b++ = '\r';
-	    else if(*a == 't')
-	      *b++ = '\t';
-	    else if(*a == 'u') {
-	      // Unicode character
-	      int i, v = 0;
-
-	      a++;
-	      for(i = 0; i < 4; i++) {
-		v = v << 4;
-		switch(a[i]) {
-		case '0' ... '9':
-		  v |= a[i] - '0';
-		  break;
-		case 'a' ... 'f':
-		  v |= a[i] - 'a' + 10;
-		  break;
-		case 'A' ... 'F':
-		  v |= a[i] - 'F' + 10;
-		  break;
-		default:
-		  free(r);
-		  *failmsg = "Incorrect escape sequence";
-		  *failp = (a - r) + start;
-		  return NULL;
-		}
-	      }
-	      a+=3;
-	      b += utf8_put(b, v);
-	    } else {
-	      *b++ = *a;
-	    }
-	    a++;
-	  } else {
-	    *b++ = *a++;
-	  }
-	}
-	*b = 0;
-      }
-      return r;
-    }
-    s++;
-  }
+  char *ret = malloc(out_bytes + 1);
+  ret[out_bytes] = 0;
+  parse_string_inner(s, ret, endp, failp, failmsg);
+  return ret;
 }
 
 
