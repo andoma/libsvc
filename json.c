@@ -103,7 +103,10 @@ json_parse_string(const char *s, const char **endp,
 
     if(*s == '\\') {
       esc = 1;
-    } else if(*s == '"' && s[-1] != '\\') {
+
+      // Find string end
+    } else if(*s == '"' && (s[-1] != '\\' ||
+                            (s[-1] == '\\' && s[-2] == '\\'))) {
 
       *endp = s + 1;
 
@@ -121,7 +124,12 @@ json_parse_string(const char *s, const char **endp,
 	while(*a) {
 	  if(*a == '\\') {
 	    a++;
-	    if(*a == 'b')
+            if(*a == 0) {
+              free(r);
+              *failmsg = "Incorrect escape sequence";
+              *failp = (a - 1 - r) + start;
+              return NULL;
+            } else if(*a == 'b')
 	      *b++ = '\b';
 	    else if(*a == 'f')
 	      *b++ = '\f';
