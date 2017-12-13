@@ -106,8 +106,11 @@ parse_string_inner(const char *a, char *out, const char **endp,
       return bytes_generated;
     }
     if(*a != '\\') {
-      bytes_generated += utf8_putp(&out, *a);
+      if(out) {
+        *out++ = *a;
+      }
       a++;
+      bytes_generated++;
       continue;
     }
 
@@ -162,6 +165,10 @@ parse_string_inner(const char *a, char *out, const char **endp,
       *failp = a;
       return -1;
     }
+
+    if(uc == 0)
+      uc = 0xfffd;
+
     bytes_generated += utf8_putp(&out, uc);
     a++;
   }
