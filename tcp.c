@@ -762,13 +762,13 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
 /**
  *
  */
-static unsigned long
+static unsigned long  __attribute__((unused))
 ssl_tid_fn(void)
 {
   return (unsigned long)pthread_self();
 }
 
-static void
+static void __attribute__((unused))
 ssl_lock_fn(int mode, int n, const char *file, int line)
 {
   if(mode & CRYPTO_LOCK)
