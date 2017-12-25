@@ -1,4 +1,6 @@
 
+PKG_CONFIG ?= pkg-config
+
 libsvc_SRCS += \
 	libsvc.c \
 	misc.c \
@@ -56,8 +58,8 @@ libsvc_INCS += \
 	murmur3.h \
 	mbuf.h \
 
-CFLAGS  += $(shell pkg-config --cflags openssl)
-LDFLAGS += $(shell pkg-config --libs openssl)
+CFLAGS  += $(shell $(PKG_CONFIG) --cflags openssl)
+LDFLAGS += $(shell $(PKG_CONFIG) --libs openssl)
 
 ifeq ($(shell uname),Linux)
 LDFLAGS += -ldl #for trap handler
