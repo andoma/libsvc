@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <stdio.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <inttypes.h>
@@ -69,6 +70,8 @@ void mbuf_append(mbuf_t *m, const void *buf, size_t len);
 void mbuf_append_str(mbuf_t *m, const char *buf);
 
 void mbuf_append_prealloc(mbuf_t *m, void *buf, size_t len);
+
+void mbuf_append_FILE(mbuf_t *m, FILE *fp);
 
 size_t mbuf_read(mbuf_t *m, void *buf, size_t len);
 

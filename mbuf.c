@@ -498,6 +498,23 @@ mbuf_append_and_escape_jsonstr(mbuf_t *mq, const char *str)
 /**
  *
  */
+void
+mbuf_append_FILE(mbuf_t *mq, FILE *fp)
+{
+  char buf[8192];
+
+  while(!feof(fp)) {
+    size_t len = fread(buf, 1, sizeof(buf), fp);
+    if(len == 0)
+      break;
+    mbuf_append(mq, buf, len);
+  }
+}
+
+
+/**
+ *
+ */
 const void *
 mbuf_pullup(mbuf_t *mq, size_t bytes)
 {
