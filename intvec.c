@@ -60,10 +60,12 @@ intvec_search(const intvec_t *vec, int value)
 }
 
 
-void
+int
 intvec_insert_sorted(intvec_t *vec, int value)
 {
-  return intvec_insert(vec, intvec_search(vec, value), value);
+  int position = intvec_search(vec, value);
+  intvec_insert(vec, position, value);
+  return position;
 }
 
 

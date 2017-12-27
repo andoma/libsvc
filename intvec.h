@@ -13,7 +13,7 @@ void intvec_reset(intvec_t *vec);
 
 void intvec_insert(intvec_t *vec, int position, int value);
 
-void intvec_insert_sorted(intvec_t *vec, int value);
+int intvec_insert_sorted(intvec_t *vec, int value);
 
 int intvec_find(const intvec_t *vec, int value);
 
