@@ -97,6 +97,7 @@ typedef struct http_request {
 
 
 
+int http_dispatch_local_request(http_request_t *hr);
 
 void http_arg_flush(struct http_arg_list *list);
 

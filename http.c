@@ -322,13 +322,16 @@ http_req_ver_str(const http_request_t *hr)
 void
 http_log(http_request_t *hr, int status, const char *str)
 {
+  int logua = 0;
   if(hr->hr_route_flags & HTTP_ROUTE_DISABLE_LOG)
     return;
 
-  cfg_root(cr);
-  const http_server_t *hs = hr->hr_connection->hc_server;
+  if(hr->hr_connection != NULL) {
+    cfg_root(cr);
+    const http_server_t *hs = hr->hr_connection->hc_server;
 
-  int logua = cfg_get_int(cr, CFG(hs->hs_config_prefix, "logua"), 0);
+    logua = cfg_get_int(cr, CFG(hs->hs_config_prefix, "logua"), 0);
+  }
 
   int64_t d1 = hr->hr_req_process - hr->hr_req_received;
   int64_t d2 = asyncio_now() - hr->hr_req_process;
@@ -354,6 +357,9 @@ http_log(http_request_t *hr, int status, const char *str)
 int
 http_send_100_continue(http_request_t *hr)
 {
+  if(hr->hr_connection == NULL)
+    return 0;
+
   mbuf_t q;
   mbuf_init(&q);
 
@@ -388,6 +394,9 @@ http_mktime(time_t t, int delta)
 void
 http_send_raw(http_request_t *hr, const void *data, size_t len)
 {
+  if(hr->hr_connection == NULL)
+    return;
+
   asyncio_send(hr->hr_connection->hc_af, data, len, 0);
 }
 
@@ -395,6 +404,9 @@ http_send_raw(http_request_t *hr, const void *data, size_t len)
 int
 http_send_chunk(http_request_t *hr, const void *data, size_t len)
 {
+  if(hr->hr_connection == NULL)
+    return 0;
+
   mbuf_t hq;
   mbuf_init(&hq);
   mbuf_qprintf(&hq, "%zx\r\n", len);
@@ -409,6 +421,8 @@ http_send_chunk(http_request_t *hr, const void *data, size_t len)
 int
 http_wait_send_buffe(http_request_t *hr, int bytes)
 {
+  if(hr->hr_connection == NULL)
+    return 0;
   return asyncio_wait_send_buffer(hr->hr_connection->hc_af, bytes);
 }
 
@@ -450,6 +464,9 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
 		 int maxage, const char *range,
 		 const char *disposition, const char *transfer_encoding)
 {
+  if(hr->hr_connection == NULL)
+    return 0;
+
   mbuf_t hdrs;
   time_t now = time(NULL);
 
@@ -531,6 +548,9 @@ int
 http_send_reply(http_request_t *hr, int rc, const char *content,
 		const char *encoding, const char *location, int maxage)
 {
+  if(hr->hr_connection == NULL)
+    return 0;
+
   const char *rcstr = http_rc2str(rc);
   http_log(hr, rc, rcstr);
 
@@ -564,6 +584,10 @@ http_err(http_request_t *hr, int error, const char *str)
     errtxt = http_rc2str(error);
   }
 
+  http_log(hr, error, errtxt);
+  if(hr->hr_connection == NULL)
+    return error;
+
   mbuf_clear(&hr->hr_reply);
 
   if(error != 304) {
@@ -581,8 +605,6 @@ http_err(http_request_t *hr, int error, const char *str)
 
     mbuf_qprintf(&hr->hr_reply, "</BODY></HTML>\r\n");
   }
-
-  http_log(hr, error, errtxt);
 
   if(http_send_header(hr, error, str, NULL, hr->hr_reply.mq_size,
                       NULL, NULL, 0, 0, NULL, NULL))
@@ -658,7 +680,7 @@ http_redirect(http_request_t *hr, const char *location, int status)
  * the connection and thus they are sent inside here using http_error()
  *
  */
-static void
+static int
 http_resolve(http_request_t *hr)
 {
   int err;
@@ -669,14 +691,16 @@ http_resolve(http_request_t *hr)
     err = http_resolve_path(hr);
 
   if(err)
-    http_error(hr, err);
+    err = http_err(hr, err, NULL);
+
+  return err;
 }
 
 
 /**
  *
  */
-static void
+static int
 http_dispatch_request(http_request_t *hr)
 {
   char *v, *argv[2];
@@ -699,16 +723,20 @@ http_dispatch_request(http_request_t *hr)
   }
 
   http_connection_t *hc = hr->hr_connection;
-  http_server_t *hs = hc->hc_server;
-  if(hs->hs_real_ip_header != NULL) {
-    if((v = http_arg_get(&hr->hr_request_headers,
-                         hs->hs_real_ip_header)) != NULL) {
-      hr->hr_peer_addr = strdup(v);
+  if(hc != NULL) {
+    http_server_t *hs = hc->hc_server;
+    if(hs->hs_real_ip_header != NULL) {
+      if((v = http_arg_get(&hr->hr_request_headers,
+                           hs->hs_real_ip_header)) != NULL) {
+        hr->hr_peer_addr = strdup(v);
+      }
     }
-  }
 
-  if(hr->hr_peer_addr == NULL) {
-    hr->hr_peer_addr = strdup(hc->hc_peer_addr);
+    if(hr->hr_peer_addr == NULL) {
+      hr->hr_peer_addr = strdup(hc->hc_peer_addr);
+    }
+  } else {
+    hr->hr_peer_addr = strdup("0.0.0.0");
   }
 
   if((v = http_arg_get(&hr->hr_request_headers, "Cookie")) != NULL) {
@@ -736,17 +764,16 @@ http_dispatch_request(http_request_t *hr)
   }
 
   // Websocket connection
-  if(hc->hc_ws_path) {
+  if(hc != NULL && hc->hc_ws_path) {
     int err = websocket_response(hr);
     if(err) {
-      http_error(hr, err);
-      return;
+      return http_err(hr, err, NULL);
     }
 
     http_log(hr, 101, hc->hc_z_out ? "Websocket upgrade, per-message-deflate"
              : "Websocket upgrade");
     hr->hr_keep_alive = 2;
-    return;
+    return 0;
   }
 
   // Handle 100-continue stuff
@@ -756,13 +783,13 @@ http_dispatch_request(http_request_t *hr)
 
     if(err == 100) {
       http_send_100_continue(hr);
-      return;
+      return 0;
     }
 
     if(err != 0)
-      http_error(hr, err);
+      err = http_err(hr, err, NULL);
 
-    return;
+    return err;
   }
 
   // Handle POST/PUT payload
@@ -770,14 +797,12 @@ http_dispatch_request(http_request_t *hr)
     /* Parse content-type */
     v = http_arg_get(&hr->hr_request_headers, "Content-Type");
     if(v == NULL) {
-      http_err(hr, HTTP_STATUS_BAD_REQUEST, "No Content-Type");
-      return;
+      return http_err(hr, HTTP_STATUS_BAD_REQUEST, "No Content-Type");
     }
     v = mystrdupa(v);
     n = str_tokenize(v, argv, 2, ';');
     if(n == 0) {
-      http_err(hr, HTTP_STATUS_BAD_REQUEST, "Malformed Content-Type");
-      return;
+      return http_err(hr, HTTP_STATUS_BAD_REQUEST, "Malformed Content-Type");
     }
 
     assert(hr->hr_post_message == NULL);
@@ -787,12 +812,11 @@ http_dispatch_request(http_request_t *hr)
       hr->hr_post_message = ntv_json_deserialize(hr->hr_body,
                                                  errbuf, sizeof(errbuf));
       if(hr->hr_post_message == NULL) {
-        http_err(hr, HTTP_STATUS_BAD_REQUEST, errbuf);
-        return;
+        return http_err(hr, HTTP_STATUS_BAD_REQUEST, errbuf);
       }
     }
   }
-  http_resolve(hr);
+  return http_resolve(hr);
 }
 
 
@@ -827,16 +851,18 @@ http_request_destroy(http_request_t *hr)
 
   http_connection_t *hc = hr->hr_connection;
 
-  switch(hr->hr_keep_alive) {
-  case 0:
-    asyncio_shutdown(hc->hc_af);
-    // FALLTHRU. We need to reenable so we can catch when the socket closes
-  case 1:
-    asyncio_run_task(http_connection_reenable, hc);
-    break;
-  case 2: // Websocket
-    http_connection_release(hc);
-    break;
+  if(hc != NULL) {
+    switch(hr->hr_keep_alive) {
+    case 0:
+      asyncio_shutdown(hc->hc_af);
+      // FALLTHRU. We need to reenable so we can catch when the socket closes
+    case 1:
+      asyncio_run_task(http_connection_reenable, hc);
+      break;
+    case 2: // Websocket
+      http_connection_release(hc);
+      break;
+    }
   }
   mbuf_clear(&hr->hr_reply);
   free(hr);
@@ -858,6 +884,14 @@ http_dispatch_request_task(void *aux)
 }
 
 
+int
+http_dispatch_local_request(http_request_t *hr)
+{
+  hr->hr_req_process = asyncio_now();
+  int retcode = http_dispatch_request(hr);
+  http_request_destroy(hr);
+  return retcode;
+}
 
 
 
