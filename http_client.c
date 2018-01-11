@@ -375,6 +375,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       if((hcr->hcr_json_result =
           ntv_json_deserialize(hcr->hcr_body, e, sizeof(e))) == NULL) {
 
+        hcr->hcr_malformed_json = 1;
+
         err_push(err, "%s", e);
 
         if(errbuf != NULL)
