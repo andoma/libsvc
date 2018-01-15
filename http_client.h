@@ -21,6 +21,8 @@ typedef struct http_client_response {
 
   char hcr_errbuf[32];
 
+  char *hcr_primary_ip;
+
 } http_client_response_t;
 
 typedef const char *(http_client_auth_cb_t)(void *opaque, int http_status);

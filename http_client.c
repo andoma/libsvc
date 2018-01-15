@@ -353,6 +353,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   hcr->hcr_http_status = long_http_code;
 
   hcr->hcr_transport_status = "OK";
+  char *primary_ip = NULL;
+  if(!curl_easy_getinfo(curl, CURLINFO_PRIMARY_IP, &primary_ip)) {
+    hcr->hcr_primary_ip = strdup(primary_ip);
+  }
 
   int rval = 0;
   if(result) {
@@ -404,6 +408,7 @@ http_client_response_free(http_client_response_t *hcr)
   ntv_release(hcr->hcr_json_result);
   ntv_release(hcr->hcr_headers);
   ntv_release(hcr->hcr_headers_listified);
+  free(hcr->hcr_primary_ip);
   free(hcr->hcr_body);
   memset(hcr, 0, sizeof(http_client_response_t));
 }
