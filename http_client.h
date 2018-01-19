@@ -17,6 +17,8 @@ typedef struct http_client_response {
 
   int hcr_malformed_json;
 
+  int hcr_local_error;
+
   const char *hcr_transport_status;
 
   char hcr_errbuf[32];

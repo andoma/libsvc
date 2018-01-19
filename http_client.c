@@ -370,6 +370,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       snprintf(errbuf, errsize, "%s", curl_easy_strerror(result));
       hcr->hcr_transport_status = curl_easy_strerror(result);
       err_push(err, "%s", curl_easy_strerror(result));
+      hcr->hcr_local_error = 1;
     }
     rval = 1;
   } else if(memfile) {
