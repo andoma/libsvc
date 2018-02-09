@@ -34,13 +34,13 @@ atomic_dec(atomic_t *a)
 static inline int
 atomic_get(const atomic_t *a)
 {
-  return (*(volatile int *)&(a)->v);
+  return __atomic_load_n(&a->v, __ATOMIC_SEQ_CST);
 }
 
-static inline int
+static inline void
 atomic_set(atomic_t *a, int v)
 {
-  return a->v = v;
+  __atomic_store_n(&a->v, v, __ATOMIC_SEQ_CST);
 }
 
 static inline int
