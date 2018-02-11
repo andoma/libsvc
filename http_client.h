@@ -27,7 +27,8 @@ typedef struct http_client_response {
 
 } http_client_response_t;
 
-typedef const char *(http_client_auth_cb_t)(void *opaque, int http_status);
+typedef const char *(http_client_auth_cb_t)(void *opaque, int http_status,
+                                            const char *authenticate_header);
 
 
 enum {

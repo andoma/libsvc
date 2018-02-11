@@ -33,6 +33,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <ctype.h>
 
 #include <curl/curl.h>
 
@@ -127,7 +128,10 @@ hdrfunc(void *ptr, size_t size, size_t nmemb, void *userdata)
   if((c = strrchr(argv[0], ':')) == NULL)
     return len;
   *c = 0;
-
+  char *name = argv[0];
+  for(int i = 0; name[i]; i++) {
+    name[i] = tolower(name[i]);
+  }
   ntv_set_str(hcr->hcr_headers, argv[0], argv[1]);
   return len;
 }
@@ -159,6 +163,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   struct curl_slist *slist = NULL;
 
   FILE *sendf = NULL;
+  scoped_char *www_authenticate_header = NULL;
 
   http_client_auth_cb_t *auth_cb = NULL;
   void *auth_opaque = NULL;
@@ -314,7 +319,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   if(auth_cb) {
     set_handle(NULL);
-    const char *auth = auth_cb(auth_opaque, auth_retry_code);
+    const char *auth = auth_cb(auth_opaque, auth_retry_code,
+                               www_authenticate_header);
     set_handle(curl);
     if(auth)
       slist = append_header(slist, "Authorization", auth);
@@ -345,6 +351,9 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   if(long_http_code == 401 && auth_cb && auth_retry_code == 0) {
     auth_retry_code = 401;
+    strset(&www_authenticate_header,
+           ntv_get_str(hcr->hcr_headers, "www-authenticate"));
+
     http_client_response_free(hcr);
     curl_easy_reset(curl);
     outfile = NULL;
@@ -361,19 +370,21 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   int rval = 0;
   if(result) {
-    if(result == CURLE_HTTP_RETURNED_ERROR) {
-      snprintf(errbuf, errsize, "HTTP Error %lu", long_http_code);
-      snprintf(hcr->hcr_errbuf, sizeof(hcr->hcr_errbuf), "HTTP Error %lu",
-               long_http_code);
-      hcr->hcr_transport_status = hcr->hcr_errbuf;
-      err_push(err, "HTTP Error %lu", long_http_code);
-    } else {
-      snprintf(errbuf, errsize, "%s", curl_easy_strerror(result));
-      hcr->hcr_transport_status = curl_easy_strerror(result);
-      err_push(err, "%s", curl_easy_strerror(result));
-      hcr->hcr_local_error = 1;
-    }
+    snprintf(errbuf, errsize, "%s", curl_easy_strerror(result));
+    hcr->hcr_transport_status = curl_easy_strerror(result);
+    err_push(err, "%s", curl_easy_strerror(result));
+    hcr->hcr_local_error = 1;
     rval = 1;
+  } else if(!(flags & HCR_NO_FAIL_ON_ERROR) &&
+            long_http_code >= 400) {
+
+    snprintf(errbuf, errsize, "HTTP Error %lu", long_http_code);
+    snprintf(hcr->hcr_errbuf, sizeof(hcr->hcr_errbuf), "HTTP Error %lu",
+             long_http_code);
+    hcr->hcr_transport_status = hcr->hcr_errbuf;
+    err_push(err, "HTTP Error %lu", long_http_code);
+    rval = 1;
+
   } else if(memfile) {
     rval = 0;
     if(flags & HCR_DECODE_BODY_AS_JSON) {
