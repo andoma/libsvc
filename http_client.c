@@ -347,6 +347,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     auth_retry_code = 401;
     http_client_response_free(hcr);
     curl_easy_reset(curl);
+    outfile = NULL;
     goto retry;
   }
 
