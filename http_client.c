@@ -279,6 +279,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       outfile = va_arg(ap, FILE *);
       break;
 
+    case HCR_TAG_CURL_HANDLEPTR:
+      *va_arg(ap, CURL **) = curl;
+      break;
+
     default:
       abort();
     }
@@ -573,6 +577,12 @@ typedef struct http_streamed_file {
   int hsf_written;
   int hsf_read;
 
+  http_client_auth_cb_t *hsf_auth_cb;
+  void *hsf_opaque;
+  int hsf_flags;
+
+  CURL *hsf_curl;
+
 } http_streamed_file_t;
 
 
@@ -580,6 +590,12 @@ static int
 hsf_write(void *aux, const char *data, int size)
 {
   http_streamed_file_t *hsf = aux;
+
+  long long_http_code = 0;
+  curl_easy_getinfo(hsf->hsf_curl, CURLINFO_RESPONSE_CODE, &long_http_code);
+  if(long_http_code >= 400)
+    return size;
+
   pthread_mutex_lock(&hsf->hsf_mutex);
   while(hsf->hsf_buffer.mq_size > hsf->hsf_need && hsf->hsf_open)
     pthread_cond_wait(&hsf->hsf_cond, &hsf->hsf_mutex);
@@ -623,7 +639,9 @@ http_stream_file_thread(void *aux)
     http_client_request(&hcr, hsf->hsf_url,
                         HCR_OUTPUTFILE(fp),
                         HCR_ERRBUF(hsf->hsf_errmsg, sizeof(hsf->hsf_errmsg)),
-                        HCR_FLAGS(HCR_ACCEPT_GZIP),
+                        HCR_FLAGS(hsf->hsf_flags),
+                        HCR_AUTHCB(hsf->hsf_auth_cb, hsf->hsf_opaque),
+                        HCR_TAG_CURL_HANDLEPTR, &hsf->hsf_curl,
                         NULL);
 
   pthread_mutex_lock(&hsf->hsf_mutex);
@@ -641,7 +659,6 @@ static int
 hsf_read(void *aux, char *data, int size)
 {
   http_streamed_file_t *hsf = aux;
-  //  printf("want %d\n", size);
   pthread_mutex_lock(&hsf->hsf_mutex);
 
   hsf->hsf_need = MIN(size, 65536);
@@ -696,10 +713,14 @@ static cookie_io_functions_t hsf_read_functions = {
  *
  */
 FILE *
-http_stream_file(const char *url)
+http_stream_file(const char *url, void *opaque,
+                 http_client_auth_cb_t *auth_cb, int flags)
 {
   http_streamed_file_t *hsf = calloc(1, sizeof(http_streamed_file_t));
   hsf->hsf_url = strdup(url);
+  hsf->hsf_opaque = opaque;
+  hsf->hsf_auth_cb = auth_cb;
+  hsf->hsf_flags = flags;
 
   pthread_mutex_init(&hsf->hsf_mutex, NULL);
   pthread_cond_init(&hsf->hsf_cond, NULL);

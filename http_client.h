@@ -47,6 +47,7 @@ enum {
   HCR_TAG_VERB,
   HCR_TAG_USERNPASS,
   HCR_TAG_OUTPUTFILE,
+  HCR_TAG_CURL_HANDLEPTR,
 };
 
 
@@ -82,4 +83,5 @@ void http_client_response_free(http_client_response_t *hcr);
 
 FILE *http_open_file(const char *url);
 
-FILE *http_stream_file(const char *url);
+FILE *http_stream_file(const char *url, void *opaque,
+                       http_client_auth_cb_t *auth_cb, int flags);
