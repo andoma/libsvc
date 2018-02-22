@@ -306,9 +306,6 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   if(flags & HCR_DECODE_BODY_AS_JSON)
     slist = append_header(slist, "Accept", "application/json");
 
-  if(!(flags & HCR_NO_FAIL_ON_ERROR))
-    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-
   if(flags & HCR_VERBOSE)
     curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
