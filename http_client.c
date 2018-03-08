@@ -235,6 +235,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       curl_easy_setopt(curl, CURLOPT_READDATA, sendf);
       curl_easy_setopt(curl, CURLOPT_SEEKDATA, sendf);
       curl_easy_setopt(curl, CURLOPT_POST, 1L);
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, putdatasize);
       break;
     }
 
