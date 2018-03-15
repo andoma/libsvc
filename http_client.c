@@ -228,6 +228,11 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
     case HCR_TAG_POSTDATA: {
       void *data = va_arg(ap, void *);
+      if(data == NULL) {
+        (void)va_arg(ap, size_t);
+        (void)va_arg(ap, const char *);
+        break;
+      }
       curl_off_t putdatasize = va_arg(ap, size_t);
       sendf = open_buffer_read(data, putdatasize);
       slist = append_header(slist, "Content-Type", va_arg(ap, const char *));
