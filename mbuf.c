@@ -469,7 +469,7 @@ mbuf_append_and_escape_jsonstr(mbuf_t *mq, const char *str)
   mbuf_append(mq, "\"", 1);
 
   while(*s != 0) {
-    if(*s == '"' || *s == '/' || *s == '\\' || *s == '\n' || *s == '\r' || *s == '\t') {
+    if(*s == '"' || *s == '/' || *s == '\\' || *s < 32) {
       mbuf_append(mq, str, s - str);
 
       if(*s == '"')
@@ -482,8 +482,13 @@ mbuf_append_and_escape_jsonstr(mbuf_t *mq, const char *str)
 	mbuf_append(mq, "\\r", 2);
       else if(*s == '\t')
 	mbuf_append(mq, "\\t", 2);
-      else
-	mbuf_append(mq, "\\\\", 2);
+      else if(*s == '\\')
+        mbuf_append(mq, "\\\\", 2);
+      else {
+        char tmp[8];
+        snprintf(tmp, sizeof(tmp), "\\u%04x", *s);
+        mbuf_append_str(mq, tmp);
+      }
       s++;
       str = s;
     } else {
