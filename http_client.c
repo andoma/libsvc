@@ -48,7 +48,9 @@
 #include "mbuf.h"
 #include "err.h"
 
-static pthread_key_t http_client_key;
+
+static pthread_mutex_t curl_pool_mutex = PTHREAD_MUTEX_INITIALIZER;
+static CURL *curl_pool;  // A "pool" of one is also a pool
 
 /**
  *
@@ -56,26 +58,28 @@ static pthread_key_t http_client_key;
 static CURL *
 get_handle(void)
 {
-  CURL *curl = pthread_getspecific(http_client_key);
-  if(curl == NULL) {
-    curl = curl_easy_init();
-    pthread_setspecific(http_client_key, curl);
+  CURL *c;
+  pthread_mutex_lock(&curl_pool_mutex);
+  if(curl_pool != NULL) {
+    c = curl_pool;
+    curl_pool = NULL;
+  } else {
+    c = curl_easy_init();
   }
-  return curl;
+  pthread_mutex_unlock(&curl_pool_mutex);
+  return c;
 }
 
 
 static void
-set_handle(CURL *c)
+put_handle(CURL *c)
 {
-  if(c != NULL) {
-    CURL *curl = pthread_getspecific(http_client_key);
-    if(curl != NULL) {
-      curl_easy_cleanup(curl);
-    }
+  pthread_mutex_lock(&curl_pool_mutex);
+  if(curl_pool != NULL) {
+    curl_easy_cleanup(curl_pool);
   }
-
-  pthread_setspecific(http_client_key, c);
+  curl_pool = c;
+  pthread_mutex_unlock(&curl_pool_mutex);
 }
 
 
@@ -168,6 +172,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   http_client_auth_cb_t *auth_cb = NULL;
   void *auth_opaque = NULL;
   FILE *outfile = NULL;
+  FILE *infile = NULL;
   va_list apx, ap;
   int memfile = 0;
   va_start(apx, url);
@@ -208,12 +213,18 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     case HCR_TAG_HEADER: {
       const char *a = va_arg(ap, const char *);
       const char *b = va_arg(ap, const char *);
-      slist = append_header(slist, a, b);
+      if(a != NULL && b != NULL)
+        slist = append_header(slist, a, b);
       break;
     }
 
     case HCR_TAG_PUTDATA: {
       void *data = va_arg(ap, void *);
+      if(data == NULL) {
+        (void)va_arg(ap, size_t);
+        (void)va_arg(ap, const char *);
+        break;
+      }
       curl_off_t putdatasize = va_arg(ap, size_t);
       sendf = open_buffer_read(data, putdatasize);
       slist = append_header(slist, "Content-Type", va_arg(ap, const char *));
@@ -225,7 +236,6 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, putdatasize);
       break;
     }
-
     case HCR_TAG_POSTDATA: {
       void *data = va_arg(ap, void *);
       if(data == NULL) {
@@ -255,10 +265,12 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     }
 
     case HCR_TAG_POSTARGS: {
-      char *str = ntv_to_args(va_arg(ap, const ntv_t *));
-      curl_easy_setopt(curl, CURLOPT_POST, 1L);
-      curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, str);
-      free(str);
+      const ntv_t *args = va_arg(ap, const ntv_t *);
+      if(args != NULL) {
+        scoped_char *str = ntv_to_args(args);
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, str);
+      }
       break;
     }
 
@@ -271,9 +283,29 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       break;
     }
 
-    case HCR_TAG_VERB:
-      curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, va_arg(ap, const char *));
+    case HCR_TAG_POSTFILE: {
+      infile = va_arg(ap, FILE *);
+      if(infile == NULL) {
+        (void)va_arg(ap, const char *);
+        break;
+      }
+      curl_easy_setopt(curl, CURLOPT_POST, 1L);
+      curl_easy_setopt(curl, CURLOPT_READDATA, infile);
+      curl_easy_setopt(curl, CURLOPT_SEEKDATA, infile);
+
+      const char *ct = va_arg(ap, const char *);
+      slist = append_header(slist, "Content-Type", ct);
+      slist = curl_slist_append(slist, "Transfer-Encoding: chunked");
       break;
+    }
+
+    case HCR_TAG_VERB: {
+      const char *verb = va_arg(ap, const char *);
+      if(verb != NULL) {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, verb);
+      }
+      break;
+    }
 
     case HCR_TAG_USERNPASS:
       curl_easy_setopt(curl, CURLOPT_USERNAME, va_arg(ap, const char *));
@@ -325,10 +357,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, NULL);
 
   if(auth_cb) {
-    set_handle(NULL);
     const char *auth = auth_cb(auth_opaque, auth_retry_code,
                                www_authenticate_header);
-    set_handle(curl);
     if(auth)
       slist = append_header(slist, "Authorization", auth);
   }
@@ -416,7 +446,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   }
 
   curl_easy_reset(curl);
-
+  put_handle(curl);
   va_end(apx);
 
   return rval;
@@ -437,6 +467,7 @@ http_client_response_free(http_client_response_t *hcr)
 typedef struct http_client_file {
   char *url;
   int64_t fpos;
+  void *hcf_buf;
 } http_client_file_t;
 
 
@@ -476,6 +507,7 @@ static int
 hof_close(void *fh)
 {
   http_client_file_t *hcf = fh;
+  free(hcf->hcf_buf);
   free(hcf->url);
   free(hcf);
   return 0;
@@ -556,7 +588,9 @@ http_open_file(const char *url)
   fp = fopencookie(hcf, "rb", hof_functions);
 #endif
   if(fp != NULL) {
-    setvbuf(fp, NULL, _IOFBF, 65536);
+    size_t buffer_size = 65536;
+    hcf->hcf_buf = malloc(buffer_size);
+    setvbuf(fp, hcf->hcf_buf, _IOFBF, 65536);
   }
   return fp;
 }
@@ -665,7 +699,6 @@ hsf_read(void *aux, char *data, int size)
 {
   http_streamed_file_t *hsf = aux;
   pthread_mutex_lock(&hsf->hsf_mutex);
-
   hsf->hsf_need = MIN(size, 65536);
   while(!hsf->hsf_eof && hsf->hsf_buffer.mq_size < hsf->hsf_need) {
     pthread_cond_wait(&hsf->hsf_cond, &hsf->hsf_mutex);
@@ -743,25 +776,3 @@ http_stream_file(const char *url, void *opaque,
   pthread_create(&hsf->hsf_thread, NULL, http_stream_file_thread, hsf);
   return fp;
 }
-
-/**
- *
- */
-static void
-http_client_thread_cleanup(void *aux)
-{
-  curl_easy_cleanup(aux);
-}
-
-
-/**
- *
- */
-static void __attribute__((constructor))
-http_client_init(void)
-{
-  pthread_key_create(&http_client_key, http_client_thread_cleanup);
-}
-
-
-

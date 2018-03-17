@@ -48,6 +48,7 @@ enum {
   HCR_TAG_USERNPASS,
   HCR_TAG_OUTPUTFILE,
   HCR_TAG_CURL_HANDLEPTR,
+  HCR_TAG_POSTFILE,
 };
 
 
@@ -67,6 +68,7 @@ enum {
 #define HCR_POSTFIELDS(data, len) HCR_TAG_POSTFIELDS, data, (size_t)(len)
 #define HCR_POSTJSON(ntv) HCR_TAG_POSTJSON, ntv
 #define HCR_POSTARGS(ntv) HCR_TAG_POSTARGS, ntv
+#define HCR_POSTFILE(file, ct)  HCR_TAG_POSTFILE, file, ct
 #define HCR_AUTHCB(cb, opaque) HCR_TAG_AUTHCB, cb, opaque
 #define HCR_VERB(v) HCR_TAG_VERB, v
 #define HCR_USERNPASS(a, b) HCR_TAG_USERNPASS, a, b
