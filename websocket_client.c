@@ -218,7 +218,7 @@ static void *
 wsc_thread(void *aux)
 {
   ws_client_t *wsc = aux;
-
+  char errmsg[512];
   struct pollfd fds[2];
 
   fds[0].fd = wsc->wsc_pipe[0];
@@ -232,10 +232,11 @@ wsc_thread(void *aux)
 
     tcp_prepare_poll(wsc->wsc_ts, &fds[1]);
     int r = poll(fds, 2, 30000);
-
     if(r == 0) {
-      if(wsc->wsc_pending_ping)
+      if(wsc->wsc_pending_ping) {
+        snprintf(errmsg, sizeof(errmsg), "Ping timeout");
         break;
+      }
 
       wsc_send_ping(wsc);
       continue;
@@ -244,32 +245,45 @@ wsc_thread(void *aux)
     if(r == -1) {
       if(errno == EINTR)
         continue;
+      snprintf(errmsg, sizeof(errmsg), "Poll error: %s", strerror(errno));
       break;
     }
 
     if(fds[0].revents & (POLLERR | POLLHUP)) {
       // Pipe closed, bye bye
+      snprintf(errmsg, sizeof(errmsg), "Write pipe closed");
       break;
     }
 
     if(fds[0].revents & POLLIN) {
       char c;
-      if(read(wsc->wsc_pipe[0], &c, 1) != 1)
+      if(read(wsc->wsc_pipe[0], &c, 1) != 1) {
+        snprintf(errmsg, sizeof(errmsg), "Write pipe read failed");
         break;
-
+      }
       // Pipe input, something to send. We transfer from sendq to tcp_stream every
       // poll round using wsc_sendq() so there's nothing special to do here.
     }
 
-    if(fds[1].revents & (POLLERR | POLLHUP)) {
-      // websocket connection closed, bye bye
+    if(fds[1].revents & POLLHUP) {
+      snprintf(errmsg, sizeof(errmsg), "Connection closed");
+      break;
+    }
+    if(fds[1].revents & POLLERR) {
+      int error = 0;
+      socklen_t errlen = sizeof(error);
+      getsockopt(fds[1].fd, SOL_SOCKET, SO_ERROR, (void *)&error, &errlen);
+      snprintf(errmsg, sizeof(errmsg),
+               "Connection failed: %s", strerror(error));
       break;
     }
 
     if(tcp_can_read(wsc->wsc_ts, &fds[1])) {
       htsbuf_queue_t *hq = tcp_read_buffered(wsc->wsc_ts);
-      if(hq == NULL)
-        break; // Read error
+      if(hq == NULL) {
+        snprintf(errmsg, sizeof(errmsg), "Read error");
+        break;
+      }
       wsc_read(wsc, hq);
     }
   }
@@ -278,7 +292,7 @@ wsc_thread(void *aux)
   wsc->wsc_zombie = 1;
   pthread_mutex_unlock(&wsc->wsc_sendq_mutex);
 
-  wsc->wsc_input(wsc->wsc_aux, 0, NULL, 0);
+  wsc->wsc_input(wsc->wsc_aux, 0, errmsg, strlen(errmsg));
 
   close(wsc->wsc_pipe[0]);
   tcp_close(wsc->wsc_ts);
