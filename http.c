@@ -2147,11 +2147,14 @@ websocket_send_close(struct http_connection *hc, int code,
 
 
 /**
- *
+ * RFC 5.5.1
  */
 static void
 websocket_close(http_connection_t *hc, const uint8_t *data, int len)
 {
+  // Echo back close
+  websocket_send(hc, WS_OPCODE_CLOSE, data, len);
+
   int close_code = WS_STATUS_NORMAL_CLOSE;
   char *msg = NULL;
   if(len >= 2) {
@@ -2185,7 +2188,7 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
     return 0;
 
   case WS_OPCODE_PING:
-    websocket_send(hc, 10, *data, len);
+    websocket_send(hc, WS_OPCODE_PONG, *data, len);
     return 0;
 
   case WS_OPCODE_PONG:
