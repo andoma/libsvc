@@ -569,3 +569,24 @@ mbuf_hexdump(const char *prefix, mbuf_t *mq)
             md->md_data_len - md->md_data_off);
   }
 }
+
+void
+mbuf_append_u8(mbuf_t *m, uint8_t u8)
+{
+  mbuf_append(m, &u8, 1);
+}
+
+void
+mbuf_append_u16_be(mbuf_t *m, uint16_t u16)
+{
+  uint8_t data[2] = {u16 >> 8, u16};
+  mbuf_append(m, data, sizeof(data));
+}
+
+void
+mbuf_append_u32_be(mbuf_t *m, uint16_t u32)
+{
+  uint8_t data[4] = {u32 >> 24, u32 >> 16, u32 >> 8, u32};
+  mbuf_append(m, data, sizeof(data));
+
+}

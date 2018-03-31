@@ -93,6 +93,12 @@ void mbuf_append_and_escape_url(mbuf_t *m, const char *s);
 
 void mbuf_append_and_escape_jsonstr(mbuf_t *m, const char *s);
 
+void mbuf_append_u8(mbuf_t *m, uint8_t u8);
+
+void mbuf_append_u16_be(mbuf_t *m, uint16_t u16);
+
+void mbuf_append_u32_be(mbuf_t *m, uint16_t u32);
+
 void mbuf_dump_raw_stderr(mbuf_t *m);
 
 void mbuf_hexdump(const char *prefix, mbuf_t *mq);
