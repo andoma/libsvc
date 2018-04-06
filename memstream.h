@@ -27,4 +27,4 @@
 
 FILE *open_buffer(char **out, size_t *outlen);
 
-FILE *open_buffer_read(void *buf, size_t len);
+FILE *open_buffer_read(const void *buf, size_t len);

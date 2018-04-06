@@ -21,6 +21,8 @@
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,12 +35,6 @@ FILE *
 open_buffer(char **out, size_t *outlen)
 {
   return open_memstream(out, outlen);
-}
-
-FILE *
-open_buffer_read(void *buf, size_t len)
-{
-  return fmemopen(buf, len, "rb");
 }
 
 #else
@@ -90,12 +86,16 @@ open_buffer(char **out, size_t *outlen)
   return funopen(bh, NULL, buf_write, NULL, buf_close);
 }
 
+#endif
+
 
 typedef struct readhelper {
-  char *data;
+  const char *data;
   size_t size;
   off_t pos;
 } readhelper_t;
+
+#ifdef __APPLE__
 
 /**
  *
@@ -135,16 +135,66 @@ buf_seek(void *aux, fpos_t offset, int whence)
   return rh->pos;
 }
 
+#else
+
+static ssize_t
+buf_read(void *fh, char *data, size_t len)
+{
+  readhelper_t *rh = fh;
+
+  if(rh->pos + len > rh->size)
+    len = rh->size - rh->pos;
+
+  memcpy(data, rh->data + rh->pos, len);
+  rh->pos += len;
+  return len;
+}
+
+
+/**
+ *
+ */
+static int
+buf_seek(void *fh, off64_t *offsetp, int whence)
+{
+  readhelper_t *rh = fh;
+  switch(whence) {
+  case SEEK_SET:
+    rh->pos = *offsetp;
+    break;
+  case SEEK_CUR:
+    rh->pos += *offsetp;
+    break;
+  case SEEK_END:
+    rh->pos = rh->size + *offsetp;
+    return -1;
+  }
+  *offsetp = rh->pos;
+  return 0;
+}
+
+
+
+static cookie_io_functions_t read_functions = {
+  .read  = buf_read,
+  .seek  = buf_seek,
+};
+
+
+#endif
 
 FILE *
-open_buffer_read(void *buf, size_t len)
+open_buffer_read(const void *buf, size_t len)
 {
   readhelper_t *rh = malloc(sizeof(readhelper_t));
   rh->data = buf;
   rh->size = len;
   rh->pos = 0;
+#ifdef __APPLE__
   return funopen(rh, buf_read, NULL, buf_seek, buf_close);
+#else
+  return fopencookie(rh, "rb", read_functions);
+#endif
 }
 
 
-#endif
