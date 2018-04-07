@@ -112,6 +112,24 @@ mbuf_append(mbuf_t *mq, const void *buf, size_t len)
 }
 
 
+/**
+ *
+ */
+void
+mbuf_prepend(mbuf_t *mq, const void *buf, size_t len)
+{
+  mbuf_data_t *md = malloc(sizeof(mbuf_data_t));
+  mq->mq_size += len;
+
+  TAILQ_INSERT_HEAD(&mq->mq_buffers, md, md_link);
+  md->md_data = malloc(len);
+  md->md_data_size = len;
+  md->md_data_len = len;
+  md->md_data_off = 0;
+  memcpy(md->md_data, buf, len);
+}
+
+
 void
 mbuf_append_str(mbuf_t *m, const char *str)
 {
@@ -350,6 +368,24 @@ mbuf_appendq(mbuf_t *mq, mbuf_t *src)
   while((md = TAILQ_FIRST(&src->mq_buffers)) != NULL) {
     TAILQ_REMOVE(&src->mq_buffers, md, md_link);
     TAILQ_INSERT_TAIL(&mq->mq_buffers, md, md_link);
+  }
+}
+
+
+/**
+ *
+ */
+void
+mbuf_prependq(mbuf_t *mq, mbuf_t *src)
+{
+  mbuf_data_t *md;
+
+  mq->mq_size += src->mq_size;
+  src->mq_size = 0;
+
+  while((md = TAILQ_LAST(&mq->mq_buffers, mbuf_data_queue)) != NULL) {
+    TAILQ_REMOVE(&src->mq_buffers, md, md_link);
+    TAILQ_INSERT_HEAD(&mq->mq_buffers, md, md_link);
   }
 }
 

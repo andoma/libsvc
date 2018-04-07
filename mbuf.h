@@ -73,6 +73,8 @@ void mbuf_append_prealloc(mbuf_t *m, void *buf, size_t len);
 
 void mbuf_append_FILE(mbuf_t *m, FILE *fp);
 
+void mbuf_prepend(mbuf_t *m, const void *buf, size_t len);
+
 size_t mbuf_read(mbuf_t *m, void *buf, size_t len);
 
 size_t mbuf_peek(mbuf_t *m, void *buf, size_t len);
@@ -86,6 +88,8 @@ size_t mbuf_drop_tail(mbuf_t *mq, size_t len);
 int mbuf_find(mbuf_t *m, uint8_t v);
 
 void mbuf_appendq(mbuf_t *m, mbuf_t *src);
+
+void mbuf_prependq(mbuf_t *mq, mbuf_t *src);
 
 void mbuf_append_and_escape_xml(mbuf_t *m, const char *str);
 
