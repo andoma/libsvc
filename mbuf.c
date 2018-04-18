@@ -620,7 +620,7 @@ mbuf_append_u16_be(mbuf_t *m, uint16_t u16)
 }
 
 void
-mbuf_append_u32_be(mbuf_t *m, uint16_t u32)
+mbuf_append_u32_be(mbuf_t *m, uint32_t u32)
 {
   uint8_t data[4] = {u32 >> 24, u32 >> 16, u32 >> 8, u32};
   mbuf_append(m, data, sizeof(data));
