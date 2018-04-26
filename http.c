@@ -113,6 +113,7 @@ typedef struct http_connection {
   websocket_state_t hc_ws_state;
   void *hc_ws_opaque;
   int hc_ws_pong_wait;
+  int hc_ws_close_sent; // Avoid sending close twice
 
   struct http_arg_list hc_request_headers;
 
@@ -2135,6 +2136,9 @@ void
 websocket_send_close(struct http_connection *hc, int code,
                      const char *reason)
 {
+  if(hc->hc_ws_close_sent)
+    return;
+  hc->hc_ws_close_sent = 1;
   mbuf_t hq;
   mbuf_init(&hq);
   uint16_t code16 = htons(code);
@@ -2142,7 +2146,7 @@ websocket_send_close(struct http_connection *hc, int code,
   if(reason)
     mbuf_append(&hq, reason, strlen(reason));
 
-  websocket_sendq(hc, 8, &hq);
+  websocket_sendq(hc, WS_OPCODE_CLOSE, &hq);
 }
 
 
@@ -2152,8 +2156,11 @@ websocket_send_close(struct http_connection *hc, int code,
 static void
 websocket_close(http_connection_t *hc, const uint8_t *data, int len)
 {
-  // Echo back close
-  websocket_send(hc, WS_OPCODE_CLOSE, data, len);
+  if(!hc->hc_ws_close_sent) {
+    // Echo back close
+    websocket_send(hc, WS_OPCODE_CLOSE, data, len);
+    hc->hc_ws_close_sent = 1;
+  }
 
   int close_code = WS_STATUS_NORMAL_CLOSE;
   char *msg = NULL;
