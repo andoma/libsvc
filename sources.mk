@@ -78,8 +78,8 @@ LDFLAGS += -lcurl -lz -liconv
 endif
 
 ifeq ($(shell uname),Linux)
-CFLAGS  += $(shell pkg-config --cflags libcurl)
-LDFLAGS += $(shell pkg-config --libs libcurl)
+CFLAGS  += $(shell $(PKG_CONFIG) --cflags libcurl)
+LDFLAGS += $(shell $(PKG_CONFIG) --libs libcurl)
 endif
 
 libsvc_SRCS += urlshorten.c
