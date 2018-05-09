@@ -8,6 +8,7 @@
 #define _GNU_SOURCE
 #include <link.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
 #include <signal.h>
 #include <ucontext.h>
@@ -23,53 +24,66 @@
 #include <sys/prctl.h>
 #include <fcntl.h>
 
+#include "strvec.h"
 #include "trace.h"
+#include "misc.h"
 
 #define MAXFRAMES 100
 
 
-static char trap_line[1024];
-static char libs[4096];
+static char *trap_header;
+static char *trap_libs;
+static int trap_output_fd;
 
 
+static void
+emit_str(const char *str)
+{
+  if(write(trap_output_fd, str, strlen(str))) {}
+}
 
-#define TRAPMSG(fmt, ...) trace(LOG_ALERT, fmt, ##__VA_ARGS__)
 
+static void
+emit_hex(uint64_t u64, int bytes)
+{
+  char str[16];
+  if(bytes > 8)
+    return;
+  emit_str("0x");
+  const int nibbles = bytes * 2;
+  int x = 0;
+  for(int i = nibbles - 1; i >= 0; i--) {
+    str[x++] = "0123456789abcdef"[(u64 >> (i * 4)) & 0xf];
+  }
+  if(write(trap_output_fd, str, nibbles)) {}
+}
 
 /**
  *
  */
 static void
-addr2text(char *out, size_t outlen, void *ptr)
+emit_ptr(void *ptr)
 {
   Dl_info dli = {};
-
   int r = dladdr(ptr, &dli);
 
+  emit_hex((intptr_t)ptr, sizeof(void *));
+
   if(r && dli.dli_sname != NULL && dli.dli_saddr != NULL) {
-    snprintf(out, outlen, "0x%016" PRIxPTR "  %s+0x%tx  (%s)",
-	     (intptr_t)ptr, dli.dli_sname, ptr - dli.dli_saddr, dli.dli_fname);
+    emit_str("  ");
+    emit_str(dli.dli_sname);
+    emit_str("+");
+    emit_hex((intptr_t)(ptr - dli.dli_saddr), sizeof(void *));
+    emit_str("  ");
+    emit_str(dli.dli_fname);
     return;
   }
 
-  if(dli.dli_fname != NULL && dli.dli_fbase != NULL) {
-    snprintf(out, outlen, "0x%016" PRIxPTR "  %s",
-             (intptr_t)ptr, dli.dli_fname);
+  if(dli.dli_fname != NULL) {
+    emit_str("  ");
+    emit_str(dli.dli_fname);
     return;
   }
-
-  snprintf(out, outlen, "0x%016" PRIxPTR, (intptr_t)ptr);
-}
-
-
-static void
-sappend(char *buf, size_t l, const char *fmt, ...)
-{
-  va_list ap;
-
-  va_start(ap, fmt);
-  vsnprintf(buf + strlen(buf), l - strlen(buf), fmt, ap);
-  va_end(ap);
 }
 
 
@@ -79,50 +93,42 @@ sappend(char *buf, size_t l, const char *fmt, ...)
 static void
 dumpstack(void *frames[], int nframes)
 {
-  char buf[256];
   int i;
-
-  TRAPMSG("STACKTRACE (%d frames)", nframes);
-
   for(i = 0; i < nframes; i++) {
-    addr2text(buf, sizeof(buf), frames[i]);
-    TRAPMSG("%s", buf);
+    emit_ptr(frames[i]);
+    emit_str("\n");
   }
 }
 
 
 #ifdef __x86_64__
-static const char *
-x86_64_regname(int reg)
-{
-  switch(reg) {
-  case REG_R8:    return "r8";
-  case REG_R9:    return "r9";
-  case REG_R10:   return "r10";
-  case REG_R11:   return "r11";
-  case REG_R12:   return "r12";
-  case REG_R13:   return "r13";
-  case REG_R14:   return "r14";
-  case REG_R15:   return "r15";
-  case REG_RDI:   return "rdi";
-  case REG_RSI:   return "rsi";
-  case REG_RBP:   return "rbp";
-  case REG_RBX:   return "rbx";
-  case REG_RDX:   return "rdx";
-  case REG_RAX:   return "rax";
-  case REG_RCX:   return "rcx";
-  case REG_RSP:   return "rsp";
-  case REG_RIP:   return "rip";
-  case REG_EFL:   return "efl";
-  case REG_CSGSFS:   return "csgsfs";
-  case REG_ERR:   return "err";
-  case REG_TRAPNO:   return "trapno";
-  case REG_OLDMASK:   return "oldmask";
-  case REG_CR2:   return "cr2";
-  default:
-    return "???";
-  }
-}
+
+
+const char regnames[NGREG][8] = {
+  [REG_R8  ]=    "r8     ",
+  [REG_R9  ]=    "r9     ",
+  [REG_R10 ]=    "r10    ",
+  [REG_R11 ]=    "r11    ",
+  [REG_R12 ]=    "r12    ",
+  [REG_R13 ]=    "r13    ",
+  [REG_R14 ]=    "r14    ",
+  [REG_R15 ]=    "r15    ",
+  [REG_RDI ]=    "rdi    ",
+  [REG_RSI ]=    "rsi    ",
+  [REG_RBP ]=    "rbp    ",
+  [REG_RBX ]=    "rbx    ",
+  [REG_RDX ]=    "rdx    ",
+  [REG_RAX ]=    "rax    ",
+  [REG_RCX ]=    "rcx    ",
+  [REG_RSP ]=    "rsp    ",
+  [REG_RIP ]=    "rip    ",
+  [REG_EFL ]=    "efl    ",
+  [REG_CSGSFS] = "csgsfs ",
+  [REG_ERR] =    "err    ",
+  [REG_TRAPNO] = "trapno ",
+  [REG_OLDMASK]= "oldmask",
+  [REG_CR2] =    "cr2    ",
+};
 #endif
 
 
@@ -136,20 +142,31 @@ traphandler(int sig, siginfo_t *si, void *UC)
     .sa_handler = SIG_DFL
   };
 
-  sigaction(SIGSEGV, &sa, NULL);
+  sigaction(sig, &sa, NULL);
+
+  if(trap_output_fd == -1)
+    return;
 
   ucontext_t *uc = UC;
 
   static void *frames[MAXFRAMES];
-  char buf[256];
   int nframes = backtrace(frames, MAXFRAMES);
   const char *reason = NULL;
 
   char prname[17] = {0};
 
-  prctl(PR_GET_NAME, prname, 0, 0, 0);
+  // prctl(PR_GET_NAME, prname, 0, 0, 0);
 
-  TRAPMSG("Signal: %d in thread '%s' - %s ", sig, prname, trap_line);
+  emit_str("Signal: ");
+  emit_hex(sig, 4);
+  if(prname[0]) {
+    emit_str(" in thread: \"");
+    emit_str(prname);
+    emit_str("\"");
+  }
+  emit_str(" in ");
+  emit_str(trap_header);
+  emit_str("\n");
 
   switch(sig) {
   case SIGSEGV:
@@ -166,13 +183,20 @@ traphandler(int sig, siginfo_t *si, void *UC)
     break;
   }
 
-  addr2text(buf, sizeof(buf), si->si_addr);
+  //  addr2text(buf, sizeof(buf), si->si_addr);
 
-  TRAPMSG("Fault address %s (%s)", buf, reason ?: "N/A");
+  emit_str("FAULT ADDRESS: ");
+  emit_ptr(si->si_addr);
+  if(reason != NULL) {
+    emit_str("  Reason: ");
+    emit_str(reason);
+  }
+  emit_str("\n==== LOADED LIBRARIES:\n");
+  emit_str(trap_libs);
 
-  TRAPMSG("Loaded libraries: %s ", libs);
-
-#if defined(__arm__) 
+  emit_str("\n==== REGISTER DUMP:\n");
+#if defined(__arm__)
+  /*
   TRAPMSG("   trap_no = 0x%08lx", uc->uc_mcontext.trap_no);
   TRAPMSG("error_code = 0x%08lx", uc->uc_mcontext.error_code);
   TRAPMSG("   oldmask = 0x%08lx", uc->uc_mcontext.oldmask);
@@ -194,20 +218,26 @@ traphandler(int sig, siginfo_t *si, void *UC)
   TRAPMSG("        PC = 0x%08lx", uc->uc_mcontext.arm_pc);
   TRAPMSG("      CPSR = 0x%08lx", uc->uc_mcontext.arm_cpsr);
   TRAPMSG("fault_addr = 0x%08lx", uc->uc_mcontext.fault_address);
-
+  */
 #else
-  TRAPMSG("Register dump, %d registers: ", NGREG);
   int i;
   for(i = 0; i < NGREG; i++) {
-#if __WORDSIZE == 64
-    TRAPMSG("[%2d] %7s = 0x%016llx ", i, x86_64_regname(i),
-            uc->uc_mcontext.gregs[i]);
-#else
-    TRAPMSG("[%2d] = 0x%08x ", i, uc->uc_mcontext.gregs[i]);
-#endif
+    emit_str(regnames[i]);
+    emit_str(" = ");
+    emit_hex(uc->uc_mcontext.gregs[i], __WORDSIZE / 8);
+    emit_str("\n");
   }
 #endif
-  dumpstack(frames, nframes);
+
+  emit_str("==== STACKTRACE:\n");
+  if(0) {
+    dumpstack(frames, nframes);
+  } else {
+    backtrace_symbols_fd(frames, nframes, trap_output_fd);
+  }
+
+  close(trap_output_fd);
+  trap_output_fd = -1;
 }
 
 
@@ -217,8 +247,39 @@ static int
 iterate_libs_callback(struct dl_phdr_info *info, size_t size, void *data)
 {
   if(info->dlpi_name[0])
-    sappend(libs, sizeof(libs), "%s ", info->dlpi_name);
+    strvec_push(data, info->dlpi_name);
   return 0;
+}
+
+
+static void (*crashmsgcb)(const char *str);
+
+static void
+trap_child(int fd)
+{
+  prctl(PR_SET_NAME, "traphandler", 0, 0, 0);
+
+  ssize_t trapmsgsize = 65536;
+  char *trapmsg = malloc(trapmsgsize + 1);
+  ssize_t offset = 0;
+
+  while(offset < trapmsgsize) {
+    size_t r = read(fd, trapmsg + offset, trapmsgsize - offset);
+    if(r <= 0)
+      break;
+    offset += r;
+  }
+
+  if(offset > 0) {
+    trapmsg[offset] = 0;
+
+    if(crashmsgcb != NULL) {
+      crashmsgcb(trapmsg);
+    } else {
+      fprintf(stderr, "%s\n", trapmsg);
+    }
+  }
+  exit(0);
 }
 
 
@@ -227,12 +288,20 @@ iterate_libs_callback(struct dl_phdr_info *info, size_t size, void *data)
  *
  */
 void
-trap_init(void)
+trap_init(void (*crashmsg)(const char *str))
 {
   struct sigaction sa;
   char self[4096];
   char path[256];
   int r;
+
+  crashmsgcb = crashmsg;
+  int fds[2];
+
+  if(pipe2(fds, O_CLOEXEC))
+    return;
+
+  trap_output_fd = fds[1];
 
   r = readlink("/proc/self/exe", self, sizeof(self) - 1);
   if(r == -1)
@@ -240,10 +309,16 @@ trap_init(void)
   else
     self[r] = 0;
 
-  snprintf(trap_line, sizeof(trap_line),
-	   "EXE: %s, CWD: %s ", self, getcwd(path, sizeof(path)));
+  trap_header = fmt("EXE: %s, CWD: %s", self, getcwd(path, sizeof(path)));
 
-  dl_iterate_phdr(iterate_libs_callback, NULL);
+  scoped_strvec(libs);
+  dl_iterate_phdr(iterate_libs_callback, &libs);
+  trap_libs = strvec_join(&libs, " ");
+
+  if(!fork()) {
+    close(fds[1]);
+    trap_child(fds[0]);
+  }
 
   memset(&sa, 0, sizeof(sa));
 
@@ -264,6 +339,7 @@ trap_init(void)
   sigaction(SIGFPE,  &sa, NULL);
 
   sigprocmask(SIG_UNBLOCK, &m, NULL);
+  close(fds[0]);  // Close read end of pipe
 }
 
 
@@ -271,7 +347,7 @@ trap_init(void)
 #else
 
 void
-trap_init(void)
+trap_init(void (*crashmsg)(const char *str))
 {
 }
 #endif
