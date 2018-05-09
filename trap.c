@@ -288,7 +288,7 @@ trap_child(int fd)
  *
  */
 void
-trap_init(void (*crashmsg)(const char *str))
+trap_init(void (*crashmsg)(const char *str), char *argv0)
 {
   struct sigaction sa;
   char self[4096];
@@ -316,6 +316,9 @@ trap_init(void (*crashmsg)(const char *str))
   trap_libs = strvec_join(&libs, " ");
 
   if(!fork()) {
+    if(argv0 != NULL) {
+      argv0[0] = '_'; // Change process title
+    }
     close(fds[1]);
     trap_child(fds[0]);
   }
@@ -347,7 +350,7 @@ trap_init(void (*crashmsg)(const char *str))
 #else
 
 void
-trap_init(void (*crashmsg)(const char *str))
+trap_init(void (*crashmsg)(const char *str), char *argv0)
 {
 }
 #endif
