@@ -17,7 +17,8 @@ extern ws_client_t *ws_client_connect(const char *hostname, int port,
 extern int ws_client_send(ws_client_t *wsc, int opcode,
                           const void *data, size_t len);
 
+extern void ws_client_send_close(ws_client_t *wsc, int code, const char *msg);
 
 extern void ws_client_start(ws_client_t *wsc);
 
-extern void ws_client_close(ws_client_t *wsc);
+extern void ws_client_destroy(ws_client_t *wsc);

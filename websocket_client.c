@@ -16,7 +16,7 @@
 #include "sock.h"
 #include "misc.h"
 #include "bytestream.h"
-
+#include "websocket.h"
 
 /**
  *
@@ -305,7 +305,7 @@ wsc_thread(void *aux)
  *
  */
 void
-ws_client_close(ws_client_t *wsc)
+ws_client_destroy(ws_client_t *wsc)
 {
   close(wsc->wsc_pipe[1]);
   wsc->wsc_pipe[1] = -1;
@@ -330,6 +330,29 @@ ws_client_send(ws_client_t *wsc, int opcode, const void *data, size_t len)
   }
   return 0;
 }
+
+
+/**
+ *
+ */
+void
+ws_client_send_close(ws_client_t *wsc, int code, const char *msg)
+{
+  uint8_t *data = NULL;
+  int datasize = 0;
+
+  if(code) {
+    datasize = 2 + (msg ? strlen(msg) : 0);
+    data = alloca(datasize);
+    wr16_be(data, code);
+    if(msg) {
+      memcpy(data + 2, msg, strlen(msg));
+    }
+  }
+
+  ws_client_send(wsc, WS_OPCODE_CLOSE, data, datasize);
+}
+
 
 /**
  *
