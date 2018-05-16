@@ -13,17 +13,6 @@
 #include "libsvc/cfg.h"
 #include "libsvc/trace.h"
 
-#ifdef WITH_HTTP_SERVER
-#include "libsvc/http.h"
-#endif
-
-#ifdef WITH_CTRLSOCK
-#include "libsvc/ctrlsock.h"
-#endif
-
-
-static int running = 1;
-static int reload = 0;
 
 /**
  *
@@ -38,47 +27,12 @@ handle_sigpipe(int x)
 /**
  *
  */
-static void
-doexit(int x)
-{
-  running = 0;
-}
-
-
-/**
- *
- */
-static void
-doreload(int x)
-{
-  reload = 1;
-}
-
-
-#ifdef WITH_HTTP_SERVER
-/**
- *
- */
-static void
-http_init(void)
-{
-  http_server_init(NULL);
-}
-#endif
-
-
-/**
- *
- */
 int
 main(int argc, char **argv)
 {
   char errbuf[512];
   int c;
   sigset_t set;
-#ifdef WITH_CTRLSOCK
-  const char *ctrlsockpath = "/tmp/"PROGNAME"ctrl";
-#endif
   const char *cfgfile = PROGNAME".json";
 
   signal(SIGPIPE, handle_sigpipe);
@@ -95,6 +49,14 @@ main(int argc, char **argv)
   }
 
   sigfillset(&set);
+  sigdelset(&set, SIGQUIT);
+  sigdelset(&set, SIGILL);
+  sigdelset(&set, SIGTRAP);
+  sigdelset(&set, SIGABRT);
+  sigdelset(&set, SIGFPE);
+  sigdelset(&set, SIGBUS);
+  sigdelset(&set, SIGSEGV);
+  sigdelset(&set, SIGSYS);
   sigprocmask(SIG_BLOCK, &set, NULL);
 
   srand48(getpid() ^ time(NULL));
@@ -107,33 +69,26 @@ main(int argc, char **argv)
 
   libsvc_init();
 
-#ifdef WITH_CTRLSOCK
-  ctrlsock_init(ctrlsockpath);
-#endif
 
-#ifdef WITH_HTTP_SERVER
-  http_init();
-#endif
+  trace(LOG_WARNING, "Running pid %d", getpid());
+  while(1) {
+    int delivered = 0;
+    if(!sigwait(&set, &delivered)) {
+      trace(LOG_DEBUG, "Main loop got signal %d", delivered);
+      if(delivered == SIGTERM || delivered == SIGINT)
+        break;
 
-  running = 1;
-  sigemptyset(&set);
-  sigaddset(&set, SIGTERM);
-  sigaddset(&set, SIGINT);
-  sigaddset(&set, SIGHUP);
+      if(delivered == SIGCHLD) {
+        while(waitpid(-1, NULL, WNOHANG) > 0);
+      }
 
-  signal(SIGTERM, doexit);
-  signal(SIGINT, doexit);
-  signal(SIGHUP, doreload);
-
-  pthread_sigmask(SIG_UNBLOCK, &set, NULL);
-
-  while(running) {
-    if(reload) {
-      reload = 0;
-      cfg_load(NULL, NULL, 0);
+      if(delivered == SIGHUP) {
+	cfg_load(NULL, NULL, 0);
+      }
     }
-    pause();
   }
+
+  trace(LOG_WARNING, "Stopping");
 
   return 0;
 }
