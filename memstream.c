@@ -173,11 +173,21 @@ buf_seek(void *fh, off64_t *offsetp, int whence)
   return 0;
 }
 
+/**
+ *
+ */
+static int
+buf_close(void *aux)
+{
+  free(aux);
+  return 0;
+}
 
 
 static cookie_io_functions_t read_functions = {
   .read  = buf_read,
   .seek  = buf_seek,
+  .close = buf_close,
 };
 
 
