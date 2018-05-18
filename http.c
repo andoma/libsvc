@@ -2119,7 +2119,7 @@ websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq)
  *
  */
 void
-websocket_send_json(http_connection_t *hc, struct ntv *msg)
+websocket_send_json(http_connection_t *hc, const struct ntv *msg)
 {
   mbuf_t hq;
   mbuf_init(&hq);
