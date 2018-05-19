@@ -2139,14 +2139,14 @@ websocket_send_close(struct http_connection *hc, int code,
   if(hc->hc_ws_close_sent)
     return;
   hc->hc_ws_close_sent = 1;
-  mbuf_t hq;
-  mbuf_init(&hq);
-  uint16_t code16 = htons(code);
-  mbuf_append(&hq, &code16, 2);
-  if(reason)
-    mbuf_append(&hq, reason, strlen(reason));
 
-  websocket_sendq(hc, WS_OPCODE_CLOSE, &hq);
+  const size_t rlen = reason ? strlen(reason) : 0;
+  const size_t len = sizeof(uint16_t) + rlen;
+
+  uint8_t *buf = alloca(len);
+  wr16_be(buf, code);
+  memcpy(buf + 2, reason, rlen);
+  websocket_send(hc, WS_OPCODE_CLOSE, buf, len);
 }
 
 
