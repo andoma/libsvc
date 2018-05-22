@@ -84,6 +84,7 @@ void
 strvec_delete(strvec_t *vec, unsigned int position)
 {
   assert(position < vec->count);
+  free(vec->v[position]);
   memmove(vec->v + position, vec->v + position + 1,
           (vec->count - position - 1) * sizeof(vec->v[0]));
   vec->count--;
