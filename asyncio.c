@@ -75,7 +75,7 @@ struct async_fd {
   char *af_hostname;
 
   asyncio_dns_req_t *af_dns_req;
-  
+
   asyncio_timer_t af_timer;
 
   pthread_mutex_t af_sendq_mutex;

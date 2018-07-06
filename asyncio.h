@@ -87,7 +87,7 @@ async_fd_t *asyncio_connect(const char *hostname,
 async_fd_t *asyncio_dgram(int fd, asyncio_poll_cb_t *input,
                           void *opaque);
 
-async_fd_t *asyncio_stream(int fd, 
+async_fd_t *asyncio_stream(int fd,
 			   asyncio_read_cb_t *read,
 			   asyncio_error_cb_t *err,
 			   void *opaque);
