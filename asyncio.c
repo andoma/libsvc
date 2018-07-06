@@ -52,6 +52,51 @@
 LIST_HEAD(asyncio_timer_list, asyncio_timer);
 LIST_HEAD(asyncio_worker_list, asyncio_worker);
 
+
+
+
+/**
+ *
+ */
+struct async_fd {
+  asyncio_poll_cb_t *af_pollerr;
+  asyncio_error_cb_t *af_error;
+  asyncio_accept_cb_t *af_accept;
+  asyncio_poll_cb_t *af_pollin;
+  asyncio_poll_cb_t *af_pollout;
+  asyncio_read_cb_t *af_bytes_avail;
+  asyncio_connect_cb_t *af_connect;
+
+  void *af_opaque;
+
+  mbuf_t af_sendq;
+  mbuf_t af_recvq;
+
+  char *af_hostname;
+
+  asyncio_dns_req_t *af_dns_req;
+  
+  asyncio_timer_t af_timer;
+
+  pthread_mutex_t af_sendq_mutex;
+  pthread_cond_t af_sendq_cond;
+
+  atomic_t af_refcount;
+  int af_fd;
+  int af_epoll_flags;
+  uint16_t af_port;
+
+  uint16_t af_flags;
+#define AF_SENDQ_MUTEX        0x1
+
+  uint8_t af_pending_shutdown;
+  int af_pending_error;
+
+};
+
+
+
+
 #define TW_TIME_SHIFT  18
 #define TW_SLOTS 65536
 #define TW_SLOT_MASK (TW_SLOTS - 1)
