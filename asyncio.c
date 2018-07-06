@@ -124,7 +124,7 @@ setup_socket(int fd)
 
   val = 1;
   setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val));
-  
+
 #ifdef TCP_KEEPIDLE
   val = 30;
   setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &val, sizeof(val));
@@ -950,7 +950,7 @@ asyncio_bind(const char *bindaddr, int port,
   ret = bind(fd, (struct sockaddr *)&s, sizeof(s));
   if(ret < 0) {
     int x = errno;
-    trace(LOG_ERR, "Unable to bind %s:%d -- %s", 
+    trace(LOG_ERR, "Unable to bind %s:%d -- %s",
           bindaddr ?: "0.0.0.0", port, strerror(errno));
     close(fd);
     errno = x;
@@ -1109,7 +1109,7 @@ check_connect_status(async_fd_t *af)
 {
   int err;
   socklen_t errlen = sizeof(int);
-    
+
   getsockopt(af->af_fd, SOL_SOCKET, SO_ERROR, (void *)&err, &errlen);
   if(err == 0)
     return connection_established(af);
@@ -1339,19 +1339,19 @@ adr_resolve(asyncio_dns_req_t *adr)
       break;
 
     case NO_ADDRESS:
-      adr->adr_errmsg = 
+      adr->adr_errmsg =
 	"The requested name is valid but does not have an IP address";
       break;
-      
+
     case NO_RECOVERY:
       adr->adr_errmsg = "A non-recoverable name server error occurred";
       break;
-      
+
     case TRY_AGAIN:
       adr->adr_errmsg =
 	"A temporary error occurred on an authoritative name server";
       break;
-      
+
     default:
       adr->adr_errmsg = "Unknown error";
       break;
@@ -1395,7 +1395,7 @@ adr_resolver(void *aux)
 
     pthread_mutex_unlock(&asyncio_dns_mutex);
 
-    
+
     if(adr_resolve(adr)) {
       adr->adr_status = ASYNCIO_DNS_STATUS_FAILED;
       adr->adr_data = adr->adr_errmsg;
@@ -1429,7 +1429,7 @@ asyncio_dns_cancel(asyncio_dns_req_t *r)
  *
  */
 asyncio_dns_req_t *
-asyncio_dns_lookup_host(const char *hostname, 
+asyncio_dns_lookup_host(const char *hostname,
 			void (*cb)(void *opaque,
 				   int status,
 				   const void *data),
@@ -1441,7 +1441,7 @@ asyncio_dns_lookup_host(const char *hostname,
   adr->adr_hostname = strdup(hostname);
   adr->adr_cb = cb;
   adr->adr_opaque = opaque;
-  
+
   pthread_mutex_lock(&asyncio_dns_mutex);
   TAILQ_INSERT_TAIL(&asyncio_dns_pending, adr, adr_link);
   if(!adr_resolver_running) {
@@ -1478,7 +1478,7 @@ adr_deliver_cb(void)
     free(adr->adr_hostname);
     free(adr);
     pthread_mutex_lock(&asyncio_dns_mutex);
-  } 
+  }
   pthread_mutex_unlock(&asyncio_dns_mutex);
 }
 
