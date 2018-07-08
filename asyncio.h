@@ -97,7 +97,8 @@ async_fd_t *asyncio_stream(int fd,
 async_fd_t *asyncio_stream_mt(int fd,
                               asyncio_read_cb_t *read,
                               asyncio_error_cb_t *err,
-                              void *opaque);
+                              void *opaque,
+                              void *sslctx);
 
 void asyncio_close(async_fd_t *af);
 
@@ -122,9 +123,7 @@ int asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
 
 void asyncio_reconnect(async_fd_t *af, int delay);
 
-void asyncio_enable_read(async_fd_t *fd);
-
-void asyncio_disable_read(async_fd_t *fd);
+void asyncio_process_pending(async_fd_t *fd);
 
 void asyncio_shutdown(async_fd_t *fd);
 
@@ -164,3 +163,10 @@ asyncio_dns_req_t *asyncio_dns_lookup_host(const char *hostname,
 
 void asyncio_dns_cancel(asyncio_dns_req_t *req);
 
+
+/************************************************************************
+ * SSL / TLS
+ ************************************************************************/
+
+void *asyncio_sslctx_create_from_files(const char *priv_key_file,
+                                       const char *cert_file);

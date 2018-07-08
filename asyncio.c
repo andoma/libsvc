@@ -42,6 +42,8 @@
 #error Need poll mechanism
 #endif
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #include "queue.h"
 #include "asyncio.h"
@@ -66,6 +68,8 @@ struct async_fd {
   asyncio_poll_cb_t *af_pollout;
   asyncio_read_cb_t *af_bytes_avail;
   asyncio_connect_cb_t *af_connect;
+
+  void (*af_locked_write)(struct async_fd *af);
 
   void *af_opaque;
 
@@ -92,6 +96,10 @@ struct async_fd {
   uint8_t af_pending_shutdown;
   int af_pending_error;
 
+  int af_ssl_established;
+  int af_ssl_read_status;
+  int af_ssl_write_status;
+  SSL *af_ssl;
 };
 
 
@@ -140,6 +148,23 @@ typedef struct asyncio_task {
 static pthread_mutex_t asyncio_task_mutex;
 static pthread_cond_t asyncio_task_cond;
 static TAILQ_HEAD(, asyncio_task) asyncio_tasks;
+
+
+static void
+af_lock(async_fd_t *af)
+{
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_lock(&af->af_sendq_mutex);
+}
+
+static void
+af_unlock(async_fd_t *af)
+{
+  if(af->af_flags & AF_SENDQ_MUTEX)
+    pthread_mutex_unlock(&af->af_sendq_mutex);
+}
+
+
 
 /**
  *
@@ -424,7 +449,7 @@ async_fd_release(async_fd_t *af)
  *
  */
 static void
-do_write(async_fd_t *af)
+do_write_locked(async_fd_t *af)
 {
   char tmp[1024];
 
@@ -468,11 +493,11 @@ do_write(async_fd_t *af)
  *
  */
 static void
-do_write_lock(async_fd_t *af)
+do_write_unlocked(async_fd_t *af)
 {
-  pthread_mutex_lock(&af->af_sendq_mutex);
-  do_write(af);
-  pthread_mutex_unlock(&af->af_sendq_mutex);
+  af_lock(af);
+  af->af_locked_write(af);
+  af_unlock(af);
 }
 
 /**
@@ -543,6 +568,207 @@ do_read(async_fd_t *af)
   }
 
   af->af_bytes_avail(af->af_opaque, &af->af_recvq);
+}
+
+
+
+static void __attribute__((unused))
+ssldump(async_fd_t *af)
+{
+  unsigned long e;
+  char errbuf[512];
+  while((e = ERR_get_error()) != 0) {
+    ERR_error_string_n(e, errbuf, sizeof(errbuf));
+      trace(LOG_ERR, "SSL: %s", errbuf);
+  }
+}
+
+/**
+ *
+ */
+static int
+asyncio_ssl_handshake(async_fd_t *af)
+{
+  int r = SSL_do_handshake(af->af_ssl);
+  int err = SSL_get_error(af->af_ssl, r);
+  switch(err) {
+
+  case SSL_ERROR_WANT_READ:
+    mod_poll_flags(af, EPOLLIN, EPOLLOUT);
+    break;
+  case SSL_ERROR_WANT_WRITE:
+    mod_poll_flags(af, EPOLLOUT, EPOLLIN);
+    break;
+  case SSL_ERROR_NONE:
+    mod_poll_flags(af, EPOLLIN, EPOLLOUT);
+    af->af_ssl_established = 1;
+    break;
+
+  default:
+#if 0
+    trace(LOG_ERR, "SSL: Unable to handshake, err:%d r:%d errno:%d",
+          err, r, errno);
+    ssldump(af);
+#endif
+    return ENOLINK;
+  }
+  return 0;
+}
+
+static void
+do_ssl_update_poll_flags_ex(async_fd_t *af, int line)
+{
+#if 0
+  printf("Update poll flags line %d\n", line);
+  printf("  READ: %s\n",
+         af->af_ssl_read_status == SSL_ERROR_WANT_READ  ? "READ" :
+         af->af_ssl_read_status == SSL_ERROR_WANT_WRITE ? "WRITE" : "-");
+
+  printf(" WRITE: %s\n",
+         af->af_ssl_write_status == SSL_ERROR_WANT_READ  ? "READ" :
+         af->af_ssl_write_status == SSL_ERROR_WANT_WRITE ? "WRITE" : "-");
+#endif
+  int events = 0;
+  if(af->af_ssl_read_status == SSL_ERROR_WANT_WRITE) {
+    events |= EPOLLOUT;
+  } else {
+    events |= EPOLLIN;
+  }
+
+  if(af->af_ssl_write_status == SSL_ERROR_WANT_WRITE) {
+    events |= EPOLLOUT;
+  } else if(af->af_ssl_write_status == SSL_ERROR_WANT_READ) {
+    events |= EPOLLIN;
+  }
+  //  printf("mod poll flags: %x\n", events);
+  mod_poll_flags(af, events, ~events & (EPOLLIN | EPOLLOUT));
+}
+
+
+#define do_ssl_update_poll_flags(af) \
+  do_ssl_update_poll_flags_ex(af, __LINE__)
+
+static void do_ssl_write_locked(async_fd_t *af);
+
+
+/**
+ *
+ */
+static int
+do_ssl_read_locked(async_fd_t *af)
+{
+  char buf[4096];
+  af->af_ssl_read_status = 0;
+
+  while(af->af_ssl != NULL) {
+    if(af->af_ssl_write_status == SSL_ERROR_WANT_READ) {
+      return 0;
+    }
+    af->af_ssl_read_status = 0;
+    int r = SSL_read(af->af_ssl, buf, sizeof(buf));
+    int err = SSL_get_error(af->af_ssl, r);
+    switch(err) {
+    case SSL_ERROR_NONE:
+      mbuf_append(&af->af_recvq, buf, r);
+      break;
+
+    case SSL_ERROR_ZERO_RETURN:
+      // Conection closed
+      do_ssl_update_poll_flags(af);
+      return ECONNRESET;
+
+    default:
+      do_ssl_update_poll_flags(af);
+      return ENOLINK;
+
+    case SSL_ERROR_WANT_READ:
+    case SSL_ERROR_WANT_WRITE:
+      af->af_ssl_read_status = err;
+      do_ssl_update_poll_flags(af);
+      return 0;
+    }
+
+    af_unlock(af);
+    af->af_bytes_avail(af->af_opaque, &af->af_recvq);
+    af_lock(af);
+  }
+  return 0;
+}
+
+/**
+ *
+ */
+static void
+do_ssl_read(async_fd_t *af)
+{
+  af_lock(af);
+
+  if(!af->af_ssl_established) {
+    int err = asyncio_ssl_handshake(af);
+    af_unlock(af);
+    if(err)
+      do_error(af, err);
+    return;
+  }
+
+  if(af->af_ssl_write_status == SSL_ERROR_WANT_READ) {
+    do_ssl_write_locked(af);
+    return;
+  }
+
+  af->af_ssl_read_status = 0;
+
+  int err = do_ssl_read_locked(af);
+
+  af_unlock(af);
+  if(err)
+    do_error(af, err);
+}
+
+
+static void
+do_ssl_write_locked(async_fd_t *af)
+{
+  if(!af->af_ssl_established) {
+    asyncio_ssl_handshake(af);
+    return;
+  }
+  char tmp[1024];
+
+  if(af->af_ssl_read_status == SSL_ERROR_WANT_WRITE) {
+    do_ssl_read_locked(af);
+    return;
+  }
+
+  while(1) {
+    af->af_ssl_write_status = 0;
+    int avail = mbuf_peek(&af->af_sendq, tmp, sizeof(tmp));
+    if(avail == 0) {
+      if(af->af_pending_shutdown) {
+        SSL_shutdown(af->af_ssl);
+      }
+      do_ssl_update_poll_flags(af);
+      return;
+    }
+
+    int r = SSL_write(af->af_ssl, tmp, avail);
+    int err = SSL_get_error(af->af_ssl, r);
+    switch(err) {
+    case SSL_ERROR_NONE:
+      mbuf_drop(&af->af_sendq, r);
+      if(af->af_flags & AF_SENDQ_MUTEX)
+        pthread_cond_signal(&af->af_sendq_cond);
+      continue;
+
+    case SSL_ERROR_WANT_READ:
+    case SSL_ERROR_WANT_WRITE:
+      af->af_ssl_write_status = err;
+      // FALLTHRU
+    default:
+      do_ssl_update_poll_flags(af);
+      return;
+    }
+  }
 }
 
 
@@ -748,8 +974,13 @@ asyncio_close(async_fd_t *af)
 
   asyncio_timer_disarm(&af->af_timer);
 
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_lock(&af->af_sendq_mutex);
+  af_lock(af);
+
+
+  if(af->af_ssl != NULL) {
+    SSL_free(af->af_ssl);
+    af->af_ssl = NULL;
+  }
 
   if(af->af_fd != -1) {
     mod_poll_flags(af, 0, -1);
@@ -770,20 +1001,18 @@ asyncio_close(async_fd_t *af)
 void
 asyncio_shutdown(async_fd_t *af)
 {
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_lock(&af->af_sendq_mutex);
+  af_lock(af);
 
   if(af->af_fd != -1) {
-
     if(af->af_sendq.mq_size) {
       af->af_pending_shutdown = 1;
+    } else if(af->af_ssl != NULL) {
+      SSL_shutdown(af->af_ssl);
     } else {
       shutdown(af->af_fd, 2);
     }
   }
-
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_unlock(&af->af_sendq_mutex);
+  af_unlock(af);
 }
 
 
@@ -794,20 +1023,18 @@ int
 asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork)
 {
   int rval = 0;
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_lock(&af->af_sendq_mutex);
+  af_lock(af);
 
   if(af->af_fd != -1) {
     mbuf_append(&af->af_sendq, buf, len);
 
     if(!cork)
-      do_write(af);
+      af->af_locked_write(af);
   } else {
     rval = -1;
   }
 
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_unlock(&af->af_sendq_mutex);
+  af_unlock(af);
   return rval;
 }
 
@@ -822,13 +1049,12 @@ asyncio_send_with_hdr(async_fd_t *af,
                       int cork)
 {
   int rval = 0;
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_lock(&af->af_sendq_mutex);
+  af_lock(af);
 
   if(af->af_fd != -1) {
     int qempty = af->af_sendq.mq_size == 0;
 
-    if(!cork && qempty) {
+    if(!cork && qempty && af->af_ssl == NULL) {
       int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL | MSG_MORE);
       if(r > 0) {
         hdr_buf += r;
@@ -841,7 +1067,7 @@ asyncio_send_with_hdr(async_fd_t *af,
       qempty = 0;
     }
 
-    if(!cork && qempty) {
+    if(!cork && qempty  && af->af_ssl == NULL) {
       int r = send(af->af_fd, buf, len, MSG_NOSIGNAL);
       if(r > 0) {
         buf += r;
@@ -855,13 +1081,12 @@ asyncio_send_with_hdr(async_fd_t *af,
     }
 
     if(!cork)
-      do_write(af);
+      af->af_locked_write(af);
   } else {
     rval = -1;
   }
 
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_unlock(&af->af_sendq_mutex);
+  af_unlock(af);
   return rval;
 }
 
@@ -873,20 +1098,17 @@ int
 asyncio_sendq(async_fd_t *af, mbuf_t *q, int cork)
 {
   int rval = 0;
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_lock(&af->af_sendq_mutex);
+  af_lock(af);
 
   if(af->af_fd != -1) {
     mbuf_appendq(&af->af_sendq, q);
     if(!cork)
-      do_write(af);
+      af->af_locked_write(af);
   } else {
     mbuf_clear(q);
     rval = 1;
   }
-
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_unlock(&af->af_sendq_mutex);
+  af_unlock(af);
   return rval;
 }
 
@@ -897,8 +1119,7 @@ asyncio_sendq(async_fd_t *af, mbuf_t *q, int cork)
 void
 asyncio_send_lock(async_fd_t *af)
 {
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_lock(&af->af_sendq_mutex);
+  af_lock(af);
 }
 
 
@@ -908,8 +1129,7 @@ asyncio_send_lock(async_fd_t *af)
 void
 asyncio_send_unlock(async_fd_t *af)
 {
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_unlock(&af->af_sendq_mutex);
+  af_unlock(af);
 }
 
 
@@ -925,7 +1145,7 @@ asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
   if(af->af_fd != -1) {
     int qempty = af->af_sendq.mq_size == 0;
 
-    if(!cork && qempty) {
+    if(!cork && qempty && af->af_ssl == NULL) {
       int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL | MSG_MORE);
       if(r > 0) {
         hdr_buf += r;
@@ -939,7 +1159,7 @@ asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
     }
     mbuf_appendq(&af->af_sendq, q);
     if(!cork)
-      do_write(af);
+      af->af_locked_write(af);
   } else {
     mbuf_clear(q);
     rval = 1;
@@ -1040,7 +1260,7 @@ asyncio_stream(int fd,
   setup_socket(fd);
   async_fd_t *af = async_fd_create(fd, EPOLLIN);
   af->af_pollin  = &do_read;
-  af->af_pollout = &do_write;
+  af->af_pollout = &do_write_unlocked;
   af->af_bytes_avail = read;
   af->af_error = err;
   af->af_opaque = opaque;
@@ -1055,17 +1275,38 @@ async_fd_t *
 asyncio_stream_mt(int fd,
                   asyncio_read_cb_t *read,
                   asyncio_error_cb_t *err,
-                  void *opaque)
+                  void *opaque,
+                  void *sslctx)
 {
   setup_socket(fd);
-  async_fd_t *af = async_fd_create(fd, 0);
+  async_fd_t *af = async_fd_create(fd, EPOLLIN);
 
   af->af_flags = AF_SENDQ_MUTEX;
   pthread_mutex_init(&af->af_sendq_mutex, NULL);
   pthread_cond_init(&af->af_sendq_cond, NULL);
 
-  af->af_pollin  = &do_read;
-  af->af_pollout = &do_write_lock;
+  if(sslctx) {
+    af->af_ssl = SSL_new(sslctx);
+    if(SSL_set_fd(af->af_ssl, fd) == 0) {
+      trace(LOG_ERR, "SSL: Unable to set FD");
+    }
+
+    SSL_set_mode(af->af_ssl,
+                 SSL_MODE_ENABLE_PARTIAL_WRITE |
+                 SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+
+    SSL_set_accept_state(af->af_ssl);
+
+    af->af_pollin  = &do_ssl_read;
+    af->af_locked_write = &do_ssl_write_locked;
+
+  } else {
+    af->af_pollin  = &do_read;
+    af->af_locked_write = &do_write_locked;
+  }
+
+  af->af_pollout = &do_write_unlocked;
+
   af->af_bytes_avail = read;
   af->af_error = err;
   af->af_opaque = opaque;
@@ -1077,38 +1318,12 @@ asyncio_stream_mt(int fd,
  *
  */
 void
-asyncio_enable_read(async_fd_t *af)
+asyncio_process_pending(async_fd_t *af)
 {
   assert(pthread_self() == asyncio_tid);
-
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_lock(&af->af_sendq_mutex);
-
-  mod_poll_flags(af, EPOLLIN, 0);
-
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_unlock(&af->af_sendq_mutex);
 
   if(af->af_recvq.mq_size)
     af->af_bytes_avail(af->af_opaque, &af->af_recvq);
-}
-
-
-/**
- *
- */
-void
-asyncio_disable_read(async_fd_t *af)
-{
-  assert(pthread_self() == asyncio_tid);
-
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_lock(&af->af_sendq_mutex);
-
-  mod_poll_flags(af, 0, EPOLLIN);
-
-  if(af->af_flags & AF_SENDQ_MUTEX)
-    pthread_mutex_unlock(&af->af_sendq_mutex);
 }
 
 
@@ -1137,12 +1352,12 @@ connection_established(async_fd_t *af)
   af->af_pollerr = NULL;
 
   af->af_pollin  = &do_read;
-  af->af_pollout = &do_write;
+  af->af_pollout = &do_write_unlocked;
   mod_poll_flags(af, EPOLLIN, 0);
 
   af->af_connect(af->af_opaque, NULL);
 
-  do_write(af);
+  af->af_locked_write(af);
 }
 
 
@@ -1692,4 +1907,39 @@ void
 asyncio_run_task_blocking(void (*fn)(void *aux), void *aux)
 {
   asyncio_run_task0(fn, aux, 1);
+}
+
+/************************************************************************
+ * SSL / TLS
+ ************************************************************************/
+
+void *
+asyncio_sslctx_create_from_files(const char *priv_key_file,
+                                 const char *cert_file)
+{
+  SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
+
+  int r = SSL_CTX_use_PrivateKey_file(ctx, priv_key_file, SSL_FILETYPE_PEM);
+  if(r != 1) {
+    trace(LOG_ERR, "Unable to load private key file %s", priv_key_file);
+    return NULL;
+  }
+  r = SSL_CTX_use_certificate_file(ctx, cert_file, SSL_FILETYPE_PEM);
+  if(r != 1) {
+    trace(LOG_ERR, "Unable to load certificate file %s", cert_file);
+    return NULL;
+  }
+
+  r = SSL_CTX_check_private_key(ctx);
+  if(r != 1) {
+    trace(LOG_ERR, "Certificate/private key file mismatch");
+    return NULL;
+  }
+
+  SSL_CTX_set_options(ctx,
+                      SSL_OP_NO_SSLv2 |
+                      SSL_OP_NO_SSLv3 |
+                      SSL_OP_NO_TLSv1);
+
+  return ctx;
 }

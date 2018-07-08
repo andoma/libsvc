@@ -71,6 +71,8 @@ typedef struct http_server {
 
   async_fd_t *hs_fd;
 
+  void *hs_sslctx;
+
 } http_server_t;
 
 
@@ -1410,11 +1412,8 @@ http_connection_reenable(void *aux)
     asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
     // This will make the asyncio socket retry the read callback if there is
     // data pending
-
-    if(hc->hc_read_disabled) {
-      hc->hc_read_disabled = 0;
-      asyncio_enable_read(hc->hc_af);
-    }
+    hc->hc_read_disabled = 0;
+    asyncio_process_pending(hc->hc_af);
   }
   http_connection_release(hc);
 }
@@ -1484,12 +1483,11 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
 
   hc->hc_server = hs;
   atomic_inc(&hs->hs_refcount);
-  hc->hc_af = asyncio_stream_mt(fd, http_server_read, http_server_error, hc);
+  hc->hc_af = asyncio_stream_mt(fd, http_server_read, http_server_error, hc,
+                                hs->hs_sslctx);
 
   asyncio_timer_init(&hc->hc_timer, http_server_timeout, hc);
   asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
-
-  asyncio_enable_read(hc->hc_af);
 
   return 0;
 }
@@ -1540,6 +1538,16 @@ http_server_init(const char *config_prefix)
   hs->hs_real_ip_header = real_ip_header ? strdup(real_ip_header) : NULL;
 
   hs->hs_secure_cookies = cfg_get_int(cr, CFG(config_prefix, "secureCookies"), 0);
+
+  const char *priv_key_file =
+    cfg_get_str(cr, CFG(config_prefix, "privateKeyFile"), NULL);
+
+  const char *cert_file =
+    cfg_get_str(cr, CFG(config_prefix, "certFile"), NULL);
+
+  if(priv_key_file != NULL && cert_file != NULL) {
+    hs->hs_sslctx = asyncio_sslctx_create_from_files(priv_key_file, cert_file);
+  }
 
   asyncio_run_task(http_server_start, hs);
 
