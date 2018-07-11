@@ -679,59 +679,58 @@ ntv_cmp(const ntv_t *src, const ntv_t *dst)
 
 
 static void
-ntv_print0(FILE *fp, const struct ntv_queue *q, int indent)
+ntv_print0(FILE *fp, const ntv_t *f, int indent)
 {
-  ntv_t *f;
   int i;
+  fprintf(fp, "%*.s", indent, "");
 
-  TAILQ_FOREACH(f, q, ntv_link) {
+  if(f->ntv_name)
+    fprintf(fp, "%s: ", f->ntv_name);
 
-    fprintf(fp, "%*.s", indent, "");
+  switch(f->ntv_type) {
 
-    if(f->ntv_name)
-      fprintf(fp, "%s: ", f->ntv_name);
+  case NTV_NULL:
+    fprintf(fp, "null\n");
+    break;
+  case NTV_BOOLEAN:
+    fprintf(fp, "%s\n", f->ntv_boolean ? "true" : "false");
+    break;
 
-    switch(f->ntv_type) {
-
-    case NTV_NULL:
-      fprintf(fp, "null\n");
-      break;
-    case NTV_BOOLEAN:
-      fprintf(fp, "%s\n", f->ntv_boolean ? "true" : "false");
-      break;
-
-    case NTV_MAP:
-      fprintf(fp, "{\n");
-      ntv_print0(fp, &f->ntv_children, indent + 2);
-      fprintf(fp, "%*.s}\n", indent, "");
-      break;
-
-    case NTV_LIST:
-      fprintf(fp, "[\n");
-      ntv_print0(fp, &f->ntv_children, indent + 2);
-      fprintf(fp, "%*.s]\n", indent, "");
-      break;
-
-    case NTV_STRING:
-      fprintf(fp, "\"%s\"\n", f->ntv_string);
-      break;
-
-    case NTV_BINARY:
-      fprintf(fp, "(binary %zd bytes) = <", f->ntv_binsize);
-      for(i = 0; i < MIN(16, f->ntv_binsize - 1); i++)
-	fprintf(fp, "%02x.", ((uint8_t *)f->ntv_bin)[i]);
-      fprintf(fp, "%s%02x>\n", i != f->ntv_binsize - 1 ? ".." : "",
-              ((uint8_t *)f->ntv_bin)[i]);
-      break;
-
-    case NTV_INT:
-      fprintf(fp, "%"PRId64"\n", f->ntv_s64);
-      break;
-
-    case NTV_DOUBLE:
-      printf("%f\n", f->ntv_double);
-      break;
+  case NTV_MAP:
+    fprintf(fp, "{\n");
+    NTV_FOREACH(c, f) {
+      ntv_print0(fp, c, indent + 2);
     }
+    fprintf(fp, "%*.s}\n", indent, "");
+    break;
+
+  case NTV_LIST:
+    fprintf(fp, "[\n");
+    NTV_FOREACH(c, f) {
+      ntv_print0(fp, c, indent + 2);
+    }
+    fprintf(fp, "%*.s]\n", indent, "");
+    break;
+
+  case NTV_STRING:
+    fprintf(fp, "\"%s\"\n", f->ntv_string);
+    break;
+
+  case NTV_BINARY:
+    fprintf(fp, "(binary %zd bytes) = <", f->ntv_binsize);
+    for(i = 0; i < MIN(16, f->ntv_binsize - 1); i++)
+      fprintf(fp, "%02x.", ((uint8_t *)f->ntv_bin)[i]);
+    fprintf(fp, "%s%02x>\n", i != f->ntv_binsize - 1 ? ".." : "",
+            ((uint8_t *)f->ntv_bin)[i]);
+    break;
+
+  case NTV_INT:
+    fprintf(fp, "%"PRId64"\n", f->ntv_s64);
+    break;
+
+  case NTV_DOUBLE:
+    printf("%f\n", f->ntv_double);
+    break;
   }
 }
 
@@ -740,7 +739,7 @@ void
 ntv_print(const ntv_t *ntv)
 {
   if(ntv != NULL)
-    ntv_print0(stdout, &ntv->ntv_children, 0);
+    ntv_print0(stdout, ntv, 0);
 }
 
 
