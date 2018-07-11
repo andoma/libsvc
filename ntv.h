@@ -69,6 +69,7 @@ typedef struct ntv {
   union {
     int64_t ntv_s64;
     char *ntv_string;
+    const char *ntv_cstring;
     struct {
       void *ntv_bin;
       size_t ntv_binsize;
@@ -80,6 +81,11 @@ typedef struct ntv {
   struct ntv_queue ntv_children;
 
 } ntv_t;
+
+#define NTV_INT(x) &(const ntv_t){.ntv_type = NTV_INT, .ntv_s64 = x}
+#define NTV_STR(x) &(const ntv_t){.ntv_type = NTV_STRING, .ntv_cstring = x}
+
+
 
 #define NTV_INDEX(i) ((const char *)(intptr_t)(-(i+1)))
 
