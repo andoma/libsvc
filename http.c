@@ -1959,15 +1959,13 @@ typedef struct ws_server_data {
 } ws_server_data_t;
 
 
-/**
- *
- */
 static void
-ws_dispatch(void *aux)
+ws_dispatch_data(ws_server_data_t *wsd)
 {
-  ws_server_data_t *wsd = aux;
   http_connection_t *hc = wsd->wsd_hc;
   const ws_server_path_t *wsp = hc->hc_ws_path;
+  if(wsp == NULL)
+    return;
 
   atomic_dec(&hc->hc_backlog);
 
@@ -1990,7 +1988,7 @@ ws_dispatch(void *aux)
       size_t avail = z->avail_out;
       int r = inflate(z, Z_SYNC_FLUSH);
       if(r) {
-        goto out;
+        return;
       }
 
       used += avail - z->avail_out;
@@ -2003,7 +2001,7 @@ ws_dispatch(void *aux)
 
       if(bufsize > 16 * 1024 * 1024) {
         free(buf);
-        goto out;
+        return;
       }
 
       buf = realloc(buf, bufsize + 1);
@@ -2028,12 +2026,17 @@ ws_dispatch(void *aux)
     free(wsd->wsd_data);
     break;
   }
- out:
-  http_connection_release(hc);
-  free(wsd);
 }
 
 
+static void
+ws_dispatch(void *aux)
+{
+  ws_server_data_t *wsd = aux;
+  ws_dispatch_data(wsd);
+  http_connection_release(wsd->wsd_hc);
+  free(wsd);
+}
 
 /**
  *
