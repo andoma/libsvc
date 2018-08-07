@@ -31,7 +31,7 @@ strvec_push_alloced(strvec_t *vec, char *value)
 }
 
 
-static void
+void
 strvec_pushl(strvec_t *vec, const char *value, size_t len)
 {
   char *x = malloc_add(len, 1);
