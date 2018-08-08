@@ -54,13 +54,6 @@ int writefile(const char *path, const void *buf, int size, int checksame);
 
 char *readfile(const char *path, time_t *ts);
 
-void url_split(char *proto, int proto_size,
-               char *authorization, int authorization_size,
-               char *hostname, int hostname_size,
-               int *port_ptr,
-               char *path, int path_size,
-               const char *url);
-
 int mkdir_p(const char *path, int mode);
 
 int rm_rf(const char *path, int remove_self);
