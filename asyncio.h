@@ -170,3 +170,8 @@ void asyncio_dns_cancel(asyncio_dns_req_t *req);
 
 void *asyncio_sslctx_create_from_files(const char *priv_key_file,
                                        const char *cert_file);
+
+void *asyncio_sslctx_create_from_pem(const char *priv_key_pem,
+                                     const char *cert_pem);
+
+void asyncio_sslctx_free(void *ctx);

@@ -1943,3 +1943,74 @@ asyncio_sslctx_create_from_files(const char *priv_key_file,
 
   return ctx;
 }
+
+
+
+static X509 *
+x509_from_pem(const char *pem)
+{
+  if(pem == NULL)
+    return NULL;
+
+  size_t pemlen = strlen(pem);
+  BIO *bio = BIO_new_mem_buf((void *)pem, pemlen);
+  X509 *x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+  BIO_free(bio);
+  return x509;
+}
+
+
+static EVP_PKEY *
+evp_from_private_pem(const char *pem)
+{
+  if(pem == NULL)
+    return NULL;
+
+  size_t pemlen = strlen(pem);
+  BIO *bio = BIO_new_mem_buf((void *)pem, pemlen);
+  EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+  BIO_free(bio);
+  return pkey;
+}
+
+
+void *
+asyncio_sslctx_create_from_pem(const char *priv_key_pem,
+                               const char *cert_pem)
+{
+  EVP_PKEY *priv_key = evp_from_private_pem(priv_key_pem);
+  if(priv_key == NULL)
+    return NULL;
+
+  X509 *cert = x509_from_pem(cert_pem);
+  if(cert == NULL)
+    return NULL;
+
+  SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
+
+  SSL_CTX_use_PrivateKey(ctx, priv_key);
+  SSL_CTX_use_certificate(ctx, cert);
+
+  X509_free(cert);
+  EVP_PKEY_free(priv_key);
+
+  int r = SSL_CTX_check_private_key(ctx);
+  if(r != 1) {
+    trace(LOG_ERR, "Certificate/private key file mismatch");
+    return NULL;
+  }
+
+  SSL_CTX_set_options(ctx,
+                      SSL_OP_NO_SSLv2 |
+                      SSL_OP_NO_SSLv3 |
+                      SSL_OP_NO_TLSv1);
+
+  return ctx;
+}
+
+
+void
+asyncio_sslctx_free(void *ctx)
+{
+  SSL_CTX_free(ctx);
+}

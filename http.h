@@ -153,6 +153,11 @@ void http_route_add(const char *path, http_callback2_t *callback, int flags);
 
 struct http_server *http_server_init(const char *config);
 
+struct http_server *http_server_create(int port, const char *bind_address,
+                                       void *sslctx);
+
+void http_server_update_sslctx(struct http_server *hs, void *sslctx);
+
 int http_access_verify(http_request_t *hc);
 
 void http_serve_static(const char *path, const char *filebundle);

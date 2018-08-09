@@ -330,10 +330,11 @@ http_log(http_request_t *hr, int status, const char *str)
     return;
 
   if(hr->hr_connection != NULL) {
-    cfg_root(cr);
     const http_server_t *hs = hr->hr_connection->hc_server;
-
-    logua = cfg_get_int(cr, CFG(hs->hs_config_prefix, "logua"), 0);
+    if(hs->hs_config_prefix != NULL) {
+      cfg_root(cr);
+      logua = cfg_get_int(cr, CFG(hs->hs_config_prefix, "logua"), 0);
+    }
   }
 
   int64_t d1 = hr->hr_req_process - hr->hr_req_received;
@@ -1184,8 +1185,11 @@ http_create_request(http_connection_t *hc, int continue_check)
 static void
 trace_request_headers(http_connection_t *hc)
 {
-  cfg_root(cr);
   const http_server_t *hs = hc->hc_server;
+  if(hs->hs_config_prefix == NULL)
+    return;
+
+  cfg_root(cr);
   int tracehttp = cfg_get_int(cr, CFG(hs->hs_config_prefix, "trace"), 0);
   if(!tracehttp)
     return;
@@ -1553,6 +1557,45 @@ http_server_init(const char *config_prefix)
 
   return hs;
 }
+
+
+struct http_server *
+http_server_create(int port, const char *bind_address, void *sslctx)
+{
+  http_server_t *hs = calloc(1, sizeof(http_server_t));
+  atomic_set(&hs->hs_refcount, 1);
+  hs->hs_port = port;
+  hs->hs_bind_address = strdup(bind_address);
+  hs->hs_sslctx = sslctx;
+  asyncio_run_task(http_server_start, hs);
+  return hs;
+}
+
+typedef struct http_server_aux {
+  http_server_t *hs;
+  void *aux;
+} http_server_aux_t;
+
+static void
+http_server_update_sslctx_onthread(void *opaque)
+{
+  http_server_aux_t *hsa = opaque;
+  http_server_t *hs = hsa->hs;
+  free(hs->hs_sslctx);
+  hs->hs_sslctx = hsa->aux;
+  free(hsa);
+}
+
+void
+http_server_update_sslctx(struct http_server *hs, void *sslctx)
+{
+  http_server_aux_t *hsa = calloc(1, sizeof(http_server_aux_t));
+  hsa->hs = hs;
+  hsa->aux = sslctx;
+  asyncio_run_task(http_server_update_sslctx_onthread, hsa);
+}
+
+
 
 
 
