@@ -31,6 +31,8 @@
 struct http_connection;
 struct ntv;
 struct mbuf;
+struct sockaddr;
+struct async_fd;
 
 TAILQ_HEAD(http_arg_list, http_arg);
 
@@ -95,7 +97,8 @@ typedef struct http_request {
 } http_request_t;
 
 
-
+typedef void *(http_sniffer_t)(void *opaque, struct http_connection *hc,
+                               struct mbuf *mq);
 
 int http_dispatch_local_request(http_request_t *hr);
 
@@ -134,6 +137,10 @@ int http_send_reply(http_request_t *hc, int rc, const char *content,
 
 void http_send_raw(http_request_t *hc, const void *data, size_t len);
 
+const struct sockaddr *http_connection_get_peer(struct http_connection *hc);
+
+struct async_fd *http_connection_get_af(struct http_connection *hc);
+
 int http_send_chunk(http_request_t *hc, const void *data, size_t len);
 
 int http_wait_send_buffe(http_request_t *hr, int bytes);
@@ -154,7 +161,8 @@ void http_route_add(const char *path, http_callback2_t *callback, int flags);
 struct http_server *http_server_init(const char *config);
 
 struct http_server *http_server_create(int port, const char *bind_address,
-                                       void *sslctx);
+                                       void *sslctx,
+                                       http_sniffer_t *sniffer);
 
 void http_server_update_sslctx(struct http_server *hs, void *sslctx);
 

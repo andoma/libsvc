@@ -73,6 +73,8 @@ typedef struct http_server {
 
   void *hs_sslctx;
 
+  http_sniffer_t *hs_sniffer;
+
 } http_server_t;
 
 
@@ -120,6 +122,7 @@ typedef struct http_connection {
   struct http_arg_list hc_request_headers;
 
   char *hc_peer_addr;
+  struct sockaddr_in6 hc_peer_sockaddr;
 
   uint8_t *hc_body;
   size_t hc_body_size;
@@ -130,6 +133,9 @@ typedef struct http_connection {
 
   int hc_max_backlog;
   atomic_t hc_backlog;
+
+  http_sniffer_t *hc_sniffer;
+  void *hc_sniffer_opaque;
 
 } http_connection_t;
 
@@ -1363,12 +1369,31 @@ http_connection_shutdown_task(void *aux)
 static void
 http_connection_close(http_connection_t *hc)
 {
+  if(hc->hc_sniffer != NULL && hc->hc_sniffer_opaque != NULL) {
+    hc->hc_sniffer(hc->hc_sniffer_opaque, hc, NULL);
+    hc->hc_sniffer = NULL;
+    hc->hc_sniffer_opaque = NULL;
+  }
+
   hc->hc_closed = 1;
   asyncio_close(hc->hc_af);
   asyncio_timer_disarm(&hc->hc_timer);
   task_run_in_group(http_connection_shutdown_task, hc, hc->hc_task_group);
 }
 
+
+const struct sockaddr *
+http_connection_get_peer(struct http_connection *hc)
+{
+  return (const struct sockaddr *)&hc->hc_peer_sockaddr;
+}
+
+struct async_fd *
+http_connection_get_af(struct http_connection *hc)
+{
+  async_fd_retain(hc->hc_af);
+  return hc->hc_af;
+}
 
 /**
  *
@@ -1377,6 +1402,17 @@ static void
 http_server_read(void *opaque, struct mbuf *mq)
 {
   http_connection_t *hc = opaque;
+
+  if(hc->hc_sniffer != NULL) {
+    hc->hc_sniffer_opaque =
+      hc->hc_sniffer(hc->hc_sniffer_opaque, hc, mq);
+    if(hc->hc_sniffer_opaque) {
+      asyncio_timer_arm_delta(&hc->hc_timer, 20 * 1000000);
+      return;
+    }
+    hc->hc_sniffer = NULL;
+  }
+
   while(hc->hc_ws_path == NULL) {
 
     if(hc->hc_read_disabled)
@@ -1474,13 +1510,18 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
     if(inet_ntop(AF_INET, &((struct sockaddr_in *)peer)->sin_addr,
                  tmpbuf, sizeof(tmpbuf)) != NULL)
       hc->hc_peer_addr = strdup(tmpbuf);
+
+    memcpy(&hc->hc_peer_sockaddr, peer, sizeof(struct sockaddr_in));
     break;
   case AF_INET6:
     if(inet_ntop(AF_INET, &((struct sockaddr_in6 *)peer)->sin6_addr,
                  tmpbuf, sizeof(tmpbuf)) != NULL)
       hc->hc_peer_addr = strdup(tmpbuf);
+    memcpy(&hc->hc_peer_sockaddr, peer, sizeof(struct sockaddr_in6));
     break;
   }
+
+  hc->hc_sniffer = hs->hs_sniffer;
 
   if(hc->hc_peer_addr == NULL)
     hc->hc_peer_addr = strdup("0.0.0.0");
@@ -1560,13 +1601,15 @@ http_server_init(const char *config_prefix)
 
 
 struct http_server *
-http_server_create(int port, const char *bind_address, void *sslctx)
+http_server_create(int port, const char *bind_address, void *sslctx,
+                   http_sniffer_t *sniffer)
 {
   http_server_t *hs = calloc(1, sizeof(http_server_t));
   atomic_set(&hs->hs_refcount, 1);
   hs->hs_port = port;
   hs->hs_bind_address = strdup(bind_address);
   hs->hs_sslctx = sslctx;
+  hs->hs_sniffer = sniffer;
   asyncio_run_task(http_server_start, hs);
   return hs;
 }
