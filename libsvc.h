@@ -23,6 +23,8 @@
 
 void libsvc_init(void);
 
+void libsvc_term(void);
+
 void libsvc_fini(void);
 
 void libsvc_set_fdlimit(int num_fd);

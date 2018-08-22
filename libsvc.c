@@ -26,9 +26,8 @@
 #include "tcp.h"
 #include "misc.h"
 #include "init.h"
-#include "queue.h"
 #include "trace.h"
-
+#include "vec.h"
 #include <sys/resource.h>
 
 #include <openssl/rand.h>
@@ -46,14 +45,14 @@
 #endif
 
 
-static LIST_HEAD(, inithelper) inithelpers;
-
-typedef struct inithelper {
+typedef struct {
   void (*init)(void);
+  void (*term)(void);
   void (*fini)(void);
   int prio;
-  LIST_ENTRY(inithelper) link;
 } inithelper_t;
+
+static VEC_HEAD(, inithelper_t) inithelpers;
 
 /**
  *
@@ -66,13 +65,11 @@ ihcmp(const inithelper_t *a, const inithelper_t *b)
 
 
 void
-inithelper_register(void (*init)(void), void (*fini)(void), int prio)
+inithelper_register(void (*init)(void), void (*term)(void),
+                    void (*fini)(void), int prio)
 {
-  inithelper_t *ih = malloc(sizeof(inithelper_t));
-  ih->init = init;
-  ih->fini = fini;
-  ih->prio = prio;
-  LIST_INSERT_SORTED(&inithelpers, ih, link, ihcmp);
+  VEC_PUSH_BACK(&inithelpers, ((const inithelper_t) {
+        .init = init, .term = term, .fini = fini, .prio = prio}));
 }
 
 
@@ -115,9 +112,10 @@ libsvc_init(void)
   tcp_server_init();
 #endif
 
-  const inithelper_t *ih;
-  LIST_FOREACH(ih, &inithelpers, link) {
-    ih->init();
+  VEC_SORT(&inithelpers, ihcmp);
+  for(ssize_t i = 0; i < VEC_LEN(&inithelpers); i++) {
+    if(VEC_ITEM(&inithelpers, i).init)
+      VEC_ITEM(&inithelpers, i).init();
   }
 }
 
@@ -125,20 +123,18 @@ libsvc_init(void)
 void
 libsvc_fini(void)
 {
-  inithelper_t *ih;
-
-  LIST_HEAD(, inithelper) rev;
-  LIST_INIT(&rev);
-  while((ih = LIST_FIRST(&inithelpers)) != NULL) {
-    LIST_REMOVE(ih, link);
-    LIST_INSERT_HEAD(&rev, ih, link);
+  for(ssize_t i = VEC_LEN(&inithelpers) - 1; i >= 0; i--) {
+    if(VEC_ITEM(&inithelpers, i).fini)
+      VEC_ITEM(&inithelpers, i).fini();
   }
+}
 
-  while((ih = LIST_FIRST(&rev)) != NULL) {
-    LIST_REMOVE(ih, link);
-    if(ih->fini != NULL)
-      ih->fini();
-    free(ih);
+void
+libsvc_term(void)
+{
+  for(ssize_t i = VEC_LEN(&inithelpers) - 1; i >= 0; i--) {
+    if(VEC_ITEM(&inithelpers, i).term)
+      VEC_ITEM(&inithelpers, i).term();
   }
 }
 

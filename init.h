@@ -35,7 +35,13 @@ void inithelper_register(void (*init)(void),
 // Lower prio == init earlier
 
 #define INITME(init_, fini_, prio_)                                     \
-static void LIBSVC_JOIN(init, __LINE__)(void) __attribute__((constructor)); \
-static void LIBSVC_JOIN(init, __LINE__)(void) { \
-  inithelper_register(init_, fini_, prio_); \
-}
+  static void LIBSVC_JOIN(init, __LINE__)(void) __attribute__((constructor)); \
+  static void LIBSVC_JOIN(init, __LINE__)(void) {                       \
+    inithelper_register(init_, NULL, fini_, prio_);                     \
+  }
+
+#define INITME4(init_, term_, fini_, prio_)                              \
+  static void LIBSVC_JOIN(init, __LINE__)(void) __attribute__((constructor)); \
+  static void LIBSVC_JOIN(init, __LINE__)(void) {                       \
+    inithelper_register(init_, term_, fini_, prio_);                     \
+  }
