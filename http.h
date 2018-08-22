@@ -164,6 +164,8 @@ struct http_server *http_server_create(int port, const char *bind_address,
                                        void *sslctx,
                                        http_sniffer_t *sniffer);
 
+void http_server_destroy(struct http_server *hs);
+
 void http_server_update_sslctx(struct http_server *hs, void *sslctx);
 
 int http_access_verify(http_request_t *hc);

@@ -1557,6 +1557,17 @@ http_server_start(void *aux)
 }
 
 
+static void
+http_server_stop(void *aux)
+{
+  http_server_t *hs = aux;
+
+  if(hs->hs_fd != NULL) {
+    asyncio_close(hs->hs_fd);
+    hs->hs_fd = NULL;
+  }
+}
+
 
 
 /**
@@ -1613,6 +1624,13 @@ http_server_create(int port, const char *bind_address, void *sslctx,
   asyncio_run_task(http_server_start, hs);
   return hs;
 }
+
+void
+http_server_destroy(struct http_server *hs)
+{
+  asyncio_run_task_blocking(http_server_stop, hs);
+}
+
 
 typedef struct http_server_aux {
   http_server_t *hs;

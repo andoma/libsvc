@@ -26,6 +26,7 @@
 
 
 void inithelper_register(void (*init)(void),
+                         void (*term)(void),
                          void (*fini)(void),
                          int prio);
 
