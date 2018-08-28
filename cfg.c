@@ -21,7 +21,7 @@
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 
-
+#include <stdlib.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,10 +29,9 @@
 #include <limits.h>
 #include <dirent.h>
 
-#include "htsmsg_json.h"
 #include "misc.h"
 #include "trace.h"
-
+#include "ntv.h"
 #include "cfg.h"
 #include "cmd.h"
 
@@ -82,8 +81,7 @@ cfg_t *
 cfg_get_root(void)
 {
   pthread_mutex_lock(&cfg_mutex);
-  cfg_t *c = cfgroot;
-  htsmsg_retain(c);
+  cfg_t *c = ntv_retain(cfgroot);
   pthread_mutex_unlock(&cfg_mutex);
   return c;
 }
@@ -91,8 +89,11 @@ cfg_get_root(void)
 void
 cfg_releasep(cfg_t **p)
 {
-  if(*p)
-    htsmsg_release(*p);
+  if(*p) {
+    pthread_mutex_lock(&cfg_mutex);
+    ntv_release(*p);
+    pthread_mutex_unlock(&cfg_mutex);
+  }
 }
 
 
@@ -133,9 +134,9 @@ cfg_load(const char *filename, char *errbuf, size_t errlen)
   }
 
   char errbuf2[256];
-  htsmsg_t *m = htsmsg_json_deserialize(cfgtxt, errbuf2, sizeof(errbuf2));
+  ntv_t *msg = ntv_json_deserialize(cfgtxt, errbuf2, sizeof(errbuf2));
   free(cfgtxt);
-  if(m == NULL) {
+  if(msg == NULL) {
     snprintf(errbuf, errlen, "Unable to parse file %s -- %s", filename, errbuf2);
     trace(LOG_ERR, "Unable to parse file %s -- %s", filename, errbuf2);
     trace(LOG_ERR, "Config not updated");
@@ -144,10 +145,9 @@ cfg_load(const char *filename, char *errbuf, size_t errlen)
 
   pthread_mutex_lock(&cfg_mutex);
   if(cfgroot != NULL)
-    htsmsg_release(cfgroot);
+    ntv_release(cfgroot);
 
-  cfgroot = m;
-  htsmsg_retain(m);
+  cfgroot = msg;
   pthread_mutex_unlock(&cfg_mutex);
   trace(LOG_NOTICE, "Config updated");
   cfg_call_reload_callbacks();
@@ -155,39 +155,14 @@ cfg_load(const char *filename, char *errbuf, size_t errlen)
 }
 
 
-/**
- *
- */
-static htsmsg_field_t *
-field_from_vec(cfg_t *m, const char **vec)
-{
-  htsmsg_field_t *f = NULL;
-  while(*vec) {
-    f = htsmsg_field_find(m, vec[0]);
-    if(f == NULL)
-      return NULL;
-    if(vec[1] == NULL)
-      return f;
-    if(f->hmf_type != HMF_MAP && f->hmf_type != HMF_LIST)
-      return NULL;
-    m = &f->hmf_msg;
-    vec++;
-  }
-  return NULL;
-}
-
 
 /**
  *
  */
 const char *
-cfg_get_str(cfg_t *c, const char **vec, const char *def)
+cfg_get_str(const ntv_t *msg, const char **vec, const char *def)
 {
-  htsmsg_field_t *f = field_from_vec(c, vec);
-  if(f == NULL)
-    return def;
-
-  return htsmsg_field_get_string(f) ?: def;
+  return ntv_get_str(ntv_field_from_path(msg, vec), NULL) ?: def;
 }
 
 
@@ -195,20 +170,9 @@ cfg_get_str(cfg_t *c, const char **vec, const char *def)
  *
  */
 int64_t
-cfg_get_s64(cfg_t *c, const char **path, int64_t def)
+cfg_get_s64(const ntv_t *msg, const char **path, int64_t def)
 {
-  htsmsg_field_t *f = field_from_vec(c, path);
-  if(f == NULL)
-    return def;
-
-  switch(f->hmf_type) {
-  default:
-    return def;
-  case HMF_STR:
-    return strtoll(f->hmf_str, NULL, 0);
-  case HMF_S64:
-    return f->hmf_s64;
-  }
+  return ntv_get_int64(ntv_field_from_path(msg, path), NULL, def);
 }
 
 
@@ -216,20 +180,9 @@ cfg_get_s64(cfg_t *c, const char **path, int64_t def)
  *
  */
 double
-cfg_get_dbl(cfg_t *c, const char **path, double def)
+cfg_get_dbl(const ntv_t *msg, const char **path, double def)
 {
-  htsmsg_field_t *f = field_from_vec(c, path);
-  if(f == NULL)
-    return def;
-
-  switch(f->hmf_type) {
-  default:
-    return def;
-  case HMF_DBL:
-    return f->hmf_dbl;
-  case HMF_S64:
-    return f->hmf_s64;
-  }
+  return ntv_get_double(ntv_field_from_path(msg, path), NULL, def);
 }
 
 
@@ -237,68 +190,12 @@ cfg_get_dbl(cfg_t *c, const char **path, double def)
  *
  */
 int
-cfg_get_int(cfg_t *c, const char **path, int def)
+cfg_get_int(const ntv_t *msg, const char **path, int def)
 {
-  int64_t s64 = cfg_get_s64(c, path, def);
-
-  if(s64 < -0x80000000LL || s64 > 0x7fffffffLL)
-    return def;
-  return s64;
+  return ntv_get_int(ntv_field_from_path(msg, path), NULL, def);
 }
-
 
 #if 0
-/**
- *
- */
-cfg_t *
-cfg_get_project(cfg_t *c, const char *id)
-{
-  htsmsg_t *m = htsmsg_get_map(c, "projects");
-  m =  m ? htsmsg_get_map(m, id) : NULL;
-  if(m == NULL)
-    trace(LOG_ERR, "%s: No config for project", id);
-  return m;
-}
-#endif
-
-
-/**
- *
- */
-cfg_t *
-cfg_get_map(cfg_t *c, const char *id)
-{
-  return htsmsg_get_map(c, id);
-}
-
-
-/**
- *
- */
-cfg_t *
-cfg_get_list(cfg_t *c, const char *id)
-{
-  return htsmsg_get_list(c, id);
-}
-
-
-/**
- *
- */
-int
-cfg_list_length(cfg_t *c)
-{
-  htsmsg_field_t *f;
-  int r = 0;
-  HTSMSG_FOREACH(f, c) {
-    if(f->hmf_type == HMF_COMMENT)
-      continue;
-    r++;
-  }
-  return r;
-}
-
 /**
  *
  */
@@ -320,7 +217,7 @@ cfg_find_map(cfg_t *c, const char *key, const char *value)
   }
   return NULL;
 }
-
+#endif
 
 
 static int

@@ -23,9 +23,9 @@
 
 
 #pragma once
-#include "htsmsg.h"
+#include "ntv.h"
 
-typedef htsmsg_t cfg_t;
+typedef ntv_t cfg_t;
 
 int cfg_load(const char *filename, char *errbuf, size_t errlen);
 
@@ -39,20 +39,18 @@ void cfg_releasep(cfg_t **p);
 #define CFGI(x) (const char *[]){HTSMSG_INDEX(x), NULL}
 #define CFG_INDEX(x) HTSMSG_INDEX(x)
 
-const char *cfg_get_str(cfg_t *c, const char **vec, const char *def);
+const char *cfg_get_str(const cfg_t *c, const char **path, const char *def);
 
-int64_t cfg_get_s64(cfg_t *c, const char **path, int64_t def);
+int64_t cfg_get_s64(const cfg_t *c, const char **path, int64_t def);
 
-int cfg_get_int(cfg_t *c, const char **path, int def);
+int cfg_get_int(const cfg_t *c, const char **path, int def);
 
-double cfg_get_dbl(cfg_t *c, const char **path, double def);
+double cfg_get_dbl(const cfg_t *c, const char **path, double def);
 
-cfg_t *cfg_get_map(cfg_t *c, const char *id);
+#define cfg_get_map ntv_get_map
 
-cfg_t *cfg_get_list(cfg_t *c, const char *id);
+#define cfg_get_list ntv_get_list
 
-cfg_t *cfg_find_map(cfg_t *c, const char *key, const char *value);
-
-int cfg_list_length(cfg_t *c);
+#define cfg_list_length ntv_num_children
 
 void cfg_add_reload_cb(void (*fn)(void));

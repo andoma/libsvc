@@ -23,6 +23,7 @@
 
 #define _GNU_SOURCE
 
+#include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -90,8 +91,12 @@ ntv_field_clear(ntv_t *f, ntv_type newtype)
 static void
 ntv_destroy(ntv_t *n)
 {
-  if(n->ntv_parent != NULL)
+  if(n->ntv_flags & NTV_REFCOUNTED) {
+    assert(*n->ntv_refcount == 0);
+    free(n->ntv_refcount);
+  } else if(n->ntv_parent != NULL) {
     TAILQ_REMOVE(&n->ntv_parent->ntv_children, n, ntv_link);
+  }
 
   free(n->ntv_name);
   ntv_field_clear(n, NTV_NULL);
@@ -108,6 +113,10 @@ ntv_release(ntv_t *n)
 {
   if(n == NULL)
     return;
+
+  if(n->ntv_flags & NTV_REFCOUNTED && --(*n->ntv_refcount))
+    return;
+
   ntv_destroy(n);
 }
 
@@ -120,13 +129,31 @@ ntv_releasep(ntv_t **n)
 }
 
 
+ntv_t *
+ntv_retain(ntv_t *n)
+{
+  if(n == NULL)
+    return NULL;
+
+  if(n->ntv_flags & NTV_REFCOUNTED) {
+    (*n->ntv_refcount)++;
+  } else {
+    assert(n->ntv_parent == NULL);
+    n->ntv_flags |= NTV_REFCOUNTED;
+    n->ntv_refcount = malloc(sizeof(unsigned long));
+    *n->ntv_refcount = 2;
+  }
+  return n;
+}
+
+
 static ntv_t *
 ntv_field_name_find(const ntv_t *parent, const char *fieldname,
                     ntv_type type)
 {
   ntv_t *sub;
   if(parent == NULL || fieldname == NULL)
-    return NULL;
+    return (ntv_t *)parent;
 
   if(-((unsigned long)(intptr_t)fieldname) < 4096) {
     unsigned int num = -(intptr_t)fieldname - 1;
@@ -146,6 +173,15 @@ ntv_field_name_find(const ntv_t *parent, const char *fieldname,
       return sub;
   }
   return NULL;
+}
+
+
+const ntv_t *
+ntv_field_from_path(const ntv_t *n, const char **path)
+{
+  if(*path == NULL)
+    return n;
+  return ntv_field_from_path(ntv_field_name_find(n, *path, -1), path + 1);
 }
 
 
@@ -258,14 +294,14 @@ ntv_get_double(const ntv_t *n, const char *key, double default_value)
 const char *
 ntv_get_str(const ntv_t *n, const char *key)
 {
-  ntv_t *f = ntv_field_name_find(n, key, NTV_STRING);
+  const ntv_t *f = ntv_field_name_find(n, key, NTV_STRING);
   return f ? f->ntv_string : NULL;
 }
 
 const void *
 ntv_get_bin(const ntv_t *ntv, const char *key, size_t *sizep)
 {
-  ntv_t *f = ntv_field_name_find(ntv, key, NTV_BINARY);
+  const ntv_t *f = ntv_field_name_find(ntv, key, NTV_BINARY);
   if(sizep != NULL)
     *sizep = f ? f->ntv_binsize : 0;
   return f ? f->ntv_bin : NULL;

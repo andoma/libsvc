@@ -39,6 +39,7 @@ typedef struct ntv_namespace {
 typedef enum {
   NTV_XML_ATTRIBUTE = 0x1,
   NTV_DONT_FREE = 0x2,
+  NTV_REFCOUNTED = 0x4,
 } ntv_flags;
 
 typedef enum {
@@ -58,7 +59,10 @@ typedef enum {
 typedef struct ntv {
 
   TAILQ_ENTRY(ntv) ntv_link;
-  struct ntv *ntv_parent;
+  union {
+    struct ntv *ntv_parent;
+    unsigned long *ntv_refcount;
+  };
 
   char *ntv_name;
   ntv_flags ntv_flags;
@@ -113,14 +117,17 @@ ntv_t *ntv_create_list(void);
 void ntv_delete_field(const ntv_t *ntv, const char *key);
 
 void ntv_release(ntv_t *ntv);
+ntv_t *ntv_retain(ntv_t *ntv) __attribute__ ((warn_unused_result));
 void ntv_releasep(ntv_t **ntv);
 void ntv_print(const ntv_t *ntv);
 ntv_t *ntv_copy(const ntv_t *src);
 void ntv_merge(ntv_t *dst, const ntv_t *src);
 int ntv_is_empty(const ntv_t *ntv);
 int ntv_num_children(const ntv_t *ntv);
+const ntv_t *ntv_field_from_path(const ntv_t *n, const char **path);
 
 ntv_t *ntv_detach_field(ntv_t *n, const char *key);
+
 
 // Return non-zero if 'src' and 'dst' are not equal
 int ntv_cmp(const ntv_t *src, const ntv_t *dst);
