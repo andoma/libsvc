@@ -21,7 +21,7 @@
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 
-
+#include <stdlib.h>
 #include <alloca.h>
 #include <string.h>
 #include <pthread.h>
@@ -29,12 +29,11 @@
 
 #include "curlhelpers.h"
 #include "redblack.h"
-#include "htsmsg_json.h"
 #include "talloc.h"
 #include "misc.h"
 #include "memstream.h"
 #include "sock.h"
-
+#include "ntv.h"
 
 size_t
 libsvc_curl_waste_output(char *ptr, size_t size, size_t nmemb, void *userdata)
@@ -130,7 +129,7 @@ hdrfunc(void *ptr, size_t size, size_t nmemb, void *userdata)
 /**
  *
  */
-htsmsg_t *
+ntv_t *
 libsvc_http_json_get(const char *url, const char *auth,
                      char *errbuf, size_t errlen)
 {
@@ -164,7 +163,7 @@ libsvc_http_json_get(const char *url, const char *auth,
   if(ce->ce_expire > now) {
 
     if(ce->ce_status == 200) {
-      htsmsg_t *m = htsmsg_json_deserialize(ce->ce_response, errbuf, errlen);
+      ntv_t *m = ntv_json_deserialize(ce->ce_response, errbuf, errlen);
       pthread_mutex_unlock(&cache_mutex);
       return m;
     }
@@ -257,73 +256,11 @@ libsvc_http_json_get(const char *url, const char *auth,
   free(out);
   curl_easy_cleanup(curl);
 
-  htsmsg_t *m = NULL;
+  ntv_t *m = NULL;
   if(ce->ce_response != NULL)
-    m = htsmsg_json_deserialize(ce->ce_response, errbuf, errlen);
+    m = ntv_json_deserialize(ce->ce_response, errbuf, errlen);
 
   pthread_mutex_unlock(&cache_mutex);
   return m;
 }
 
-
-
-/**
- *
- */
-htsmsg_t *
-libsvc_http_json_post(const char *url, const char *auth,
-                      char *errbuf, size_t errlen,
-                      const void *data, size_t datalen)
-{
-  char *out;
-  size_t outlen;
-  FILE *f = open_buffer(&out, &outlen);
-
-  struct curl_slist *slist = NULL;
-
-  CURL *curl = curl_easy_init();
-  curl_easy_setopt(curl, CURLOPT_URL, url);
-  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
-  curl_easy_setopt(curl, CURLOPT_USERAGENT, "libsvc");
-  curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-  curl_easy_setopt(curl, CURLOPT_POST, 1L);
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)datalen);
-
-  slist = curl_slist_append(slist, "Accept: application/json");
-
-  if(auth != NULL)
-    slist = curl_slist_append(slist, tsprintf("Authorization: %s", auth));
-
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
-
-  CURLcode result = curl_easy_perform(curl);
-  curl_slist_free_all(slist);
-
-
-  fwrite("", 1, 1, f);
-  fclose(f);
-
-  if(result) {
-    snprintf(errbuf, errlen, "%s", curl_easy_strerror(result));
-    curl_easy_cleanup(curl);
-    free(out);
-    return NULL;
-  }
-
-  long http_code = 0;
-  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-  htsmsg_t *m = NULL;
-
-  if(http_code < 400) {
-    m = htsmsg_json_deserialize(out, errbuf, errlen);
-  } else {
-    snprintf(errbuf, errlen, "HTTP Error %lu", http_code);
-  }
-  free(out);
-
-  curl_easy_cleanup(curl);
-  return m;
-}

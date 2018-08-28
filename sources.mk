@@ -6,9 +6,6 @@ libsvc_SRCS += \
 	misc.c \
 	task.c \
 	htsbuf.c \
-	htsmsg.c \
-	htsmsg_json.c \
-	htsmsg_binary.c \
 	json.c \
 	dbl.c \
 	dial.c \
@@ -38,9 +35,6 @@ libsvc_INCS += \
 	misc.h \
 	task.h \
 	htsbuf.h \
-	htsmsg.h \
-	htsmsg_json.h \
-	htsmsg_binary.h \
 	json.h \
 	dbl.h \
 	dial.h \
@@ -82,11 +76,9 @@ CFLAGS  += $(shell $(PKG_CONFIG) --cflags libcurl)
 LDFLAGS += $(shell $(PKG_CONFIG) --libs libcurl)
 endif
 
-libsvc_SRCS += urlshorten.c
 libsvc_SRCS += http_client.c
 libsvc_SRCS += curlhelpers.c
 
-libsvc_INCS += urlshorten.h
 libsvc_INCS += http_client.h
 libsvc_INCS += curlhelpers.h
 endif
