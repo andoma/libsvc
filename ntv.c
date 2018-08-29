@@ -153,7 +153,7 @@ ntv_field_name_find(const ntv_t *parent, const char *fieldname,
 {
   ntv_t *sub;
   if(parent == NULL || fieldname == NULL)
-    return (ntv_t *)parent;
+    return NULL;
 
   if(-((unsigned long)(intptr_t)fieldname) < 4096) {
     unsigned int num = -(intptr_t)fieldname - 1;
@@ -188,6 +188,8 @@ ntv_field_from_path(const ntv_t *n, const char **path)
 void
 ntv_delete_field(const ntv_t *parent, const char *fieldname)
 {
+  if(fieldname == NULL)
+    return;
   ntv_t *f = ntv_field_name_find(parent, fieldname, -1);
   if(f != NULL)
     ntv_destroy(f);
@@ -208,8 +210,7 @@ ntv_detach_field(ntv_t *parent, const char *key)
 static ntv_t *
 ntv_field_name_prep(ntv_t *parent, const char *fieldname, ntv_type type)
 {
-  ntv_t *f = fieldname != NULL ?
-    ntv_field_name_find(parent, fieldname, -1) : NULL;
+  ntv_t *f = ntv_field_name_find(parent, fieldname, -1);
   if(f != NULL) {
     ntv_field_clear(f, type);
   } else {
@@ -270,38 +271,45 @@ ntv_ret_double(const ntv_t *f, double default_value)
   }
 }
 
+static const ntv_t *
+ntv_field_name_get(const ntv_t *parent, const char *fieldname, ntv_type type)
+{
+  return fieldname ? ntv_field_name_find(parent, fieldname, type) : parent;
+}
+
+
 int64_t
 ntv_get_int64(const ntv_t *n, const char *key, int64_t default_value)
 {
-  return ntv_ret_int64(ntv_field_name_find(n, key, -1), default_value);
+  return ntv_ret_int64(ntv_field_name_get(n, key, -1), default_value);
 }
 
 
 int
 ntv_get_int(const ntv_t *n, const char *key, int default_value)
 {
-  return ntv_ret_int64(ntv_field_name_find(n, key, -1), default_value);
+  return ntv_ret_int64(ntv_field_name_get(n, key, -1), default_value);
 }
 
 
 double
 ntv_get_double(const ntv_t *n, const char *key, double default_value)
 {
-  return ntv_ret_double(ntv_field_name_find(n, key, -1), default_value);
+  return ntv_ret_double(ntv_field_name_get(n, key, -1), default_value);
 }
 
 
 const char *
 ntv_get_str(const ntv_t *n, const char *key)
 {
-  const ntv_t *f = ntv_field_name_find(n, key, NTV_STRING);
+  const ntv_t *f = ntv_field_name_get(n, key, NTV_STRING);
   return f ? f->ntv_string : NULL;
 }
 
 const void *
 ntv_get_bin(const ntv_t *ntv, const char *key, size_t *sizep)
 {
-  const ntv_t *f = ntv_field_name_find(ntv, key, NTV_BINARY);
+  const ntv_t *f = ntv_field_name_get(ntv, key, NTV_BINARY);
   if(sizep != NULL)
     *sizep = f ? f->ntv_binsize : 0;
   return f ? f->ntv_bin : NULL;
@@ -310,13 +318,13 @@ ntv_get_bin(const ntv_t *ntv, const char *key, size_t *sizep)
 const ntv_t *
 ntv_get_map(const ntv_t *n, const char *key)
 {
-  return ntv_field_name_find(n, key, NTV_MAP);
+  return ntv_field_name_get(n, key, NTV_MAP);
 }
 
 const ntv_t *
 ntv_get_list(const ntv_t *n, const char *key)
 {
-  return ntv_field_name_find(n, key, NTV_LIST);
+  return ntv_field_name_get(n, key, NTV_LIST);
 }
 
 ntv_t *
