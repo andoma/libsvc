@@ -29,6 +29,8 @@ typedef ntv_t cfg_t;
 
 int cfg_load(const char *filename, char *errbuf, size_t errlen);
 
+int cfg_load_str(const char *json, char *errbuf, size_t errlen);
+
 cfg_t *cfg_get_root(void);
 
 void cfg_releasep(cfg_t **p);

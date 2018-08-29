@@ -97,6 +97,23 @@ cfg_releasep(cfg_t **p)
 }
 
 
+int
+cfg_load_str(const char *json, char *errbuf, size_t errlen)
+{
+  ntv_t *msg = ntv_json_deserialize(json, errbuf, errlen);
+  if(msg == NULL)
+    return -1;
+  pthread_mutex_lock(&cfg_mutex);
+  if(cfgroot != NULL)
+    ntv_release(cfgroot);
+
+  cfgroot = msg;
+  pthread_mutex_unlock(&cfg_mutex);
+  trace(LOG_NOTICE, "Config updated");
+  cfg_call_reload_callbacks();
+  return 0;
+}
+
 /**
  *
  */
@@ -124,7 +141,7 @@ cfg_load(const char *filename, char *errbuf, size_t errlen)
 
   trace(LOG_NOTICE, "About to load config form %s", filename);
 
-  char *cfgtxt = readfile(filename, NULL);
+  scoped_char *cfgtxt = readfile(filename, NULL);
   if(cfgtxt == NULL) {
     const char *errstr = strerror(errno);
     snprintf(errbuf, errlen, "Unable to read file %s -- %s", filename, errstr);
@@ -134,23 +151,13 @@ cfg_load(const char *filename, char *errbuf, size_t errlen)
   }
 
   char errbuf2[256];
-  ntv_t *msg = ntv_json_deserialize(cfgtxt, errbuf2, sizeof(errbuf2));
-  free(cfgtxt);
-  if(msg == NULL) {
+  int r = cfg_load_str(cfgtxt, errbuf2, sizeof(errbuf2));
+  if(r) {
     snprintf(errbuf, errlen, "Unable to parse file %s -- %s", filename, errbuf2);
     trace(LOG_ERR, "Unable to parse file %s -- %s", filename, errbuf2);
     trace(LOG_ERR, "Config not updated");
     return -1;
   }
-
-  pthread_mutex_lock(&cfg_mutex);
-  if(cfgroot != NULL)
-    ntv_release(cfgroot);
-
-  cfgroot = msg;
-  pthread_mutex_unlock(&cfg_mutex);
-  trace(LOG_NOTICE, "Config updated");
-  cfg_call_reload_callbacks();
   return 0;
 }
 
