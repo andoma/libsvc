@@ -1204,6 +1204,8 @@ asyncio_bind(const char *bindaddr, int port,
 
   setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(int));
 
+  setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(int));
+
   setup_socket(fd);
 
   memset(&s, 0, sizeof(s));
