@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 
+struct ntv;
+
 typedef struct http_client_response {
 
   char *hcr_body;
@@ -47,7 +49,6 @@ enum {
   HCR_TAG_VERB,
   HCR_TAG_USERNPASS,
   HCR_TAG_OUTPUTFILE,
-  HCR_TAG_CURL_HANDLEPTR,
   HCR_TAG_POSTFILE,
 };
 
@@ -87,3 +88,7 @@ FILE *http_open_file(const char *url);
 
 FILE *http_stream_file(const char *url, void *opaque,
                        http_client_auth_cb_t *auth_cb, int flags);
+
+int http_client_get_http_code(void *handle);
+
+char *http_client_ntv_to_args(const struct ntv *ntv);

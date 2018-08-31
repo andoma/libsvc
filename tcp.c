@@ -450,31 +450,20 @@ tcp_nonblock(tcp_stream_t *ts, int on)
  *
  */
 int
-tcp_write_queue(tcp_stream_t *ts, htsbuf_queue_t *q)
+tcp_write_queue(tcp_stream_t *ts, mbuf_t *mq)
 {
-  htsbuf_data_t *hd;
-  int l, err = 0;
+  const void *buf;
+  size_t len;
 
-  while((hd = TAILQ_FIRST(&q->hq_q)) != NULL) {
-    TAILQ_REMOVE(&q->hq_q, hd, hd_link);
-
-    while(!err) {
-
-      l = hd->hd_data_len - hd->hd_data_off;
-      if(l == 0)
-        break;
-      int r = ts->ts_write(ts, hd->hd_data + hd->hd_data_off, l);
-      if(r > 0) {
-        hd->hd_data_off += r;
-      } else {
-        err = 1;
-      }
+  while((len = mbuf_peek_no_copy(mq, &buf)) != 0) {
+    int r = ts->ts_write(ts, buf, len);
+    if(r > 0) {
+      mbuf_drop(mq, r);
+    } else {
+      return -1;
     }
-    free(hd->hd_data);
-    free(hd);
   }
-  q->hq_size = 0;
-  return err;
+  return 0;
 }
 
 

@@ -231,6 +231,21 @@ mbuf_peek(mbuf_t *mq, void *buf, size_t len)
 }
 
 
+/**
+ *
+ */
+size_t
+mbuf_peek_no_copy(mbuf_t *mq, const void **buf)
+{
+  const mbuf_data_t *md = TAILQ_FIRST(&mq->mq_buffers);
+
+  if(md == NULL)
+    return 0;
+  *buf = md->md_data + md->md_data_off;
+  return md->md_data_len - md->md_data_off;
+}
+
+
 
 /**
  *

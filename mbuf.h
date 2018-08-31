@@ -79,6 +79,8 @@ size_t mbuf_read(mbuf_t *m, void *buf, size_t len);
 
 size_t mbuf_peek(mbuf_t *m, void *buf, size_t len);
 
+size_t mbuf_peek_no_copy(mbuf_t *mq, const void **buf);
+
 size_t mbuf_peek_tail(mbuf_t *mq, void *buf, size_t len);
 
 size_t mbuf_drop(mbuf_t *m, size_t len);

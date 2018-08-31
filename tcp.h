@@ -26,6 +26,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include "htsbuf.h"
+#include "mbuf.h"
 
 typedef struct tcp_stream tcp_stream_t;
 
@@ -66,7 +67,7 @@ int tcp_read_data(tcp_stream_t *ts, char *buf, const size_t bufsize);
 
 htsbuf_queue_t *tcp_read_buffered(tcp_stream_t *ts);
 
-int tcp_write_queue(tcp_stream_t *ts, htsbuf_queue_t *q);
+int tcp_write_queue(tcp_stream_t *ts, mbuf_t *q);
 
 int tcp_write(tcp_stream_t *ts, const void *buf, const size_t bufsize);
 

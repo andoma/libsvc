@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <sys/socket.h>
+
 struct sockaddr;
 int libsvc_accept(int fd, struct sockaddr *sa, socklen_t *addrlen);
 

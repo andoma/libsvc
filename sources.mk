@@ -60,6 +60,9 @@ ifeq ($(shell uname),Linux)
 LDFLAGS += -ldl #for trap handler
 endif
 
+libsvc_SRCS += http_client.c
+libsvc_INCS += http_client.h
+
 ##############################################################
 # Curl
 ##############################################################
@@ -76,11 +79,16 @@ CFLAGS  += $(shell $(PKG_CONFIG) --cflags libcurl)
 LDFLAGS += $(shell $(PKG_CONFIG) --libs libcurl)
 endif
 
-libsvc_SRCS += http_client.c
+libsvc_SRCS += http_client_curl.c
 libsvc_SRCS += curlhelpers.c
 
-libsvc_INCS += http_client.h
 libsvc_INCS += curlhelpers.h
+
+else
+
+libsvc_SRCS += http_client_builtin.c
+libsvc_SRCS += http_parser.c
+
 endif
 
 ##############################################################
