@@ -287,8 +287,7 @@ http_do_request(const char *url,
   scoped_strvec(req);
   strvec_pushf(&req, "%s %s HTTP/1.1", verb, path);
   strvec_pushf(&req, "Host: %s", hostname);
-  if(libsvc_app_version)
-    strvec_pushf(&req, "User-Agent: %s", libsvc_app_version);
+  strvec_pushf(&req, "User-Agent: %s", libsvc_app_version ?: PROGNAME);
 
   if(request_file != NULL) {
     strvec_push(&req, "Transfer-Encoding: chunked");
@@ -529,7 +528,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       const char *p = va_arg(ap, const char *);
       scoped_char *c = fmt("%s:%s", u, p);
       scoped_char *b64 = base64_encode_a(c, strlen(c), BASE64_STANDARD);
-      strvec_pushf(&request_headers, "Authentication: Basic %s", b64);
+      strvec_pushf(&request_headers, "Authorization: Basic %s", b64);
       break;
     }
 
@@ -548,7 +547,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     const char *auth = auth_cb(auth_opaque, auth_retry_code,
                                www_authenticate_header);
     if(auth)
-      strvec_pushf(&request_headers, "Authentication: %s", auth);
+      strvec_pushf(&request_headers, "Authorization: %s", auth);
   }
 
   if(flags & HCR_DECODE_BODY_AS_JSON)
@@ -588,6 +587,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     break;
   case 401:
     if(auth_cb && auth_retry_code == 0) {
+      auth_retry_code = 401;
       strset(&www_authenticate_header,
              ntv_get_str(hcr->hcr_headers, "www-authenticate"));
       http_client_response_free(hcr);
@@ -597,7 +597,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     // FALLTHRU
   case 400:
   case 402 ... 999:
-    if(flags & HCR_NO_FAIL_ON_ERROR) {
+    if(!(flags & HCR_NO_FAIL_ON_ERROR)) {
       snprintf(errbuf, errsize, "%d %s", http_status_code, errstr);
       snprintf(hcr->hcr_errbuf, sizeof(hcr->hcr_errbuf), "%d %s",
                http_status_code, errstr);
