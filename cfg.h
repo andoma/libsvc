@@ -39,7 +39,7 @@ void cfg_releasep(cfg_t **p);
 
 #define CFG(name...) (const char *[]){name, NULL}
 #define CFGI(x) (const char *[]){HTSMSG_INDEX(x), NULL}
-#define CFG_INDEX(x) HTSMSG_INDEX(x)
+#define CFG_INDEX(x) NTV_INDEX(x)
 
 const char *cfg_get_str(const cfg_t *c, const char **path, const char *def);
 
