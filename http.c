@@ -1514,7 +1514,7 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
     memcpy(&hc->hc_peer_sockaddr, peer, sizeof(struct sockaddr_in));
     break;
   case AF_INET6:
-    if(inet_ntop(AF_INET, &((struct sockaddr_in6 *)peer)->sin6_addr,
+    if(inet_ntop(AF_INET6, &((struct sockaddr_in6 *)peer)->sin6_addr,
                  tmpbuf, sizeof(tmpbuf)) != NULL)
       hc->hc_peer_addr = strdup(tmpbuf);
     memcpy(&hc->hc_peer_sockaddr, peer, sizeof(struct sockaddr_in6));
