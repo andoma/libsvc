@@ -779,10 +779,10 @@ do_ssl_write_locked(async_fd_t *af)
 static void
 do_accept(async_fd_t *af)
 {
-  struct sockaddr_in remote, local;
+  struct sockaddr_storage remote, local;
   socklen_t slen;
 
-  slen = sizeof(struct sockaddr_in);
+  slen = sizeof(struct sockaddr_storage);
 
   int fd = libsvc_accept(af->af_fd, (struct sockaddr *)&remote, &slen);
   if(fd == -1) {
@@ -792,7 +792,7 @@ do_accept(async_fd_t *af)
 
   setup_socket(fd);
 
-  slen = sizeof(struct sockaddr_in);
+  slen = sizeof(struct sockaddr_storage);
   if(getsockname(fd, (struct sockaddr *)&local, &slen)) {
     close(fd);
     return;
@@ -1196,9 +1196,8 @@ asyncio_bind(const char *bindaddr, int port,
 {
   int fd, ret;
   int one = 1;
-  struct sockaddr_in s;
 
-  fd = libsvc_socket(AF_INET, SOCK_STREAM, 0);
+  fd = libsvc_socket(bindaddr == NULL ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
   if(fd == -1)
     return NULL;
 
@@ -1208,20 +1207,40 @@ asyncio_bind(const char *bindaddr, int port,
 
   setup_socket(fd);
 
-  memset(&s, 0, sizeof(s));
-  s.sin_family = AF_INET;
-  s.sin_port = htons(port);
-  if(bindaddr != NULL)
-    s.sin_addr.s_addr = inet_addr(bindaddr);
+  if(bindaddr == NULL) {
+    struct sockaddr_in6 la = {
+      .sin6_family = AF_INET6,
+      .sin6_port = htons(port)
+    };
 
-  ret = bind(fd, (struct sockaddr *)&s, sizeof(s));
-  if(ret < 0) {
-    int x = errno;
-    trace(LOG_ERR, "Unable to bind %s:%d -- %s",
-          bindaddr ?: "0.0.0.0", port, strerror(errno));
-    close(fd);
-    errno = x;
-    return NULL;
+    ret = bind(fd, (struct sockaddr *)&la, sizeof(la));
+    if(ret < 0) {
+      int x = errno;
+      trace(LOG_ERR, "Unable to bind 0.0.0.0:%d -- %s",
+            port, strerror(errno));
+      close(fd);
+      errno = x;
+      return NULL;
+    }
+
+    int off = 0;
+    setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(int));
+
+  } else {
+    struct sockaddr_in la = {
+      .sin_family = AF_INET,
+      .sin_port = htons(port),
+      .sin_addr.s_addr = inet_addr(bindaddr)
+    };
+    ret = bind(fd, (struct sockaddr *)&la, sizeof(la));
+    if(ret < 0) {
+      int x = errno;
+      trace(LOG_ERR, "Unable to bind %s:%d -- %s",
+            bindaddr, port, strerror(errno));
+      close(fd);
+      errno = x;
+      return NULL;
+    }
   }
 
   listen(fd, 100);

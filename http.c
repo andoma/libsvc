@@ -1549,10 +1549,10 @@ http_server_start(void *aux)
 
   if(hs->hs_fd == NULL) {
     trace(LOG_ERR, "HTTP: Failed to bind %s:%d",
-          hs->hs_bind_address, hs->hs_port);
+          hs->hs_bind_address ?: "*", hs->hs_port);
   } else {
     trace(LOG_NOTICE, "HTTP: Listening on %s:%d",
-          hs->hs_bind_address, hs->hs_port);
+          hs->hs_bind_address ?: "*", hs->hs_port);
   }
 }
 
@@ -1618,7 +1618,7 @@ http_server_create(int port, const char *bind_address, void *sslctx,
   http_server_t *hs = calloc(1, sizeof(http_server_t));
   atomic_set(&hs->hs_refcount, 1);
   hs->hs_port = port;
-  hs->hs_bind_address = strdup(bind_address);
+  hs->hs_bind_address = bind_address ? strdup(bind_address) : NULL;
   hs->hs_sslctx = sslctx;
   hs->hs_sniffer = sniffer;
   asyncio_run_task(http_server_start, hs);
