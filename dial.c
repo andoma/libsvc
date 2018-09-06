@@ -61,139 +61,33 @@ getstreamsocket(int family)
 }
 
 
-/**
- *
- */
-tcp_stream_t *
-dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
-     char *errbuf, size_t errlen)
+
+
+
+static tcp_stream_t *
+dial_one(const struct sockaddr *sa, socklen_t slen, int timeout, const tcp_ssl_info_t *tsi,
+         const char *hostname, char *errbuf, size_t errlen)
 {
-  struct hostent *hp;
-  char *tmphstbuf;
-  int fd, val, r, err, herr;
-#if !defined(__APPLE__)
-  struct hostent hostbuf;
-  size_t hstbuflen;
-  int res;
-#endif
-  struct sockaddr_in6 in6;
-  struct sockaddr_in in;
-  socklen_t sockerrlen = sizeof(int);
-  char addrtxt[128];
-  addrtxt[0] = 0;
+  char addrtxt[512];
+  int err;
+  socklen_t sockerrlen = sizeof(err);
 
-  if(!strcmp(hostname, "localhost")) {
-    if((fd = getstreamsocket(AF_INET)) < 0) {
-      snprintf(errbuf, errlen, "%s", strerror(-fd));
-      return NULL;
-    }
-
-    memset(&in, 0, sizeof(in));
-    in.sin_family = AF_INET;
-    in.sin_port = htons(port);
-    in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    strcpy(addrtxt, "127.0.0.1");
-    r = connect(fd, (struct sockaddr *)&in, sizeof(struct sockaddr_in));
-  } else {
-
-#if defined(__APPLE__)
-    herr = 0;
-    tmphstbuf = NULL; /* free NULL is a nop */
-    /* TODO: AF_INET6 */
-    hp = gethostbyname(hostname);
-    if(hp == NULL)
-      herr = h_errno;
-#else
-    hstbuflen = 1024;
-    tmphstbuf = malloc(hstbuflen);
-
-    while((res = gethostbyname_r(hostname, &hostbuf, tmphstbuf, hstbuflen,
-                                 &hp, &herr)) == ERANGE) {
-      hstbuflen *= 2;
-      tmphstbuf = realloc(tmphstbuf, hstbuflen);
-    }
-#endif
-    if(herr != 0) {
-      free(tmphstbuf);
-      switch(herr) {
-      case HOST_NOT_FOUND: {
-        snprintf(errbuf, errlen, "Host not found");
-        return NULL;
-      }
-
-      default:
-        snprintf(errbuf, errlen, "Resolver error");
-        return NULL;
-      }
-
-    } else if(hp == NULL) {
-      free(tmphstbuf);
-      snprintf(errbuf, errlen, "Resolver error");
-      return NULL;
-    }
-
-    if((fd = getstreamsocket(hp->h_addrtype)) < 0) {
-      free(tmphstbuf);
-      snprintf(errbuf, errlen, "%s", strerror(-fd));
-      return NULL;
-    }
-
-    int num_addr = 0;
-    int a;
-    switch(hp->h_addrtype) {
-    case AF_INET:
-      memset(&in, 0, sizeof(in));
-      in.sin_family = AF_INET;
-      in.sin_port = htons(port);
-
-      while(hp->h_addr_list[num_addr])
-        num_addr++;
-
-      if(num_addr == 0) {
-        close(fd);
-        free(tmphstbuf);
-        snprintf(errbuf, errlen, "No address");
-        return NULL;
-      }
-      a = rand() % num_addr;
-      inet_ntop(AF_INET, hp->h_addr_list[a], addrtxt, sizeof(addrtxt));
-      memcpy(&in.sin_addr, hp->h_addr_list[a], sizeof(struct in_addr));
-      r = connect(fd, (struct sockaddr *)&in, sizeof(struct sockaddr_in));
-      break;
-
-    case AF_INET6:
-      memset(&in6, 0, sizeof(in6));
-      in6.sin6_family = AF_INET6;
-      in6.sin6_port = htons(port);
-
-      while(hp->h_addr_list[num_addr])
-        num_addr++;
-
-      if(num_addr == 0) {
-        close(fd);
-        free(tmphstbuf);
-        snprintf(errbuf, errlen, "No address");
-        return NULL;
-      }
-
-      a = rand() % num_addr;
-      inet_ntop(AF_INET6, hp->h_addr_list[a], addrtxt, sizeof(addrtxt));
-
-      memcpy(&in6.sin6_addr, hp->h_addr_list[a], sizeof(struct in6_addr));
-      r = connect(fd, (struct sockaddr *)&in6, sizeof(struct sockaddr_in6));
-      break;
-
-    default:
-      close(fd);
-      free(tmphstbuf);
-      snprintf(errbuf, errlen, "Address family %d not supported",
-               hp->h_addrtype);
-      return NULL;
-    }
-
-    free(tmphstbuf);
+  switch(sa->sa_family) {
+  case AF_INET:
+    inet_ntop(AF_INET, &((const struct sockaddr_in *)sa)->sin_addr,
+              addrtxt, sizeof(addrtxt));
+    break;
+  case AF_INET6:
+    inet_ntop(AF_INET6, &((const struct sockaddr_in6 *)sa)->sin6_addr,
+              addrtxt, sizeof(addrtxt));
+    break;
+  default:
+    snprintf(errbuf, errlen, "Invalid address family %d", sa->sa_family);
+    return NULL;
   }
 
+  int fd = getstreamsocket(sa->sa_family);
+  int r = connect(fd, sa, slen);
   if(r == -1) {
     if(errno == EINPROGRESS) {
       struct pollfd pfd;
@@ -235,7 +129,7 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
 
   fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
 
-  val = 1;
+  int val = 1;
   setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
 
   val = 1;
@@ -261,4 +155,36 @@ dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
                                          errbuf, errlen);
 
   return tcp_stream_create_from_fd(fd);
+}
+
+
+/**
+ *
+ */
+tcp_stream_t *
+dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
+     char *errbuf, size_t errlen)
+{
+  char service[10];
+  snprintf(service, sizeof(service), "%u", port);
+  struct addrinfo *res = NULL;
+  const int gai_err = getaddrinfo(hostname, service, NULL, &res);
+  if(gai_err) {
+    snprintf(errbuf, errlen, "Unable to resolve %s -- %s", hostname,
+             gai_strerror(gai_err));
+    return NULL;
+  }
+
+  tcp_stream_t *ts = NULL;
+
+  const struct addrinfo *ai = res;
+  while(ai) {
+
+    ts = dial_one(ai->ai_addr, ai->ai_addrlen, timeout, tsi, hostname, errbuf, errlen);
+    if(ts != NULL)
+      break;
+    ai = ai->ai_next;
+  }
+  freeaddrinfo(res);
+  return ts;
 }
