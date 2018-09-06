@@ -1,10 +1,16 @@
 .DEFAULT_GOAL := $(if $(GOAL),$(GOAL),$(PROG))
 
+ifdef V
+cmd = $2
+else
+cmd = @echo "$1";$2
+endif
+
 prefix ?= /usr/local
 
 CSTANDARD ?= gnu99
 
-CFLAGS  += -Wall -Werror -Wwrite-strings -Wno-deprecated-declarations 
+CFLAGS  += -Wall -Werror -Wwrite-strings -Wno-deprecated-declarations
 CFLAGS  += -Wmissing-prototypes -std=${CSTANDARD} -DPROGNAME=\"${PROGNAME}\"
 
 include libsvc/sources.mk
@@ -38,18 +44,23 @@ CFLAGS_opt ?= -O2
 
 
 $(BUILDDIR)/bundles/%.o: $(BUILDDIR)/bundles/%.c $(ALLDEPS)
-	$(CC) ${CFLAGS} ${CFLAGS_com} ${CFLAGS_opt} -c -o $@ $<
+	$(call cmd,Compiling $@,\
+	$(CC) ${CFLAGS} ${CFLAGS_com} ${CFLAGS_opt} -c -o $@ $<)
 
 $(BUILDDIR)/bundles/%.c: % $(CURDIR)/libsvc/mkbundle $(ALLDEPS)
 	@mkdir -p $(dir $@)
-	$(MKBUNDLE) -o $@ -s $< -d  ${BUILDDIR}/bundles/$<.d -p $<
+	$(call cmd,Creating bundle $@,\
+	$(MKBUNDLE) -o $@ -s $< -d  ${BUILDDIR}/bundles/$<.d -p $<)
 
 $(BUILDDIR)/zbundles/%.o: $(BUILDDIR)/zbundles/%.c $(ALLDEPS)
-	$(CC) ${CFLAGS} ${CFLAGS_com} ${CFLAGS_opt} -c -o $@ $<
+	$(call cmd,Compiling $@,\
+	$(CC) ${CFLAGS} ${CFLAGS_com} ${CFLAGS_opt} -c -o $@ $<)
 
 $(BUILDDIR)/zbundles/%.c: % $(CURDIR)/libsvc/mkbundle $(ALLDEPS)
 	@mkdir -p $(dir $@)
-	$(MKBUNDLE) -z -o $@ -s $< -d ${BUILDDIR}/zbundles/$<.d -p $<
+	$(call cmd,Creating bundle $@,\
+	$(MKBUNDLE) -z -o $@ -s $< -d ${BUILDDIR}/zbundles/$<.d -p $<)
+
 
 # File bundles
 BUNDLES += $(sort $(BUNDLES-yes))
@@ -69,23 +80,28 @@ all: ${PROG} ${PROG}.installable
 
 ${PROG}: $(OBJS) $(ALLDEPS) ${BUILDDIR}/libsvc/filebundle_disk.o
 	@mkdir -p $(dir $@)
-	$(CC) -o $@ $(OBJS) ${BUILDDIR}/libsvc/filebundle_disk.o $(LDFLAGS) ${LDFLAGS_cfg}
+	$(call cmd,Linking $@,\
+	$(CC) -o $@ $(OBJS) ${BUILDDIR}/libsvc/filebundle_disk.o $(LDFLAGS) ${LDFLAGS_cfg})
 
 ${PROG}.installable: $(OBJS) $(BUNDLE_OBJS) $(ALLDEPS) ${BUILDDIR}/libsvc/filebundle_embedded.o
 	@mkdir -p $(dir $@)
-	$(CC) -o $@ $(OBJS) $(BUNDLE_OBJS) ${BUILDDIR}/libsvc/filebundle_embedded.o $(LDFLAGS) ${LDFLAGS_cfg}
+	$(call cmd,Linking $@,\
+	$(CC) -o $@ $(OBJS) $(BUNDLE_OBJS) ${BUILDDIR}/libsvc/filebundle_embedded.o $(LDFLAGS) ${LDFLAGS_cfg})
 
 ${BUILDDIR}/%.o: %.c  $(ALLDEPS)
 	@mkdir -p $(dir $@)
-	$(CC) -MD -MP $(CFLAGS_com) $(CFLAGS) ${CFLAGS_opt} -c -o $@ $(CURDIR)/$<
+	$(call cmd,Compiling $<,\
+	$(CC) -MD -MP $(CFLAGS_com) $(CFLAGS) ${CFLAGS_opt} -c -o $@ $(CURDIR)/$<)
 
 ${BUILDDIR}/%.o: %.cc $(ALLDEPS)
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -MP $(CXXFLAGS_com) $(CXXFLAGS) ${CXXFLAGS_opt} -c -o $@ $(CURDIR)/$<
+	$(call cmd,Compiling $<,\
+	$(CXX) -MD -MP $(CXXFLAGS_com) $(CXXFLAGS) ${CXXFLAGS_opt} -c -o $@ $(CURDIR)/$<)
 
 ${BUILDDIR}/%.o: %.cpp $(ALLDEPS)
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -MP $(CXXFLAGS_com) $(CXXFLAGS) ${CXXFLAGS_opt} -c -o $@ $(CURDIR)/$<
+	$(call cmd,Compiling $<,\
+	$(CXX) -MD -MP $(CXXFLAGS_com) $(CXXFLAGS) ${CXXFLAGS_opt} -c -o $@ $(CURDIR)/$<)
 
 .PHONY:	clean distclean
 
