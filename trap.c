@@ -1,6 +1,6 @@
 #include "trap.h"
 
-#if defined(linux) && (defined(__i386__) || defined(__x86_64__))
+#if defined(__GLIBC__) && (defined(__i386__) || defined(__x86_64__))
 
 
 
