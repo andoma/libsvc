@@ -562,6 +562,9 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
                     &response_buffer, response_file,
                     !!(flags & HCR_VERBOSE));
 
+  if(response_file != NULL)
+    fflush(response_file);
+
   if(http_status_code == -1) {
     goto bad;
   }
