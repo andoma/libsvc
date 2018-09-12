@@ -401,6 +401,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   const char *verb = "GET";
   const char *verb_override = NULL;
   int auth_retry_code = 0;
+  int disable_auth = 0;
 
   scoped_strvec(request_headers);
 
@@ -543,7 +544,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   va_end(ap);
 
-  if(auth_cb) {
+  if(auth_cb && !disable_auth) {
     const char *auth = auth_cb(auth_opaque, auth_retry_code,
                                www_authenticate_header);
     if(auth)
@@ -571,6 +572,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   hcr->hcr_http_status = http_status_code;
 
+  free(hcr->hcr_body);
+  hcr->hcr_bodysize = response_buffer.mq_size;
+  hcr->hcr_body = mbuf_clear_to_string(&response_buffer);
+
   switch(http_status_code) {
   case 300 ... 399:
     if(!(flags & HCR_NO_FOLLOW_REDIRECT)) {
@@ -584,10 +589,13 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
         strset(&errstr, "Redirect without location");
         goto bad;
       }
+
+      disable_auth = 1;
       url = location;
       goto retry;
     }
     break;
+
   case 401:
     if(auth_cb && auth_retry_code == 0) {
       auth_retry_code = 401;
@@ -610,9 +618,6 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       return -1;
     }
   }
-
-  hcr->hcr_bodysize = response_buffer.mq_size;
-  hcr->hcr_body = mbuf_clear_to_string(&response_buffer);
 
   if(http_status_code >= 200 && http_status_code <= 299
      && flags & HCR_DECODE_BODY_AS_JSON) {
