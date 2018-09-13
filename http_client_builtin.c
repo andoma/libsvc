@@ -400,6 +400,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   const char *verb = "GET";
   const char *verb_override = NULL;
+  scoped_char *errstr = NULL;
+
   int auth_retry_code = 0;
   int disable_auth = 0;
 
@@ -410,7 +412,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   memset(hcr, 0, sizeof(http_client_response_t));
 
  retry:
-
+  strset(&errstr, NULL);
   mbuf_clear(&request_buffer);
   mbuf_clear(&response_buffer);
 
@@ -553,8 +555,6 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   if(flags & HCR_DECODE_BODY_AS_JSON)
     strvec_push(&request_headers, "Accept: application/json");
-
-  scoped_char *errstr = NULL;
 
   const int http_status_code =
     http_do_request(url, &errstr, verb_override ?: verb,
