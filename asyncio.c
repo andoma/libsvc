@@ -45,6 +45,7 @@
 #if defined(WITH_OPENSSL)
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/x509v3.h>
 #endif
 
 #include "queue.h"
@@ -56,13 +57,16 @@
 LIST_HEAD(asyncio_timer_list, asyncio_timer);
 LIST_HEAD(asyncio_worker_list, asyncio_worker);
 
-
+struct asyncio_sslctx {
+  SSL_CTX *ctx;
+  int client;
+};
 
 
 /**
  *
  */
-struct async_fd {
+struct asyncio_fd {
   asyncio_poll_cb_t *af_pollerr;
   asyncio_error_cb_t *af_error;
   asyncio_accept_cb_t *af_accept;
@@ -71,7 +75,7 @@ struct async_fd {
   asyncio_read_cb_t *af_bytes_avail;
   asyncio_connect_cb_t *af_connect;
 
-  void (*af_locked_write)(struct async_fd *af);
+  int (*af_locked_write)(struct asyncio_fd *af);
 
   void *af_opaque;
 
@@ -79,10 +83,6 @@ struct async_fd {
   mbuf_t af_recvq;
 
   char *af_hostname;
-
-  asyncio_dns_req_t *af_dns_req;
-
-  asyncio_timer_t af_timer;
 
   pthread_mutex_t af_sendq_mutex;
   pthread_cond_t af_sendq_cond;
@@ -93,7 +93,6 @@ struct async_fd {
   uint16_t af_port;
 
   uint16_t af_flags;
-#define AF_SENDQ_MUTEX        0x1
 
   uint8_t af_pending_shutdown;
   int af_pending_error;
@@ -117,10 +116,9 @@ static struct asyncio_timer_list timerwheel[TW_SLOTS];
 static int                timerwheel_read_pos;
 
 static int asyncio_pipe[2];
-static async_fd_t *pipe_af;
+static asyncio_fd_t *pipe_af;
 static int epfd;
 
-static int asyncio_dns_worker;
 static int asyncio_task_worker;
 static struct asyncio_worker_list asyncio_workers;
 
@@ -155,16 +153,16 @@ static TAILQ_HEAD(, asyncio_task) asyncio_tasks;
 
 
 static void
-af_lock(async_fd_t *af)
+af_lock(asyncio_fd_t *af)
 {
-  if(af->af_flags & AF_SENDQ_MUTEX)
+  if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
     pthread_mutex_lock(&af->af_sendq_mutex);
 }
 
 static void
-af_unlock(async_fd_t *af)
+af_unlock(asyncio_fd_t *af)
 {
-  if(af->af_flags & AF_SENDQ_MUTEX)
+  if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
     pthread_mutex_unlock(&af->af_sendq_mutex);
 }
 
@@ -192,7 +190,7 @@ set_nonblocking(int fd, int on)
  *
  */
 static void
-setup_socket(int fd)
+setup_tcp_socket(int fd)
 {
   int val;
 
@@ -317,7 +315,7 @@ asyncio_timer_disarm(asyncio_timer_t *at)
  *
  */
 static void
-mod_poll_flags(async_fd_t *af, int set, int clr)
+mod_poll_flags(asyncio_fd_t *af, int set, int clr)
 {
   struct epoll_event e;
   int f = (af->af_epoll_flags | set) & ~clr;
@@ -362,7 +360,7 @@ mod_poll_flags(async_fd_t *af, int set, int clr)
  *
  */
 static void
-mod_poll_flags(async_fd_t *af, int set, int clr)
+mod_poll_flags(asyncio_fd_t *af, int set, int clr)
 {
   set &= ~af->af_epoll_flags;
   clr &=  af->af_epoll_flags;
@@ -401,15 +399,15 @@ mod_poll_flags(async_fd_t *af, int set, int clr)
 /**
  *
  */
-static async_fd_t *
-async_fd_create(int fd, int flags)
+static asyncio_fd_t *
+asyncio_fd_create(int fd, int initial_poll_flags)
 {
-  async_fd_t *af = calloc(1, sizeof(async_fd_t));
+  asyncio_fd_t *af = calloc(1, sizeof(asyncio_fd_t));
   af->af_fd = fd;
   atomic_set(&af->af_refcount, 1);
   mbuf_init(&af->af_sendq);
   mbuf_init(&af->af_recvq);
-  mod_poll_flags(af, flags, 0);
+  mod_poll_flags(af, initial_poll_flags, 0);
   return af;
 }
 
@@ -418,7 +416,7 @@ async_fd_create(int fd, int flags)
  *
  */
 void
-async_fd_retain(async_fd_t *af)
+asyncio_fd_retain(asyncio_fd_t *af)
 {
   atomic_inc(&af->af_refcount);
 }
@@ -428,15 +426,14 @@ async_fd_retain(async_fd_t *af)
  *
  */
 void
-async_fd_release(async_fd_t *af)
+asyncio_fd_release(asyncio_fd_t *af)
 {
   if(atomic_dec(&af->af_refcount))
     return;
-  assert(af->af_dns_req == NULL);
-  assert(af->af_timer.at_expire == 0);
+
   assert(af->af_fd == -1);
 
-  if(af->af_flags & AF_SENDQ_MUTEX) {
+  if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE) {
     pthread_mutex_destroy(&af->af_sendq_mutex);
     pthread_cond_destroy(&af->af_sendq_cond);
   }
@@ -452,8 +449,8 @@ async_fd_release(async_fd_t *af)
 /**
  *
  */
-static void
-do_write_locked(async_fd_t *af)
+static int
+do_write_locked(asyncio_fd_t *af)
 {
   char tmp[1024];
 
@@ -465,7 +462,7 @@ do_write_locked(async_fd_t *af)
       }
       // Nothing more to send
       mod_poll_flags(af, 0, EPOLLOUT);
-      return;
+      return 0;
     }
 
     int r = send(af->af_fd, tmp, avail, MSG_NOSIGNAL);
@@ -477,12 +474,12 @@ do_write_locked(async_fd_t *af)
 
     if(r == -1) {
       mod_poll_flags(af, 0, EPOLLOUT);
-      return;
+      return errno;
     }
 
     mbuf_drop(&af->af_sendq, r);
 
-    if(af->af_flags & AF_SENDQ_MUTEX)
+    if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
       pthread_cond_signal(&af->af_sendq_cond);
 
     if(r != avail)
@@ -490,25 +487,16 @@ do_write_locked(async_fd_t *af)
   }
 
   mod_poll_flags(af, EPOLLOUT, 0);
+  return 0;
 }
 
 
-/**
- *
- */
-static void
-do_write_unlocked(async_fd_t *af)
-{
-  af_lock(af);
-  af->af_locked_write(af);
-  af_unlock(af);
-}
 
 /**
  *
  */
 int
-asyncio_wait_send_buffer(async_fd_t *af, int size)
+asyncio_wait_send_buffer(asyncio_fd_t *af, int size)
 {
   int r = 0;
   pthread_mutex_lock(&af->af_sendq_mutex);
@@ -533,9 +521,9 @@ asyncio_wait_send_buffer(async_fd_t *af, int size)
  *
  */
 static void
-do_error(async_fd_t *af, int error)
+do_error(asyncio_fd_t *af, int error)
 {
-  if(af->af_flags & AF_SENDQ_MUTEX) {
+  if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE) {
     pthread_mutex_lock(&af->af_sendq_mutex);
     af->af_pending_error = error;
     pthread_cond_signal(&af->af_sendq_cond);
@@ -546,16 +534,33 @@ do_error(async_fd_t *af, int error)
   af->af_error = NULL;
 }
 
+
 /**
  *
  */
 static void
-do_read(async_fd_t *af)
+do_write_unlocked(asyncio_fd_t *af)
+{
+  af_lock(af);
+  int err = af->af_locked_write(af);
+  af_unlock(af);
+  if(err)
+    do_error(af, err);
+}
+
+
+/**
+ *
+ */
+static void
+do_read(asyncio_fd_t *af)
 {
   char tmp[1024];
   while(1) {
     int r = read(af->af_fd, tmp, sizeof(tmp));
     if(r == 0) {
+      if(af->af_recvq.mq_size)
+        af->af_bytes_avail(af->af_opaque, &af->af_recvq);
       do_error(af, ECONNRESET);
       return;
     }
@@ -578,7 +583,7 @@ do_read(async_fd_t *af)
 
 #if defined(WITH_OPENSSL)
 static void __attribute__((unused))
-ssldump(async_fd_t *af)
+ssldump(asyncio_fd_t *af)
 {
   unsigned long e;
   char errbuf[512];
@@ -588,29 +593,126 @@ ssldump(async_fd_t *af)
   }
 }
 
+
+
 /**
  *
  */
 static int
-asyncio_ssl_handshake(async_fd_t *af)
+verify_hostname(const char *hostname, X509 *cert, char *errbuf, size_t errlen)
+{
+  int i;
+  /* domainname is the "domain" we wan't to access (actually hostname
+   * with first part of the DNS name removed) */
+  const char *domainname = strchr(hostname, '.');
+  if(domainname != NULL) {
+      domainname++;
+      if(strlen(domainname) == 0)
+        domainname = NULL;
+  }
+
+
+  // First check commonName
+
+  X509_NAME *subjectName;
+  char commonName[256];
+
+  subjectName = X509_get_subject_name(cert);
+  if(X509_NAME_get_text_by_NID(subjectName, NID_commonName,
+                               commonName, sizeof(commonName)) != -1) {
+    if(!strcmp(commonName, hostname))
+      return 0;
+  }
+
+  // Then check altNames
+
+  GENERAL_NAMES *names = X509_get_ext_d2i( cert, NID_subject_alt_name, 0, 0);
+  if(names == NULL) {
+    snprintf(errbuf, errlen, "SSL: No subjectAltName extension");
+    return -1;
+  }
+
+  const int num_names = sk_GENERAL_NAME_num(names);
+
+  for(i = 0; i < num_names; ++i ) {
+    GENERAL_NAME *name = sk_GENERAL_NAME_value(names, i);
+    unsigned char *dns;
+    int match;
+
+    if(name->type != GEN_DNS)
+      continue;
+
+    ASN1_STRING_to_UTF8(&dns, name->d.dNSName);
+    if(dns[0] == '*' && dns[1] == '.') {
+      match = domainname != NULL && !strcasecmp((char *)dns+2, domainname);
+    } else {
+      match = !strcasecmp((char *)dns, hostname);
+    }
+
+    OPENSSL_free(dns);
+    if(match)
+      return 0;
+  }
+  snprintf(errbuf, errlen, "SSL: Hostname mismatch");
+  return -1;
+}
+
+
+static int
+asyncio_ssl_verify(asyncio_fd_t *af)
+{
+  X509 *peer = SSL_get_peer_certificate(af->af_ssl);
+  if(peer == NULL) {
+    return EDOM;
+  }
+
+  const int err = SSL_get_verify_result(af->af_ssl);
+  if(err != X509_V_OK) {
+    X509_free(peer);
+    return EDOM;
+  }
+
+  if(verify_hostname(af->af_hostname, peer, NULL, 0)) {
+    X509_free(peer);
+    return EDOM;
+  }
+  X509_free(peer);
+  return 0;
+}
+
+
+/**
+ *
+ */
+static int
+asyncio_ssl_handshake(asyncio_fd_t *af)
 {
   int r = SSL_do_handshake(af->af_ssl);
   int err = SSL_get_error(af->af_ssl, r);
   switch(err) {
-
   case SSL_ERROR_WANT_READ:
     mod_poll_flags(af, EPOLLIN, EPOLLOUT);
-    break;
+    return 0;
+
   case SSL_ERROR_WANT_WRITE:
     mod_poll_flags(af, EPOLLOUT, EPOLLIN);
-    break;
+    return 0;
+
   case SSL_ERROR_NONE:
     mod_poll_flags(af, EPOLLIN, EPOLLOUT);
+    if(af->af_sendq.mq_size)
+      mod_poll_flags(af, EPOLLOUT, 0);
+
     af->af_ssl_established = 1;
-    break;
+
+    if(af->af_hostname != NULL &&
+       af->af_flags & ASYNCIO_FLAG_SSL_VERIFY_CERT)
+      return asyncio_ssl_verify(af);
+
+    return 0;
 
   default:
-#if 0
+#if 1
     trace(LOG_ERR, "SSL: Unable to handshake, err:%d r:%d errno:%d",
           err, r, errno);
     ssldump(af);
@@ -620,8 +722,11 @@ asyncio_ssl_handshake(async_fd_t *af)
   return 0;
 }
 
+
+
+
 static void
-do_ssl_update_poll_flags_ex(async_fd_t *af, int line)
+do_ssl_update_poll_flags_ex(asyncio_fd_t *af, int line)
 {
 #if 0
   printf("Update poll flags line %d\n", line);
@@ -653,14 +758,14 @@ do_ssl_update_poll_flags_ex(async_fd_t *af, int line)
 #define do_ssl_update_poll_flags(af) \
   do_ssl_update_poll_flags_ex(af, __LINE__)
 
-static void do_ssl_write_locked(async_fd_t *af);
+static int do_ssl_write_locked(asyncio_fd_t *af);
 
 
 /**
  *
  */
 static int
-do_ssl_read_locked(async_fd_t *af)
+do_ssl_read_locked(asyncio_fd_t *af)
 {
   char buf[4096];
   af->af_ssl_read_status = 0;
@@ -681,6 +786,9 @@ do_ssl_read_locked(async_fd_t *af)
       // Conection closed
       do_ssl_update_poll_flags(af);
       return ECONNRESET;
+
+    case SSL_ERROR_SYSCALL:
+      return errno ?: ECONNRESET;
 
     default:
       do_ssl_update_poll_flags(af);
@@ -704,7 +812,7 @@ do_ssl_read_locked(async_fd_t *af)
  *
  */
 static void
-do_ssl_read(async_fd_t *af)
+do_ssl_read(asyncio_fd_t *af)
 {
   af_lock(af);
 
@@ -731,18 +839,17 @@ do_ssl_read(async_fd_t *af)
 }
 
 
-static void
-do_ssl_write_locked(async_fd_t *af)
+static int
+do_ssl_write_locked(asyncio_fd_t *af)
 {
   if(!af->af_ssl_established) {
-    asyncio_ssl_handshake(af);
-    return;
+    return asyncio_ssl_handshake(af);
   }
   char tmp[1024];
 
   if(af->af_ssl_read_status == SSL_ERROR_WANT_WRITE) {
     do_ssl_read_locked(af);
-    return;
+    return 0;
   }
 
   while(1) {
@@ -753,7 +860,7 @@ do_ssl_write_locked(async_fd_t *af)
         SSL_shutdown(af->af_ssl);
       }
       do_ssl_update_poll_flags(af);
-      return;
+      return 0;
     }
 
     int r = SSL_write(af->af_ssl, tmp, avail);
@@ -761,7 +868,7 @@ do_ssl_write_locked(async_fd_t *af)
     switch(err) {
     case SSL_ERROR_NONE:
       mbuf_drop(&af->af_sendq, r);
-      if(af->af_flags & AF_SENDQ_MUTEX)
+      if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
         pthread_cond_signal(&af->af_sendq_cond);
       continue;
 
@@ -771,7 +878,7 @@ do_ssl_write_locked(async_fd_t *af)
       // FALLTHRU
     default:
       do_ssl_update_poll_flags(af);
-      return;
+      return 0;
     }
   }
 }
@@ -782,7 +889,7 @@ do_ssl_write_locked(async_fd_t *af)
  *
  */
 static void
-do_accept(async_fd_t *af)
+do_accept(asyncio_fd_t *af)
 {
   struct sockaddr_storage remote, local;
   socklen_t slen;
@@ -795,7 +902,7 @@ do_accept(async_fd_t *af)
     return;
   }
 
-  setup_socket(fd);
+  setup_tcp_socket(fd);
 
   slen = sizeof(struct sockaddr_storage);
   if(getsockname(fd, (struct sockaddr *)&local, &slen)) {
@@ -878,12 +985,15 @@ asyncio_loop(void *aux)
     }
 
     for(i = 0; i < r; i++) {
-      async_fd_t *af = ev[i].data.ptr;
+      asyncio_fd_t *af = ev[i].data.ptr;
       atomic_inc(&af->af_refcount);
     }
 
     for(i = 0; i < r; i++) {
-      async_fd_t *af = ev[i].data.ptr;
+      asyncio_fd_t *af = ev[i].data.ptr;
+      if(ev[i].events & EPOLLIN) {
+	af->af_pollin(af);
+      }
 
       if(ev[i].events & (EPOLLHUP | EPOLLERR) && af->af_pollerr != NULL) {
 	af->af_pollerr(af);
@@ -904,13 +1014,10 @@ asyncio_loop(void *aux)
 	af->af_pollout(af);
       }
 
-      if(ev[i].events & EPOLLIN) {
-	af->af_pollin(af);
-      }
     }
     for(i = 0; i < r; i++) {
-      async_fd_t *af = ev[i].data.ptr;
-      async_fd_release(af);
+      asyncio_fd_t *af = ev[i].data.ptr;
+      asyncio_fd_release(af);
     }
 #endif
 
@@ -935,17 +1042,17 @@ asyncio_loop(void *aux)
     }
 
     for(i = 0; i < r; i++) {
-      async_fd_t *af = events[i].udata;
+      asyncio_fd_t *af = events[i].udata;
       atomic_inc(&af->af_refcount);
     }
 
     for(i = 0; i < r; i++) {
-      async_fd_t *af = events[i].udata;
+      asyncio_fd_t *af = events[i].udata;
       if(events[i].filter == EVFILT_READ) {
+        af->af_pollin(af);
+
         if(events[i].flags & EV_EOF) {
           do_error(af, ECONNRESET);
-        } else {
-          af->af_pollin(af);
         }
       }
 
@@ -959,8 +1066,8 @@ asyncio_loop(void *aux)
     }
 
     for(i = 0; i < r; i++) {
-      async_fd_t *af = events[i].udata;
-      async_fd_release(af);
+      asyncio_fd_t *af = events[i].udata;
+      asyncio_fd_release(af);
     }
 
 #endif
@@ -973,11 +1080,9 @@ asyncio_loop(void *aux)
  *
  */
 void
-asyncio_close(async_fd_t *af)
+asyncio_close(asyncio_fd_t *af)
 {
   assert(pthread_self() == asyncio_tid);
-
-  asyncio_timer_disarm(&af->af_timer);
 
   af_lock(af);
 
@@ -994,10 +1099,10 @@ asyncio_close(async_fd_t *af)
     af->af_fd = -1;
   }
 
-  if(af->af_flags & AF_SENDQ_MUTEX)
+  if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
     pthread_mutex_unlock(&af->af_sendq_mutex);
   else
-    async_fd_release(af);
+    asyncio_fd_release(af);
 }
 
 
@@ -1005,7 +1110,7 @@ asyncio_close(async_fd_t *af)
  *
  */
 void
-asyncio_shutdown(async_fd_t *af)
+asyncio_shutdown(asyncio_fd_t *af)
 {
   af_lock(af);
 
@@ -1028,16 +1133,17 @@ asyncio_shutdown(async_fd_t *af)
  *
  */
 int
-asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork)
+asyncio_send(asyncio_fd_t *af, const void *buf, size_t len, int cork)
 {
   int rval = 0;
+  hexdump("SEND", buf, len);
   af_lock(af);
 
   if(af->af_fd != -1) {
     mbuf_append(&af->af_sendq, buf, len);
 
     if(!cork)
-      af->af_locked_write(af);
+      rval = af->af_locked_write(af);
   } else {
     rval = -1;
   }
@@ -1051,7 +1157,7 @@ asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork)
  *
  */
 int
-asyncio_send_with_hdr(async_fd_t *af,
+asyncio_send_with_hdr(asyncio_fd_t *af,
                       const void *hdr_buf, size_t hdr_len,
                       const void *buf, size_t len,
                       int cork)
@@ -1095,7 +1201,7 @@ asyncio_send_with_hdr(async_fd_t *af,
     }
 
     if(!cork)
-      af->af_locked_write(af);
+      rval = af->af_locked_write(af);
   } else {
     rval = -1;
   }
@@ -1109,7 +1215,7 @@ asyncio_send_with_hdr(async_fd_t *af,
  *
  */
 int
-asyncio_sendq(async_fd_t *af, mbuf_t *q, int cork)
+asyncio_sendq(asyncio_fd_t *af, mbuf_t *q, int cork)
 {
   int rval = 0;
   af_lock(af);
@@ -1117,7 +1223,7 @@ asyncio_sendq(async_fd_t *af, mbuf_t *q, int cork)
   if(af->af_fd != -1) {
     mbuf_appendq(&af->af_sendq, q);
     if(!cork)
-      af->af_locked_write(af);
+      rval = af->af_locked_write(af);
   } else {
     mbuf_clear(q);
     rval = 1;
@@ -1131,7 +1237,7 @@ asyncio_sendq(async_fd_t *af, mbuf_t *q, int cork)
  *
  */
 void
-asyncio_send_lock(async_fd_t *af)
+asyncio_send_lock(asyncio_fd_t *af)
 {
   af_lock(af);
 }
@@ -1141,7 +1247,7 @@ asyncio_send_lock(async_fd_t *af)
  *
  */
 void
-asyncio_send_unlock(async_fd_t *af)
+asyncio_send_unlock(asyncio_fd_t *af)
 {
   af_unlock(af);
 }
@@ -1151,7 +1257,7 @@ asyncio_send_unlock(async_fd_t *af)
  *
  */
 int
-asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
+asyncio_sendq_with_hdr_locked(asyncio_fd_t *af, const void *hdr_buf,
                               size_t hdr_len, mbuf_t *q, int cork)
 {
   int rval = 0;
@@ -1179,7 +1285,7 @@ asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
     }
     mbuf_appendq(&af->af_sendq, q);
     if(!cork)
-      af->af_locked_write(af);
+      rval = af->af_locked_write(af);
   } else {
     mbuf_clear(q);
     rval = 1;
@@ -1193,14 +1299,14 @@ asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
  *
  */
 int
-asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
+asyncio_sendq_with_hdr(asyncio_fd_t *af, const void *hdr_buf, size_t hdr_len,
                        mbuf_t *q, int cork)
 {
-  if(af->af_flags & AF_SENDQ_MUTEX)
+  if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
   int rval = asyncio_sendq_with_hdr_locked(af, hdr_buf, hdr_len, q, cork);
-  if(af->af_flags & AF_SENDQ_MUTEX)
+  if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
     pthread_mutex_unlock(&af->af_sendq_mutex);
   return rval;
 }
@@ -1209,7 +1315,7 @@ asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
 /**
  *
  */
-async_fd_t *
+asyncio_fd_t *
 asyncio_bind(const char *bindaddr, int port,
              asyncio_accept_cb_t *cb,
              void *opaque)
@@ -1225,7 +1331,7 @@ asyncio_bind(const char *bindaddr, int port,
 
   setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(int));
 
-  setup_socket(fd);
+  setup_tcp_socket(fd);
 
   if(bindaddr == NULL) {
     struct sockaddr_in6 la = {
@@ -1265,7 +1371,7 @@ asyncio_bind(const char *bindaddr, int port,
 
   listen(fd, 100);
 
-  async_fd_t *af = async_fd_create(fd, EPOLLIN);
+  asyncio_fd_t *af = asyncio_fd_create(fd, EPOLLIN);
   af->af_pollin = &do_accept;
   af->af_accept = cb;
   af->af_opaque = opaque;
@@ -1276,13 +1382,13 @@ asyncio_bind(const char *bindaddr, int port,
 /**
  *
  */
-async_fd_t *
+asyncio_fd_t *
 asyncio_dgram(int fd,
               asyncio_poll_cb_t *input,
               void *opaque)
 {
   set_nonblocking(fd, 1);
-  async_fd_t *af = async_fd_create(fd, EPOLLIN);
+  asyncio_fd_t *af = asyncio_fd_create(fd, EPOLLIN);
   af->af_pollin  = input;
   af->af_opaque = opaque;
   return af;
@@ -1292,52 +1398,48 @@ asyncio_dgram(int fd,
 /**
  *
  */
-async_fd_t *
+asyncio_fd_t *
 asyncio_stream(int fd,
-	       asyncio_read_cb_t *read,
-	       asyncio_error_cb_t *err,
-	       void *opaque)
+               asyncio_read_cb_t *read,
+               asyncio_error_cb_t *err,
+               void *opaque,
+               int flags,
+               asyncio_sslctx_t *sslctx,
+               const char *hostname)
 {
-  setup_socket(fd);
-  async_fd_t *af = async_fd_create(fd, EPOLLIN);
-  af->af_pollin  = &do_read;
-  af->af_pollout = &do_write_unlocked;
-  af->af_bytes_avail = read;
-  af->af_error = err;
-  af->af_opaque = opaque;
-  return af;
-}
+  int poll_flags = EPOLLIN;
+  setup_tcp_socket(fd);
+  asyncio_fd_t *af = asyncio_fd_create(fd, 0);
 
+  af->af_flags = flags;
+  af->af_hostname = hostname ? strdup(hostname) : NULL;
 
-/**
- *
- */
-async_fd_t *
-asyncio_stream_mt(int fd,
-                  asyncio_read_cb_t *read,
-                  asyncio_error_cb_t *err,
-                  void *opaque,
-                  void *sslctx)
-{
-  setup_socket(fd);
-  async_fd_t *af = async_fd_create(fd, EPOLLIN);
+  if(flags & ASYNCIO_FLAG_THREAD_SAFE) {
+    pthread_mutex_init(&af->af_sendq_mutex, NULL);
+    pthread_cond_init(&af->af_sendq_cond, NULL);
+  }
 
-  af->af_flags = AF_SENDQ_MUTEX;
-  pthread_mutex_init(&af->af_sendq_mutex, NULL);
-  pthread_cond_init(&af->af_sendq_cond, NULL);
-
-  if(sslctx) {
+  if(sslctx != NULL) {
 #if defined(WITH_OPENSSL)
-    af->af_ssl = SSL_new(sslctx);
+
+    af->af_ssl = SSL_new(sslctx->ctx);
     if(SSL_set_fd(af->af_ssl, fd) == 0) {
       trace(LOG_ERR, "SSL: Unable to set FD");
     }
+
+    if(hostname != NULL)
+      SSL_set_tlsext_host_name(af->af_ssl, hostname);
 
     SSL_set_mode(af->af_ssl,
                  SSL_MODE_ENABLE_PARTIAL_WRITE |
                  SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
-    SSL_set_accept_state(af->af_ssl);
+    if(sslctx->client) {
+      SSL_set_connect_state(af->af_ssl);
+      poll_flags = EPOLLOUT;
+    } else {
+      SSL_set_accept_state(af->af_ssl);
+    }
 
     af->af_pollin  = &do_ssl_read;
     af->af_locked_write = &do_ssl_write_locked;
@@ -1355,6 +1457,7 @@ asyncio_stream_mt(int fd,
   af->af_bytes_avail = read;
   af->af_error = err;
   af->af_opaque = opaque;
+  mod_poll_flags(af, poll_flags, 0);
   return af;
 }
 
@@ -1363,7 +1466,7 @@ asyncio_stream_mt(int fd,
  *
  */
 void
-asyncio_process_pending(async_fd_t *af)
+asyncio_process_pending(asyncio_fd_t *af)
 {
   assert(pthread_self() == asyncio_tid);
 
@@ -1376,422 +1479,7 @@ asyncio_process_pending(async_fd_t *af)
  *
  */
 static void
-con_send_err(async_fd_t *af, const char *msg)
-{
-  int retry = af->af_connect(af->af_opaque, msg);
-  if(retry == 0) {
-    async_fd_release(af);
-  } else {
-    asyncio_timer_arm_delta(&af->af_timer, retry * 1000);
-  }
-}
-
-
-/**
- *
- */
-static void
-connection_established(async_fd_t *af)
-{
-  asyncio_timer_disarm(&af->af_timer);
-  af->af_pollerr = NULL;
-
-  af->af_pollin  = &do_read;
-  af->af_pollout = &do_write_unlocked;
-  mod_poll_flags(af, EPOLLIN, 0);
-
-  af->af_connect(af->af_opaque, NULL);
-
-  af->af_locked_write(af);
-}
-
-
-/**
- *
- */
-static void
-check_connect_status(async_fd_t *af)
-{
-  int err;
-  socklen_t errlen = sizeof(int);
-
-  getsockopt(af->af_fd, SOL_SOCKET, SO_ERROR, (void *)&err, &errlen);
-  if(err == 0)
-    return connection_established(af);
-
-  mod_poll_flags(af, 0, -1);
-  close(af->af_fd);
-  af->af_fd = -1;
-  char errmsg[256];
-  snprintf(errmsg, sizeof(errmsg), "%s", strerror(err));
-  con_send_err(af, errmsg);
-}
-
-
-/**
- *
- */
-static void
-initiate_connect(async_fd_t *af, const struct sockaddr_in *addr)
-{
-  int fd;
-
-  struct sockaddr_in sin = *addr;
-  sin.sin_port = htons(af->af_port);
-
-  if((fd = libsvc_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
-    con_send_err(af, "Unable to create socket");
-    return;
-  }
-
-  setup_socket(fd);
-
-  int r = connect(fd, (struct sockaddr *)&sin, sizeof(struct sockaddr_in));
-
-  assert(af->af_fd == -1);
-
-  if(!r) {
-    af->af_fd = fd;
-    return connection_established(af);
-  }
-
-  if(errno == EINPROGRESS) {
-    af->af_fd = fd;
-    af->af_pollout = check_connect_status;
-    af->af_pollerr = check_connect_status;
-    mod_poll_flags(af, EPOLLOUT, 0);
-    return;
-  }
-
-  close(fd);
-  char errmsg[256];
-  snprintf(errmsg, sizeof(errmsg), "%s", strerror(errno));
-  con_send_err(af, errmsg);
-  return;
-}
-
-
-/**
- *
- */
-static void
-connect_dns_cb(void *opaque, int status, const void *data)
-{
-  async_fd_t *af = opaque;
-  af->af_dns_req = NULL;
-
-  switch(status) {
-  case ASYNCIO_DNS_STATUS_COMPLETED:
-    initiate_connect(af, data);
-    return;
-
-  case ASYNCIO_DNS_STATUS_FAILED:
-    con_send_err(af, data);
-    return;
-
-  default:
-    abort();
-  }
-}
-
-/**
- *
- */
-static void
-connect_timeout(void *opaque)
-{
-  async_fd_t *af = opaque;
-
-  if(af->af_dns_req != NULL) {
-    // Still trying to resolve DNS
-    asyncio_dns_cancel(af->af_dns_req);
-    af->af_dns_req = NULL;
-    con_send_err(af, "Timeout during DNS lookup");
-    return;
-  }
-
-  if(af->af_fd != -1) {
-    mod_poll_flags(af, 0, -1);
-    close(af->af_fd);
-    af->af_fd = -1;
-    con_send_err(af, "Connection timed out");
-  }
-
-  assert(af->af_dns_req == NULL);
-
-  af->af_dns_req = asyncio_dns_lookup_host(af->af_hostname,
-					   connect_dns_cb, af);
-}
-
-
-
-/**
- *
- */
-async_fd_t *
-asyncio_connect(const char *hostname,
-		int port, int timeout,
-		asyncio_connect_cb_t *cb,
-		asyncio_read_cb_t *read,
-		asyncio_error_cb_t *err,
-		void *opaque)
-{
-  assert(cb != NULL);
-  assert(read != NULL);
-  assert(err != NULL);
-
-  async_fd_t *af = async_fd_create(-1, 0);
-  af->af_opaque = opaque;
-
-  af->af_port        = port;
-  af->af_hostname    = strdup(hostname);
-
-  af->af_connect     = cb;
-  af->af_bytes_avail = read;
-  af->af_error       = err;
-
-  asyncio_timer_init(&af->af_timer, connect_timeout, af);
-  asyncio_timer_arm_delta(&af->af_timer, timeout * 1000);
-  af->af_dns_req = asyncio_dns_lookup_host(hostname, connect_dns_cb, af);
-  return af;
-}
-
-
-/**
- *
- */
-void
-asyncio_reconnect(async_fd_t *af, int delay)
-{
-  printf("Reconnect to %s\n", af->af_hostname);
-  if(af->af_fd == -1) {
-    printf("Reconnect on non-open socket!?\n");
-    return;
-  }
-  assert(af->af_dns_req == NULL);
-
-  mod_poll_flags(af, 0, -1);
-  close(af->af_fd);
-  af->af_fd = -1;
-
-  asyncio_timer_arm_delta(&af->af_timer, delay * 1000);
-}
-
-
-/**
- * DNS handling
- */
-
-static pthread_mutex_t asyncio_dns_mutex;
-TAILQ_HEAD(asyncio_dns_req_queue, asyncio_dns_req);
-static struct asyncio_dns_req_queue asyncio_dns_pending;
-static struct asyncio_dns_req_queue asyncio_dns_completed;
-
-
-struct asyncio_dns_req {
-  TAILQ_ENTRY(asyncio_dns_req) adr_link;
-  char *adr_hostname;
-  void *adr_opaque;
-  void (*adr_cb)(void *opaque, int status, const void *data);
-
-  int adr_status;
-  const void *adr_data;
-  const char *adr_errmsg;
-  struct sockaddr_in adr_addr;
-};
-
-
-static int adr_resolver_running;
-
-/**
- *
- */
-static int
-adr_resolve(asyncio_dns_req_t *adr)
-{
-  struct hostent *hp;
-  char *tmphstbuf;
-  int herr;
-#if !defined(__APPLE__)
-  struct hostent hostbuf;
-  size_t hstbuflen;
-  int res;
-#endif
-
-  const char *hostname = adr->adr_hostname;
-
-#if defined(__APPLE__)
-  herr = 0;
-  tmphstbuf = NULL; /* free NULL is a nop */
-  /* TODO: AF_INET6 */
-  hp = gethostbyname(hostname);
-  if(hp == NULL)
-    herr = h_errno;
-#else
-  hstbuflen = 1024;
-  tmphstbuf = malloc(hstbuflen);
-
-  while((res = gethostbyname_r(hostname, &hostbuf, tmphstbuf, hstbuflen,
-			       &hp, &herr)) == ERANGE) {
-    hstbuflen *= 2;
-    tmphstbuf = realloc(tmphstbuf, hstbuflen);
-  }
-#endif
-  if(herr != 0) {
-    switch(herr) {
-    case HOST_NOT_FOUND:
-      adr->adr_errmsg = "Unknown host";
-      break;
-
-    case NO_ADDRESS:
-      adr->adr_errmsg =
-	"The requested name is valid but does not have an IP address";
-      break;
-
-    case NO_RECOVERY:
-      adr->adr_errmsg = "A non-recoverable name server error occurred";
-      break;
-
-    case TRY_AGAIN:
-      adr->adr_errmsg =
-	"A temporary error occurred on an authoritative name server";
-      break;
-
-    default:
-      adr->adr_errmsg = "Unknown error";
-      break;
-    }
-
-    free(tmphstbuf);
-    return -1;
-
-  } else if(hp == NULL) {
-    adr->adr_errmsg = "Resolver internal error";
-    free(tmphstbuf);
-    return -1;
-  }
-
-  switch(hp->h_addrtype) {
-  case AF_INET:
-    adr->adr_addr.sin_family = AF_INET;
-    memcpy(&adr->adr_addr.sin_addr, hp->h_addr_list[0], sizeof(struct in_addr));
-    break;
-
-  default:
-    adr->adr_errmsg = "Resolver internal error";
-    free(tmphstbuf);
-    return -1;
-  }
-
-  free(tmphstbuf);
-  return 0;
-}
-
-/**
- *
- */
-static void *
-adr_resolver(void *aux)
-{
-  asyncio_dns_req_t *adr;
-  pthread_mutex_lock(&asyncio_dns_mutex);
-  while((adr = TAILQ_FIRST(&asyncio_dns_pending)) != NULL) {
-    TAILQ_REMOVE(&asyncio_dns_pending, adr, adr_link);
-
-    pthread_mutex_unlock(&asyncio_dns_mutex);
-
-
-    if(adr_resolve(adr)) {
-      adr->adr_status = ASYNCIO_DNS_STATUS_FAILED;
-      adr->adr_data = adr->adr_errmsg;
-    } else {
-      adr->adr_status = ASYNCIO_DNS_STATUS_COMPLETED;
-      adr->adr_data = &adr->adr_addr;
-    }
-    pthread_mutex_lock(&asyncio_dns_mutex);
-    TAILQ_INSERT_TAIL(&asyncio_dns_completed, adr, adr_link);
-    asyncio_wakeup_worker(asyncio_dns_worker);
-  }
-
-  adr_resolver_running = 0;
-  pthread_mutex_unlock(&asyncio_dns_mutex);
-  return NULL;
-}
-
-
-/**
- *
- */
-void
-asyncio_dns_cancel(asyncio_dns_req_t *r)
-{
-  assert(pthread_self() == asyncio_tid);
-  r->adr_cb = NULL;
-}
-
-
-/**
- *
- */
-asyncio_dns_req_t *
-asyncio_dns_lookup_host(const char *hostname,
-			void (*cb)(void *opaque,
-				   int status,
-				   const void *data),
-			void *opaque)
-{
-  asyncio_dns_req_t *adr;
-
-  adr = calloc(1, sizeof(asyncio_dns_req_t));
-  adr->adr_hostname = strdup(hostname);
-  adr->adr_cb = cb;
-  adr->adr_opaque = opaque;
-
-  pthread_mutex_lock(&asyncio_dns_mutex);
-  TAILQ_INSERT_TAIL(&asyncio_dns_pending, adr, adr_link);
-  if(!adr_resolver_running) {
-    adr_resolver_running = 1;
-
-    pthread_t tid;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    pthread_create(&tid, &attr, adr_resolver, NULL);
-    pthread_attr_destroy(&attr);
-  }
-  pthread_mutex_unlock(&asyncio_dns_mutex);
-  return adr;
-}
-
-
-/**
- * Return async DNS requests to caller
- */
-static void
-adr_deliver_cb(void)
-{
-  asyncio_dns_req_t *adr;
-
-  pthread_mutex_lock(&asyncio_dns_mutex);
-
-  while((adr = TAILQ_FIRST(&asyncio_dns_completed)) != NULL) {
-    TAILQ_REMOVE(&asyncio_dns_completed, adr, adr_link);
-    pthread_mutex_unlock(&asyncio_dns_mutex);
-    if(adr->adr_cb != NULL)
-      adr->adr_cb(adr->adr_opaque, adr->adr_status, adr->adr_data);
-
-    free(adr->adr_hostname);
-    free(adr);
-    pthread_mutex_lock(&asyncio_dns_mutex);
-  }
-  pthread_mutex_unlock(&asyncio_dns_mutex);
-}
-
-/**
- *
- */
-static void
-asyncio_handle_pipe(async_fd_t *af)
+asyncio_handle_pipe(asyncio_fd_t *af)
 {
   char x;
   if(read(asyncio_pipe[0], &x, 1) != 1)
@@ -1873,8 +1561,6 @@ asyncio_init(void)
   fcntl(asyncio_pipe[0], F_SETFD, fcntl(asyncio_pipe[0], F_GETFD) | FD_CLOEXEC);
   fcntl(asyncio_pipe[1], F_SETFD, fcntl(asyncio_pipe[1], F_GETFD) | FD_CLOEXEC);
 
-  TAILQ_INIT(&asyncio_dns_pending);
-  TAILQ_INIT(&asyncio_dns_completed);
   TAILQ_INIT(&asyncio_tasks);
 
 #ifdef __linux__
@@ -1889,10 +1575,9 @@ asyncio_init(void)
   pthread_mutex_init(&asyncio_task_mutex, NULL);
   pthread_cond_init(&asyncio_task_cond, NULL);
 
-  asyncio_dns_worker = asyncio_add_worker(adr_deliver_cb);
   asyncio_task_worker = asyncio_add_worker(task_cb);
 
-  pipe_af = async_fd_create(asyncio_pipe[0], EPOLLIN);
+  pipe_af = asyncio_fd_create(asyncio_pipe[0], EPOLLIN);
   pipe_af->af_pollin = &asyncio_handle_pipe;
 
   pthread_create(&asyncio_tid, NULL, asyncio_loop, NULL);
@@ -1960,8 +1645,8 @@ asyncio_run_task_blocking(void (*fn)(void *aux), void *aux)
 
 #if defined(WITH_OPENSSL)
 
-void *
-asyncio_sslctx_create_from_files(const char *priv_key_file,
+asyncio_sslctx_t *
+asyncio_sslctx_server_from_files(const char *priv_key_file,
                                  const char *cert_file)
 {
   SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
@@ -1988,7 +1673,9 @@ asyncio_sslctx_create_from_files(const char *priv_key_file,
                       SSL_OP_NO_SSLv3 |
                       SSL_OP_NO_TLSv1);
 
-  return ctx;
+  asyncio_sslctx_t *ret = calloc(1, sizeof(asyncio_sslctx_t));
+  ret->ctx = ctx;
+  return ret;
 }
 
 
@@ -2021,8 +1708,8 @@ evp_from_private_pem(const char *pem)
 }
 
 
-void *
-asyncio_sslctx_create_from_pem(const char *priv_key_pem,
+asyncio_sslctx_t *
+asyncio_sslctx_server_from_pem(const char *priv_key_pem,
                                const char *cert_pem)
 {
   EVP_PKEY *priv_key = evp_from_private_pem(priv_key_pem);
@@ -2052,13 +1739,42 @@ asyncio_sslctx_create_from_pem(const char *priv_key_pem,
                       SSL_OP_NO_SSLv3 |
                       SSL_OP_NO_TLSv1);
 
-  return ctx;
+  asyncio_sslctx_t *ret = calloc(1, sizeof(asyncio_sslctx_t));
+  ret->ctx = ctx;
+  return ret;
 }
 
 
 void
-asyncio_sslctx_free(void *ctx)
+asyncio_sslctx_free(asyncio_sslctx_t *ctx)
 {
-  SSL_CTX_free(ctx);
+  SSL_CTX_free(ctx->ctx);
+  free(ctx);
 }
+
+asyncio_sslctx_t *
+asyncio_sslctx_client(void)
+{
+  SSL_CTX *ctx = SSL_CTX_new(TLSv1_2_client_method());
+
+#if defined(__APPLE__)
+  int r = SSL_CTX_load_verify_locations(ctx, "/usr/local/etc/openssl/cert.pem", NULL);
+#else
+  int r = SSL_CTX_load_verify_locations(ctx, NULL, "/etc/ssl/certs");
+#endif
+  if(!r) {
+    SSL_CTX_free(ctx);
+    return NULL;
+  }
+
+  SSL_CTX_set_verify_depth(ctx, 3);
+
+  asyncio_sslctx_t *ret = calloc(1, sizeof(asyncio_sslctx_t));
+  ret->client = 1;
+  ret->ctx = ctx;
+  return ret;
+}
+
+
+
 #endif

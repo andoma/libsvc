@@ -51,10 +51,12 @@ int64_t asyncio_now(void);
  * IO
  **************************************************************************/
 
+#define ASYNCIO_FLAG_THREAD_SAFE     0x1
+#define ASYNCIO_FLAG_SSL_VERIFY_CERT 0x2
 
-typedef struct asyncio_dns_req asyncio_dns_req_t;
+typedef struct asyncio_sslctx asyncio_sslctx_t;
 
-struct async_fd;
+typedef struct asyncio_fd asyncio_fd_t;
 
 void asyncio_init(void);
 
@@ -68,70 +70,61 @@ typedef void (asyncio_error_cb_t)(void *opaque, int error);
 
 typedef void (asyncio_read_cb_t)(void *opaque, struct mbuf *hq);
 
-typedef void (asyncio_poll_cb_t)(struct async_fd *);
+typedef void (asyncio_poll_cb_t)(struct asyncio_fd *);
 
-typedef struct async_fd async_fd_t;
-
-async_fd_t *asyncio_bind(const char *bindaddr,
+asyncio_fd_t *asyncio_bind(const char *bindaddr,
                          int port,
                          asyncio_accept_cb_t *cb,
                          void *opaque);
 
-async_fd_t *asyncio_connect(const char *hostname,
+asyncio_fd_t *asyncio_connect(const char *hostname,
 			    int port, int timeout,
 			    asyncio_connect_cb_t *cb,
 			    asyncio_read_cb_t *read,
 			    asyncio_error_cb_t *err,
 			    void *opaque);
 
-async_fd_t *asyncio_dgram(int fd, asyncio_poll_cb_t *input,
+asyncio_fd_t *asyncio_dgram(int fd, asyncio_poll_cb_t *input,
                           void *opaque);
 
-async_fd_t *asyncio_stream(int fd,
-			   asyncio_read_cb_t *read,
-			   asyncio_error_cb_t *err,
-			   void *opaque);
+asyncio_fd_t *asyncio_stream(int fd,
+                             asyncio_read_cb_t *read,
+                             asyncio_error_cb_t *err,
+                             void *opaque,
+                             int flags,
+                             asyncio_sslctx_t *sslctx,
+                             const char *hostname);
 
+void asyncio_close(asyncio_fd_t *af);
 
-// Multithread safe version of asyncio_stream()
-async_fd_t *asyncio_stream_mt(int fd,
-                              asyncio_read_cb_t *read,
-                              asyncio_error_cb_t *err,
-                              void *opaque,
-                              void *sslctx);
+int asyncio_send(asyncio_fd_t *af, const void *buf, size_t len, int cork);
 
-void asyncio_close(async_fd_t *af);
-
-int asyncio_send(async_fd_t *af, const void *buf, size_t len, int cork);
-
-int asyncio_send_with_hdr(async_fd_t *af,
+int asyncio_send_with_hdr(asyncio_fd_t *af,
                           const void *hdr_buf, size_t hdr_len,
                           const void *buf, size_t len,
                           int cork);
 
-int asyncio_sendq(async_fd_t *af, mbuf_t *hq, int cork);
+int asyncio_sendq(asyncio_fd_t *af, mbuf_t *hq, int cork);
 
-int asyncio_sendq_with_hdr(async_fd_t *af, const void *hdr_buf, size_t hdr_len,
-                           mbuf_t *q, int cork);
+int asyncio_sendq_with_hdr(asyncio_fd_t *af, const void *hdr_buf,
+                           size_t hdr_len, mbuf_t *q, int cork);
 
-void asyncio_send_lock(async_fd_t *af);
+void asyncio_send_lock(asyncio_fd_t *af);
 
-void asyncio_send_unlock(async_fd_t *af);
+void asyncio_send_unlock(asyncio_fd_t *af);
 
-int asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
+int asyncio_sendq_with_hdr_locked(asyncio_fd_t *af, const void *hdr_buf,
                                   size_t hdr_len, mbuf_t *q, int cork);
 
-void asyncio_reconnect(async_fd_t *af, int delay);
+void asyncio_process_pending(asyncio_fd_t *fd);
 
-void asyncio_process_pending(async_fd_t *fd);
+void asyncio_shutdown(asyncio_fd_t *fd);
 
-void asyncio_shutdown(async_fd_t *fd);
+void asyncio_fd_retain(asyncio_fd_t *af);
 
-void async_fd_retain(async_fd_t *af);
+void asyncio_fd_release(asyncio_fd_t *af);
 
-void async_fd_release(async_fd_t *af);
-
-int asyncio_wait_send_buffer(async_fd_t *af, int size);
+int asyncio_wait_send_buffer(asyncio_fd_t *af, int size);
 
 /*************************************************************************
  * Workers
@@ -146,32 +139,15 @@ void asyncio_run_task(void (*fn)(void *aux), void *aux);
 void asyncio_run_task_blocking(void (*fn)(void *aux), void *aux);
 
 /************************************************************************
- * Async DNS
- ************************************************************************/
-
-
-#define ASYNCIO_DNS_STATUS_QUEUED    1
-#define ASYNCIO_DNS_STATUS_PENDING   2
-#define ASYNCIO_DNS_STATUS_COMPLETED 3
-#define ASYNCIO_DNS_STATUS_FAILED    4
-
-asyncio_dns_req_t *asyncio_dns_lookup_host(const char *hostname,
-					   void (*cb)(void *opaque,
-						      int status,
-						      const void *data),
-					   void *opaque);
-
-void asyncio_dns_cancel(asyncio_dns_req_t *req);
-
-
-/************************************************************************
  * SSL / TLS
  ************************************************************************/
 
-void *asyncio_sslctx_create_from_files(const char *priv_key_file,
-                                       const char *cert_file);
+asyncio_sslctx_t *asyncio_sslctx_server_from_files(const char *priv_key_file,
+                                                   const char *cert_file);
 
-void *asyncio_sslctx_create_from_pem(const char *priv_key_pem,
-                                     const char *cert_pem);
+asyncio_sslctx_t *asyncio_sslctx_server_from_pem(const char *priv_key_pem,
+                                                 const char *cert_pem);
 
-void asyncio_sslctx_free(void *ctx);
+asyncio_sslctx_t *asyncio_sslctx_client(void);
+
+void asyncio_sslctx_free(asyncio_sslctx_t *ctx);

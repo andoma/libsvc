@@ -139,7 +139,7 @@ void http_send_raw(http_request_t *hc, const void *data, size_t len);
 
 const struct sockaddr *http_connection_get_peer(struct http_connection *hc);
 
-struct async_fd *http_connection_get_af(struct http_connection *hc);
+struct asyncio_fd *http_connection_get_af(struct http_connection *hc);
 
 int http_send_chunk(http_request_t *hc, const void *data, size_t len);
 

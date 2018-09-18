@@ -69,9 +69,9 @@ typedef struct http_server {
   int hs_port;
   char *hs_bind_address;
 
-  async_fd_t *hs_fd;
+  asyncio_fd_t *hs_fd;
 
-  void *hs_sslctx;
+  asyncio_sslctx_t *hs_sslctx;
 
   http_sniffer_t *hs_sniffer;
 
@@ -99,7 +99,7 @@ typedef struct http_connection {
   asyncio_timer_t hc_timer;
 
   http_server_t *hc_server;
-  struct async_fd *hc_af;
+  struct asyncio_fd *hc_af;
 
   int hc_read_disabled;
   int hc_closed;
@@ -1307,7 +1307,7 @@ static void
 http_connection_destroy(http_connection_t *hc)
 {
   http_server_release(hc->hc_server);
-  async_fd_release(hc->hc_af);
+  asyncio_fd_release(hc->hc_af);
   free(hc->hc_path);
   free(hc->hc_remain);
   free(hc->hc_header_field);
@@ -1388,10 +1388,10 @@ http_connection_get_peer(struct http_connection *hc)
   return (const struct sockaddr *)&hc->hc_peer_sockaddr;
 }
 
-struct async_fd *
+struct asyncio_fd *
 http_connection_get_af(struct http_connection *hc)
 {
-  async_fd_retain(hc->hc_af);
+  asyncio_fd_retain(hc->hc_af);
   return hc->hc_af;
 }
 
@@ -1528,8 +1528,9 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
 
   hc->hc_server = hs;
   atomic_inc(&hs->hs_refcount);
-  hc->hc_af = asyncio_stream_mt(fd, http_server_read, http_server_error, hc,
-                                hs->hs_sslctx);
+  hc->hc_af = asyncio_stream(fd, http_server_read, http_server_error, hc,
+                             ASYNCIO_FLAG_THREAD_SAFE,
+                             hs->hs_sslctx, NULL);
 
   asyncio_timer_init(&hc->hc_timer, http_server_timeout, hc);
   asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
@@ -1602,7 +1603,7 @@ http_server_init(const char *config_prefix)
     cfg_get_str(cr, CFG(config_prefix, "certFile"), NULL);
 
   if(priv_key_file != NULL && cert_file != NULL) {
-    hs->hs_sslctx = asyncio_sslctx_create_from_files(priv_key_file, cert_file);
+    hs->hs_sslctx = asyncio_sslctx_server_from_files(priv_key_file, cert_file);
   }
 
   asyncio_run_task(http_server_start, hs);
