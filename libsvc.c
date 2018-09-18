@@ -22,15 +22,19 @@
 ******************************************************************************/
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
+#include <sys/resource.h>
+
 #include "libsvc.h"
 #include "tcp.h"
 #include "misc.h"
 #include "init.h"
 #include "trace.h"
 #include "vec.h"
-#include <sys/resource.h>
 
+#ifdef WITH_OPENSSL
 #include <openssl/rand.h>
+#endif
 
 #ifdef WITH_MYSQL
 #include "db.h"
@@ -90,9 +94,11 @@ libsvc_set_app_version(const char *version)
 void
 libsvc_init(void)
 {
+#ifdef WITH_OPENSSL
   uint8_t randomness[32];
   get_random_bytes(randomness, sizeof(randomness));
   RAND_seed(randomness, sizeof(randomness));
+#endif
 
 #ifdef WITH_MYSQL
   db_init();

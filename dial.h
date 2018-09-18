@@ -27,3 +27,6 @@
 
 tcp_stream_t *dial(const char *hostname, int port, int timeout,
                    const tcp_ssl_info_t *tsi, char *errbuf, size_t errlen);
+
+int dialfd(const char *hostname, int port, int timeout,
+           char *errbuf, size_t errlen);

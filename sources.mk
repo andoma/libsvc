@@ -53,8 +53,12 @@ libsvc_INCS += \
 	murmur3.h \
 	mbuf.h \
 
-CFLAGS  += $(shell $(PKG_CONFIG) --cflags openssl)
+ifeq (${WITH_OPENSSL},yes)
+CFLAGS  += $(shell $(PKG_CONFIG) --cflags openssl) -DWITH_OPENSSL
 LDFLAGS += $(shell $(PKG_CONFIG) --libs openssl)
+endif
+
+
 
 ifeq ($(shell uname),Linux)
 LDFLAGS += -ldl #for trap handler

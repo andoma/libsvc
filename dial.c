@@ -64,8 +64,8 @@ getstreamsocket(int family)
 
 
 
-static tcp_stream_t *
-dial_one(const struct sockaddr *sa, socklen_t slen, int timeout, const tcp_ssl_info_t *tsi,
+static int
+dial_one(const struct sockaddr *sa, socklen_t slen, int timeout,
          const char *hostname, char *errbuf, size_t errlen)
 {
   char addrtxt[512];
@@ -83,7 +83,7 @@ dial_one(const struct sockaddr *sa, socklen_t slen, int timeout, const tcp_ssl_i
     break;
   default:
     snprintf(errbuf, errlen, "Invalid address family %d", sa->sa_family);
-    return NULL;
+    return -1;
   }
 
   int fd = getstreamsocket(sa->sa_family);
@@ -102,14 +102,14 @@ dial_one(const struct sockaddr *sa, socklen_t slen, int timeout, const tcp_ssl_i
         close(fd);
         snprintf(errbuf, errlen, "Connection to %s timed out",
                  addrtxt);
-        return NULL;
+        return -1;
       }
 
       if(r == -1) {
         snprintf(errbuf, errlen, "Connection to %s failed -- %s",
                  addrtxt, strerror(errno));
         close(fd);
-        return NULL;
+        return -1;
       }
 
       getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *)&err, &sockerrlen);
@@ -124,7 +124,7 @@ dial_one(const struct sockaddr *sa, socklen_t slen, int timeout, const tcp_ssl_i
     close(fd);
     snprintf(errbuf, errlen, "Connection to %s failed -- %s",
              addrtxt, strerror(err));
-    return NULL;
+    return -1;
   }
 
   fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
@@ -150,11 +150,38 @@ dial_one(const struct sockaddr *sa, socklen_t slen, int timeout, const tcp_ssl_i
   setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof(val));
 #endif
 
-  if(tsi != NULL)
-    return tcp_stream_create_ssl_from_fd(fd, hostname, tsi,
-                                         errbuf, errlen);
+  return fd;
+}
 
-  return tcp_stream_create_from_fd(fd);
+
+/**
+ *
+ */
+int
+dialfd(const char *hostname, int port, int timeout,
+       char *errbuf, size_t errlen)
+{
+  char service[10];
+  snprintf(service, sizeof(service), "%u", port);
+  struct addrinfo *res = NULL;
+  const int gai_err = getaddrinfo(hostname, service, NULL, &res);
+  if(gai_err) {
+    snprintf(errbuf, errlen, "Unable to resolve %s -- %s", hostname,
+             gai_strerror(gai_err));
+    return -1;
+  }
+
+  const struct addrinfo *ai = res;
+  int fd = -1;
+  while(ai) {
+    fd = dial_one(ai->ai_addr, ai->ai_addrlen, timeout, hostname,
+                  errbuf, errlen);
+    if(fd >= 0)
+      break;
+    ai = ai->ai_next;
+  }
+  freeaddrinfo(res);
+  return fd;
 }
 
 
@@ -165,26 +192,18 @@ tcp_stream_t *
 dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
      char *errbuf, size_t errlen)
 {
-  char service[10];
-  snprintf(service, sizeof(service), "%u", port);
-  struct addrinfo *res = NULL;
-  const int gai_err = getaddrinfo(hostname, service, NULL, &res);
-  if(gai_err) {
-    snprintf(errbuf, errlen, "Unable to resolve %s -- %s", hostname,
-             gai_strerror(gai_err));
+  int fd = dialfd(hostname, port, timeout, errbuf, errlen);
+  if(fd == -1)
+    return NULL;
+
+  if(tsi != NULL) {
+#if defined(WITH_OPENSSL)
+    return tcp_stream_create_ssl_from_fd(fd, hostname, tsi,
+                                         errbuf, errlen);
+#endif
+    snprintf(errbuf, errlen, "Not build with SSL");
+    close(fd);
     return NULL;
   }
-
-  tcp_stream_t *ts = NULL;
-
-  const struct addrinfo *ai = res;
-  while(ai) {
-
-    ts = dial_one(ai->ai_addr, ai->ai_addrlen, timeout, tsi, hostname, errbuf, errlen);
-    if(ts != NULL)
-      break;
-    ai = ai->ai_next;
-  }
-  freeaddrinfo(res);
-  return ts;
+  return tcp_stream_create_from_fd(fd);
 }

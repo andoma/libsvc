@@ -41,22 +41,25 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 
+#if defined(WITH_OPENSSL)
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
+#endif
 
 #include "tcp.h"
 #include "misc.h"
 
+#if defined(WITH_OPENSSL)
 static SSL_CTX *ssl_ctx;
 static pthread_mutex_t *ssl_locks;
+#endif
 
 
 struct tcp_stream {
   int ts_fd;
   char ts_nonblock;
 
-  SSL *ts_ssl;
 
   htsbuf_queue_t ts_spill;
   htsbuf_queue_t ts_sendq;
@@ -65,9 +68,11 @@ struct tcp_stream {
 
   int (*ts_read)(struct tcp_stream *ts, void *data, int len, int waitall);
 
+#if defined(WITH_OPENSSL)
+  SSL *ts_ssl;
   int ts_read_status;
   int ts_write_status;
-
+#endif
 };
 
 
@@ -90,11 +95,12 @@ tcp_get_errno(tcp_stream_t *ts)
 void
 tcp_close(tcp_stream_t *ts)
 {
+#if defined(WITH_OPENSSL)
   if(ts->ts_ssl != NULL) {
     SSL_shutdown(ts->ts_ssl);
     SSL_free(ts->ts_ssl);
   }
-
+#endif
   htsbuf_queue_flush(&ts->ts_spill);
   htsbuf_queue_flush(&ts->ts_sendq);
   if(ts->ts_fd != -1) {
@@ -218,6 +224,7 @@ os_write(struct tcp_stream *ts, const void *data, int len)
 }
 
 
+#if defined(WITH_OPENSSL)
 /**
  *
  */
@@ -321,7 +328,7 @@ ssl_write(struct tcp_stream *ts, const void *data, int len)
 
   return len;
 }
-
+#endif
 
 /**
  *
@@ -334,6 +341,7 @@ tcp_prepare_poll(tcp_stream_t *ts, struct pollfd *pfd)
   pfd->fd = ts->ts_fd;
   pfd->events = POLLERR | POLLHUP;
 
+#if defined(WITH_OPENSSL)
   if(ts->ts_ssl != NULL) {
 
     if(ts->ts_read_status == SSL_ERROR_WANT_WRITE) {
@@ -347,13 +355,13 @@ tcp_prepare_poll(tcp_stream_t *ts, struct pollfd *pfd)
       pfd->events |= POLLOUT;
     else if(ts->ts_write_status == SSL_ERROR_WANT_READ)
       pfd->events |= POLLIN;
-
-  } else {
-
-    pfd->events |= POLLIN;
-    if(os_write_try(ts))
-      pfd->events |= POLLOUT;
+    return;
   }
+
+#endif
+  pfd->events |= POLLIN;
+  if(os_write_try(ts))
+    pfd->events |= POLLOUT;
 }
 
 
@@ -363,12 +371,13 @@ tcp_prepare_poll(tcp_stream_t *ts, struct pollfd *pfd)
 int
 tcp_can_read(tcp_stream_t *ts, struct pollfd *pfd)
 {
+#if defined(WITH_OPENSSL)
   if(ts->ts_ssl == NULL)
     return pfd->revents & POLLIN;
 
   if(ts->ts_write_status == SSL_ERROR_WANT_READ)
     return 0;
-
+#endif
   return 1;
 }
 
@@ -588,6 +597,7 @@ tcp_read_buffered(tcp_stream_t *ts)
 }
 
 
+#if defined(WITH_OPENSSL)
 /**
  *
  */
@@ -765,7 +775,7 @@ ssl_lock_fn(int mode, int n, const char *file, int line)
   else if(mode & CRYPTO_UNLOCK)
     pthread_mutex_unlock(&ssl_locks[n]);
 }
-
+#endif
 
 /**
  *
@@ -773,6 +783,7 @@ ssl_lock_fn(int mode, int n, const char *file, int line)
 void
 tcp_init1(const char *extra_ca, int init_ssl)
 {
+#if defined(WITH_OPENSSL)
   if(init_ssl) {
     SSL_library_init();
     SSL_load_error_strings();
@@ -811,6 +822,7 @@ tcp_init1(const char *extra_ca, int init_ssl)
   }
 
   SSL_CTX_set_verify_depth(ssl_ctx, 3);
+#endif
 }
 
 

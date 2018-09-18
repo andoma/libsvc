@@ -42,8 +42,10 @@
 #error Need poll mechanism
 #endif
 
+#if defined(WITH_OPENSSL)
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#endif
 
 #include "queue.h"
 #include "asyncio.h"
@@ -96,10 +98,12 @@ struct async_fd {
   uint8_t af_pending_shutdown;
   int af_pending_error;
 
+#if defined(WITH_OPENSSL)
   int af_ssl_established;
   int af_ssl_read_status;
   int af_ssl_write_status;
   SSL *af_ssl;
+#endif
 };
 
 
@@ -572,6 +576,7 @@ do_read(async_fd_t *af)
 
 
 
+#if defined(WITH_OPENSSL)
 static void __attribute__((unused))
 ssldump(async_fd_t *af)
 {
@@ -770,7 +775,7 @@ do_ssl_write_locked(async_fd_t *af)
     }
   }
 }
-
+#endif
 
 
 /**
@@ -976,11 +981,12 @@ asyncio_close(async_fd_t *af)
 
   af_lock(af);
 
-
+#if defined(WITH_OPENSSL)
   if(af->af_ssl != NULL) {
     SSL_free(af->af_ssl);
     af->af_ssl = NULL;
   }
+#endif
 
   if(af->af_fd != -1) {
     mod_poll_flags(af, 0, -1);
@@ -1006,8 +1012,10 @@ asyncio_shutdown(async_fd_t *af)
   if(af->af_fd != -1) {
     if(af->af_sendq.mq_size) {
       af->af_pending_shutdown = 1;
+#if defined(WITH_OPENSSL)
     } else if(af->af_ssl != NULL) {
       SSL_shutdown(af->af_ssl);
+#endif
     } else {
       shutdown(af->af_fd, 2);
     }
@@ -1051,10 +1059,16 @@ asyncio_send_with_hdr(async_fd_t *af,
   int rval = 0;
   af_lock(af);
 
+#if defined(WITH_OPENSSL)
+  const int no_ssl = af->af_ssl == NULL;
+#else
+  const int no_ssl = 1;
+#endif
+
   if(af->af_fd != -1) {
     int qempty = af->af_sendq.mq_size == 0;
 
-    if(!cork && qempty && af->af_ssl == NULL) {
+    if(!cork && qempty && no_ssl) {
       int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL | MSG_MORE);
       if(r > 0) {
         hdr_buf += r;
@@ -1067,7 +1081,7 @@ asyncio_send_with_hdr(async_fd_t *af,
       qempty = 0;
     }
 
-    if(!cork && qempty  && af->af_ssl == NULL) {
+    if(!cork && qempty && no_ssl) {
       int r = send(af->af_fd, buf, len, MSG_NOSIGNAL);
       if(r > 0) {
         buf += r;
@@ -1142,10 +1156,16 @@ asyncio_sendq_with_hdr_locked(async_fd_t *af, const void *hdr_buf,
 {
   int rval = 0;
 
+#if defined(WITH_OPENSSL)
+  const int no_ssl = af->af_ssl == NULL;
+#else
+  const int no_ssl = 1;
+#endif
+
   if(af->af_fd != -1) {
     int qempty = af->af_sendq.mq_size == 0;
 
-    if(!cork && qempty && af->af_ssl == NULL) {
+    if(!cork && qempty && no_ssl) {
       int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL | MSG_MORE);
       if(r > 0) {
         hdr_buf += r;
@@ -1307,6 +1327,7 @@ asyncio_stream_mt(int fd,
   pthread_cond_init(&af->af_sendq_cond, NULL);
 
   if(sslctx) {
+#if defined(WITH_OPENSSL)
     af->af_ssl = SSL_new(sslctx);
     if(SSL_set_fd(af->af_ssl, fd) == 0) {
       trace(LOG_ERR, "SSL: Unable to set FD");
@@ -1320,7 +1341,10 @@ asyncio_stream_mt(int fd,
 
     af->af_pollin  = &do_ssl_read;
     af->af_locked_write = &do_ssl_write_locked;
-
+#else
+    trace(LOG_ERR, "SSL not enabled");
+    return NULL;
+#endif
   } else {
     af->af_pollin  = &do_read;
     af->af_locked_write = &do_write_locked;
@@ -1934,6 +1958,8 @@ asyncio_run_task_blocking(void (*fn)(void *aux), void *aux)
  * SSL / TLS
  ************************************************************************/
 
+#if defined(WITH_OPENSSL)
+
 void *
 asyncio_sslctx_create_from_files(const char *priv_key_file,
                                  const char *cert_file)
@@ -2035,3 +2061,4 @@ asyncio_sslctx_free(void *ctx)
 {
   SSL_CTX_free(ctx);
 }
+#endif
