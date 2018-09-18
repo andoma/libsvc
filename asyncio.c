@@ -1136,7 +1136,6 @@ int
 asyncio_send(asyncio_fd_t *af, const void *buf, size_t len, int cork)
 {
   int rval = 0;
-  hexdump("SEND", buf, len);
   af_lock(af);
 
   if(af->af_fd != -1) {
