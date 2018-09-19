@@ -192,8 +192,18 @@ static void http_connection_reenable(void *aux);
 static void
 http_server_release(http_server_t *hs)
 {
-  // void
+  if(atomic_dec(&hs->hs_refcount))
+    return;
+
+  if(hs->hs_sslctx != NULL)
+    asyncio_sslctx_free(hs->hs_sslctx);
+  hs->hs_sslctx = NULL;
+
+  free(hs->hs_real_ip_header);
+  free(hs->hs_bind_address);
+  free(hs);
 }
+
 
 /**
  *
@@ -1568,9 +1578,7 @@ http_server_stop(void *aux)
     hs->hs_fd = NULL;
   }
 
-  if(hs->hs_sslctx != NULL)
-    asyncio_sslctx_free(hs->hs_sslctx);
-  hs->hs_sslctx = NULL;
+  http_server_release(hs);
 }
 
 
