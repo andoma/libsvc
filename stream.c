@@ -90,9 +90,10 @@ stream_connect(const char *hostname, int port, int timeout_ms,
 ssize_t
 stream_write(stream_t *s, const void *data, size_t len)
 {
-  if(asyncio_send(s->s_af, data, len, 0) == -1)
+  if(asyncio_send(s->s_af, data, len, 0) == -1) {
+    errno = ECONNRESET;
     return -1;
-
+  }
   return len;
 }
 
