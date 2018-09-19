@@ -1128,6 +1128,19 @@ asyncio_shutdown(asyncio_fd_t *af)
   af_unlock(af);
 }
 
+/**
+ *
+ */
+static int
+send_locked_write(asyncio_fd_t *af)
+{
+  const int err = af->af_locked_write(af);
+  if(err) {
+    return -1;
+  }
+  return 0;
+}
+
 
 /**
  *
@@ -1142,7 +1155,7 @@ asyncio_send(asyncio_fd_t *af, const void *buf, size_t len, int cork)
     mbuf_append(&af->af_sendq, buf, len);
 
     if(!cork)
-      rval = af->af_locked_write(af);
+      rval = send_locked_write(af);
   } else {
     rval = -1;
   }
@@ -1200,7 +1213,7 @@ asyncio_send_with_hdr(asyncio_fd_t *af,
     }
 
     if(!cork)
-      rval = af->af_locked_write(af);
+      rval = send_locked_write(af);
   } else {
     rval = -1;
   }
@@ -1222,7 +1235,7 @@ asyncio_sendq(asyncio_fd_t *af, mbuf_t *q, int cork)
   if(af->af_fd != -1) {
     mbuf_appendq(&af->af_sendq, q);
     if(!cork)
-      rval = af->af_locked_write(af);
+      rval = send_locked_write(af);
   } else {
     mbuf_clear(q);
     rval = 1;
@@ -1284,7 +1297,7 @@ asyncio_sendq_with_hdr_locked(asyncio_fd_t *af, const void *hdr_buf,
     }
     mbuf_appendq(&af->af_sendq, q);
     if(!cork)
-      rval = af->af_locked_write(af);
+      rval = send_locked_write(af);
   } else {
     mbuf_clear(q);
     rval = 1;
