@@ -140,7 +140,7 @@ dial_one(const struct sockaddr *sa, socklen_t slen, int timeout,
   setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &val, sizeof(val));
 #endif
 
-#ifdef TCP_KEEPINVL
+#ifdef TCP_KEEPINTVL
   val = 15;
   setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &val, sizeof(val));
 #endif
