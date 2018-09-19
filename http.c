@@ -1567,6 +1567,10 @@ http_server_stop(void *aux)
     asyncio_close(hs->hs_fd);
     hs->hs_fd = NULL;
   }
+
+  if(hs->hs_sslctx != NULL)
+    asyncio_sslctx_free(hs->hs_sslctx);
+  hs->hs_sslctx = NULL;
 }
 
 
@@ -1643,7 +1647,8 @@ http_server_update_sslctx_onthread(void *opaque)
 {
   http_server_aux_t *hsa = opaque;
   http_server_t *hs = hsa->hs;
-  free(hs->hs_sslctx);
+  if(hs->hs_sslctx != NULL)
+    asyncio_sslctx_free(hs->hs_sslctx);
   hs->hs_sslctx = hsa->aux;
   free(hsa);
 }
