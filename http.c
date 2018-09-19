@@ -1589,8 +1589,17 @@ http_server_init(const char *config_prefix)
   http_server_t *hs = calloc(1, sizeof(http_server_t));
   atomic_set(&hs->hs_refcount, 1);
   hs->hs_port = cfg_get_int(cr, CFG(config_prefix, "port"), 9000);
-  hs->hs_bind_address =
-    strdup(cfg_get_str(cr, CFG(config_prefix, "bindAddress"), "127.0.0.1"));
+
+
+  const char *ba = cfg_get_str(cr, CFG(config_prefix, "bindAddress"), NULL);
+
+  if(ba == NULL) {
+    hs->hs_bind_address = strdup("127.0.0.1");
+  } if(!strcmp(ba, "*")) {
+    hs->hs_bind_address = NULL;
+  } else {
+    hs->hs_bind_address = strdup(ba);
+  }
 
   hs->hs_config_prefix = strdup(config_prefix);
 
