@@ -951,17 +951,43 @@ get_ts_mono(void)
 void *
 malloc_add(size_t a, size_t b)
 {
+#if !defined(__clang__) && __GNUC__ < 5
+  if(a >= __SIZE_MAX__ / 2)
+    return NULL;
+  if(b >= __SIZE_MAX__ / 2)
+    return NULL;
+  return malloc(a + b);
+#else
   size_t c;
   if(__builtin_add_overflow(a, b, &c))
     return NULL;
   return malloc(c);
+#endif
 }
 
 void *
 malloc_mul(size_t a, size_t b)
 {
+#if !defined(__clang__) && __GNUC__ < 5
+
+#if __SIZEOF_SIZE_T__ == 4
+  uint64_t c = a * b;
+  if(c >= __SIZE_MAX__)
+    return NULL;
+  return malloc(c);
+#else
+  if(a >= 4294967295)
+    return NULL;
+  if(b >= 4294967295)
+    return NULL;
+  return malloc(a * b);
+#endif
+ 
+
+#else
   size_t c;
   if(__builtin_mul_overflow(a, b, &c))
     return NULL;
   return malloc(c);
+#endif
 }
