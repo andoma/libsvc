@@ -803,7 +803,7 @@ tcp_init1(const char *extra_ca, int init_ssl)
   if(!SSL_CTX_load_verify_locations(ssl_ctx, "/usr/local/etc/openssl/cert.pem", NULL))
     exit(1);
 #else
-  if(!SSL_CTX_load_verify_locations(ssl_ctx, NULL, "/etc/ssl/certs"))
+  if(!SSL_CTX_load_verify_locations(ssl_ctx, "/etc/ssl/certs/ca-bundle.crt", "/etc/ssl/certs"))
     exit(1);
 #endif
 
