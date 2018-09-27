@@ -97,7 +97,8 @@ void mbuf_append_and_escape_xml(mbuf_t *m, const char *str);
 
 void mbuf_append_and_escape_url(mbuf_t *m, const char *s);
 
-void mbuf_append_and_escape_jsonstr(mbuf_t *m, const char *s);
+void mbuf_append_and_escape_jsonstr(mbuf_t *m, const char *s,
+                                    int escape_slash);
 
 void mbuf_append_u8(mbuf_t *m, uint8_t u8);
 

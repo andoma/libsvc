@@ -201,7 +201,12 @@ int ntv_copy_field(ntv_t *dst, const char *dstfieldname,
 
 
 struct mbuf;
-void ntv_json_serialize(const ntv_t *msg, struct mbuf *m, int pretty);
+
+#define NTV_JSON_F_PRETTY         0x1
+#define NTV_JSON_F_WIDE           0x2
+#define NTV_JSON_F_MINIMAL_ESCAPE 0x4
+
+void ntv_json_serialize(const ntv_t *msg, struct mbuf *m, int flags);
 char *ntv_json_serialize_to_str(const ntv_t *msg, int pretty);
 
 ntv_t *ntv_json_deserialize(const char *src, char *errbuf, size_t errlen);

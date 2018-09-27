@@ -513,14 +513,14 @@ mbuf_append_and_escape_url(mbuf_t *mq, const char *s)
  *
  */
 void
-mbuf_append_and_escape_jsonstr(mbuf_t *mq, const char *str)
+mbuf_append_and_escape_jsonstr(mbuf_t *mq, const char *str, int escape_slash)
 {
   const char *s = str;
 
   mbuf_append(mq, "\"", 1);
 
   while(*s != 0) {
-    if(*s == '"' || *s == '/' || *s == '\\' || *s < 32) {
+    if(*s == '"' || (escape_slash && *s == '/') || *s == '\\' || *s < 32) {
       mbuf_append(mq, str, s - str);
 
       if(*s == '"')
