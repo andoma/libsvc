@@ -800,11 +800,19 @@ tcp_init1(const char *extra_ca, int init_ssl)
   ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
 
 #if defined(__APPLE__)
-  if(!SSL_CTX_load_verify_locations(ssl_ctx, "/usr/local/etc/openssl/cert.pem", NULL))
+  if(!SSL_CTX_load_verify_locations(ssl_ctx, "/usr/local/etc/openssl/cert.pem",
+                                    NULL))
     exit(1);
 #else
-  if(!SSL_CTX_load_verify_locations(ssl_ctx, "/etc/ssl/certs/ca-bundle.crt", "/etc/ssl/certs"))
-    exit(1);
+
+  if(!access("/etc/ssl/certs/ca-bundle.crt", R_OK)) {
+    if(!SSL_CTX_load_verify_locations(ssl_ctx, "/etc/ssl/certs/ca-bundle.crt",
+                                      NULL))
+      exit(1);
+  } else {
+    if(!SSL_CTX_load_verify_locations(ssl_ctx, NULL, "/etc/ssl/certs"))
+      exit(1);
+  }
 #endif
 
   if(extra_ca != NULL) {
