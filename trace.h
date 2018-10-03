@@ -25,6 +25,7 @@
 
 #include <stdarg.h>
 #include <syslog.h>
+#include <stdint.h>
 
 #define COLOR_OFF    "\017"
 #define COLOR_BLUE   "\00302"
