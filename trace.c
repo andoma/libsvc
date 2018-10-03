@@ -30,6 +30,7 @@
 
 #include "trace.h"
 #include "misc.h"
+#include "mbuf.h"
 
 static int dosyslog;
 static int dostdout;
@@ -219,3 +220,45 @@ trace_set_callback(void (*cb)(int level, const char *msg))
 {
   tracecb = cb;
 }
+
+
+void
+xlog(int level, const xlog_kv_t *kv, const char *fmt, ...)
+{
+  char tmp[64];
+  va_list ap;
+  va_start(ap, fmt);
+  scoped_char *primary_msg = fmtv(fmt, ap);
+  va_end(ap);
+
+  scoped_mbuf_t mq = MBUF_INITIALIZER(mq);
+  const char *prefix = "";
+  mbuf_append_str(&mq, " {");
+  while(kv != NULL) {
+    if(kv->key == NULL)
+      break;
+    mbuf_append_str(&mq, prefix);
+    prefix = ", ";
+    switch(kv->type) {
+    case XLOG_TYPE_STRING:
+      mbuf_append_and_escape_jsonstr(&mq, kv->key, 0);
+      mbuf_append_str(&mq, ":");
+      mbuf_append_and_escape_jsonstr(&mq, kv->value_str, 0);
+      break;
+    case XLOG_TYPE_INT:
+      mbuf_append_and_escape_jsonstr(&mq, kv->key, 0);
+      snprintf(tmp, sizeof(tmp), ":%"PRId64, kv->value_int);
+      mbuf_append_str(&mq, tmp);
+      break;
+    case XLOG_TYPE_LINK:
+      kv = kv->next;
+      continue;
+    }
+    kv++;
+  }
+  mbuf_append_str(&mq, "}");
+
+  const char *json = mbuf_pullup(&mq, mq.mq_size);
+  trace(level, "%s%.*s", primary_msg, (int)mq.mq_size, json);
+}
+

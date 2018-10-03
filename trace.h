@@ -47,3 +47,30 @@ void hexdump(const char *pfx, const void *data_, int len);
 void trace_enable_stdout(void);
 
 void trace_set_callback(void (*cb)(int level, const char *msg));
+
+
+typedef struct xlog_kv {
+  const char *key;
+  union {
+    const char *value_str;
+    int64_t value_int;
+    struct xlog_kv *next;
+  };
+  enum {
+    XLOG_TYPE_STRING,
+    XLOG_TYPE_INT,
+    XLOG_TYPE_LINK,
+  } type;
+} xlog_kv_t;
+
+
+#define XLOG_STR(k,v) ((xlog_kv_t){.key = k, .value_str = v, \
+        .type = XLOG_TYPE_STRING})
+
+#define XLOG_INT(k,v) ((xlog_kv_t){.key = k, .value_int = v, \
+        .type = XLOG_TYPE_INT})
+
+#define XLOGS(x...) (const xlog_kv_t []){x, { .key = NULL}}
+
+void xlog(int level, const xlog_kv_t *kv, const char *fmt, ...);
+
