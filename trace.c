@@ -252,6 +252,7 @@ xlog(int level, const xlog_kv_t *kv, const char *fmt, ...)
       break;
     case XLOG_TYPE_LINK:
       kv = kv->next;
+      prefix = "";
       continue;
     }
     kv++;

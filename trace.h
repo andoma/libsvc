@@ -51,11 +51,13 @@ void trace_set_callback(void (*cb)(int level, const char *msg));
 
 
 typedef struct xlog_kv {
-  const char *key;
+  union {
+    const char *key;
+    const struct xlog_kv *next;
+  };
   union {
     const char *value_str;
     int64_t value_int;
-    struct xlog_kv *next;
   };
   enum {
     XLOG_TYPE_STRING,
@@ -65,13 +67,28 @@ typedef struct xlog_kv {
 } xlog_kv_t;
 
 
-#define XLOG_STR(k,v) ((xlog_kv_t){.key = k, .value_str = v, \
-        .type = XLOG_TYPE_STRING})
 
-#define XLOG_INT(k,v) ((xlog_kv_t){.key = k, .value_int = v, \
-        .type = XLOG_TYPE_INT})
+static inline const xlog_kv_t
+XLOG_STR(const char *key, const char *value)
+{
+  return (const xlog_kv_t){.key = key, .value_str = value,
+      .type = XLOG_TYPE_STRING};
+}
+
+static inline const xlog_kv_t
+XLOG_INT(const char *key, int64_t value)
+{
+  return (const xlog_kv_t){.key = key, .value_int = value,
+      .type = XLOG_TYPE_INT};
+}
+
+static inline const xlog_kv_t
+XLOG_LINK(const xlog_kv_t *kv)
+{
+  return (const xlog_kv_t){.next = kv, .type = XLOG_TYPE_LINK};
+}
 
 #define XLOGS(x...) (const xlog_kv_t []){x, { .key = NULL}}
 
-void xlog(int level, const xlog_kv_t *kv, const char *fmt, ...);
-
+void xlog(int level, const xlog_kv_t *kv, const char *fmt, ...)
+  __attribute__ ((format (printf, 3, 4)));
