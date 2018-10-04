@@ -127,9 +127,29 @@ append_header(struct curl_slist *slist, const char *a, const char *b)
 }
 
 
+
+typedef struct outfile_wrapper {
+  FILE *outputfile;
+  CURL *curl;
+} outfile_wrapper_t;
+
+
+static size_t
+wrapper_write(const void *ptr, size_t size, size_t nmemb, outfile_wrapper_t *ow)
+{
+  long long_http_code = 0;
+  curl_easy_getinfo(ow->curl, CURLINFO_RESPONSE_CODE, &long_http_code);
+  if(long_http_code >= 300)
+    return nmemb;
+
+  return fwrite(ptr, size, nmemb, ow->outputfile);
+}
+
+
 int
 http_client_request(http_client_response_t *hcr, const char *url, ...)
 {
+  scoped_char *redirect_location = NULL;
   extern const char *libsvc_app_version;
   err_t **err = NULL;
   char *errbuf = NULL;
@@ -137,7 +157,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   int flags = 0;
   int tag;
   struct curl_slist *slist = NULL;
-
+  int disable_auth = 0;
   FILE *sendf = NULL;
   scoped_char *www_authenticate_header = NULL;
 
@@ -149,11 +169,14 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   int memfile = 0;
   va_start(apx, url);
 
+  outfile_wrapper_t ow = {};
   CURL *curl = get_handle();
   int auth_retry_code = 0;
   memset(hcr, 0, sizeof(http_client_response_t));
 
  retry:
+  auth_cb = NULL;
+  ow.curl = NULL;
   va_copy(ap, apx);
 
   hcr->hcr_headers = ntv_create_map();
@@ -170,8 +193,13 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       break;
 
     case HCR_TAG_AUTHCB:
-      auth_cb = va_arg(ap, http_client_auth_cb_t *);
-      auth_opaque = va_arg(ap, void *);
+      if(disable_auth) {
+        va_arg(ap, http_client_auth_cb_t *);
+        va_arg(ap, void *);
+      } else {
+        auth_cb = va_arg(ap, http_client_auth_cb_t *);
+        auth_opaque = va_arg(ap, void *);
+      }
       break;
 
     case HCR_TAG_FLAGS:
@@ -280,13 +308,21 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     }
 
     case HCR_TAG_USERNPASS:
-      curl_easy_setopt(curl, CURLOPT_USERNAME, va_arg(ap, const char *));
-      curl_easy_setopt(curl, CURLOPT_PASSWORD, va_arg(ap, const char *));
+      if(disable_auth) {
+        va_arg(ap, const char *);
+        va_arg(ap, const char *);
+      } else {
+        curl_easy_setopt(curl, CURLOPT_USERNAME, va_arg(ap, const char *));
+        curl_easy_setopt(curl, CURLOPT_PASSWORD, va_arg(ap, const char *));
+      }
       break;
 
     case HCR_TAG_OUTPUTFILE:
-      outfile = va_arg(ap, FILE *);
-      curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+      ow.curl = curl;
+      ow.outputfile = va_arg(ap, FILE *);
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, wrapper_write);
+      curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ow);
+      outfile = NULL;
       break;
 
     default:
@@ -296,19 +332,18 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   va_end(ap);
 
-  if(outfile == NULL) {
-    outfile = open_buffer(&hcr->hcr_body, &hcr->hcr_bodysize);
-    memfile = 1;
-  }
-
   curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+
+  if(ow.curl == NULL) {
+    if(outfile == NULL) {
+      outfile = open_buffer(&hcr->hcr_body, &hcr->hcr_bodysize);
+      memfile = 1;
+    }
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, outfile);
+  }
 
   curl_easy_setopt(curl, CURLOPT_URL, url);
 
-  if(!(flags & HCR_NO_FOLLOW_REDIRECT))
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, outfile);
   curl_easy_setopt(curl, CURLOPT_USERAGENT, libsvc_app_version ?: PROGNAME);
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, hdrfunc);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, hcr);
@@ -344,7 +379,9 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     curl_slist_free_all(slist);
     slist = NULL;
   }
-  fflush(outfile);
+
+  if(outfile != NULL)
+    fflush(outfile);
   if(memfile) {
     fwrite("", 1, 1, outfile); // Write one extra byte to null terminate
     fclose(outfile);
@@ -360,6 +397,18 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     strset(&www_authenticate_header,
            ntv_get_str(hcr->hcr_headers, "www-authenticate"));
 
+    http_client_response_free(hcr);
+    curl_easy_reset(curl);
+    outfile = NULL;
+    goto retry;
+  }
+
+  char *newurl;
+  if(!(flags & HCR_NO_FOLLOW_REDIRECT) && long_http_code / 100 == 3 &&
+     !curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, &newurl)) {
+    disable_auth = 1;
+    strset(&redirect_location, newurl);
+    url = redirect_location;
     http_client_response_free(hcr);
     curl_easy_reset(curl);
     outfile = NULL;
