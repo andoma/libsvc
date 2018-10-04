@@ -66,7 +66,6 @@ endif
 
 libsvc_SRCS += http_client.c
 libsvc_INCS += http_client.h
-libsvc_SRCS += http_parser.c
 
 ##############################################################
 # Curl
@@ -92,6 +91,7 @@ libsvc_INCS += curlhelpers.h
 else
 
 libsvc_SRCS += http_client_builtin.c
+WITH_HTTP_PARSER := yes
 
 endif
 
@@ -126,8 +126,13 @@ libsvc_SRCS    += http.c
 libsvc_INCS    += http.h
 WITH_ASYNCIO   := yes
 WITH_WEBSOCKET := yes
+WITH_HTTP_PARSER := yes
 CFLAGS += -DWITH_HTTP_SERVER
 LDFLAGS += -lz
+endif
+
+ifeq (${WITH_HTTP_PARSER},yes)
+libsvc_SRCS += http_parser.c
 endif
 
 ##############################################################
