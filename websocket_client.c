@@ -33,7 +33,7 @@ struct ws_client {
   atomic_t wsc_refcount;
 
   pthread_mutex_t wsc_sendq_mutex;
-  htsbuf_queue_t wsc_sendq;
+  mbuf_t wsc_sendq;
   int wsc_zombie;
   uint8_t wsc_pending_ping;
 
@@ -75,11 +75,11 @@ wsc_append_header(ws_client_t *wsc, int opcode, size_t len)
   }
 
   hdr[1] |= 0x80; // Set mask-bit
-  htsbuf_append(&wsc->wsc_sendq, hdr, hlen);
+  mbuf_append(&wsc->wsc_sendq, hdr, hlen);
 
   // Append mask (not included in payload length)
   wsc->wsc_mask.u32 = prng_get(&wsc->wsc_maskgenerator);
-  htsbuf_append(&wsc->wsc_sendq, &wsc->wsc_mask.u8, 4);
+  mbuf_append(&wsc->wsc_sendq, &wsc->wsc_mask.u8, 4);
 }
 
 
@@ -99,7 +99,7 @@ wsc_write_buf(ws_client_t *wsc, int opcode, const void *data, size_t len)
     for(int i = 0; i < len; i++)
       buf[i] ^= wsc->wsc_mask.u8[i & 3];
 
-    htsbuf_append_prealloc(&wsc->wsc_sendq, buf, len);
+    mbuf_append_prealloc(&wsc->wsc_sendq, buf, len);
   } else {
     free(buf);
   }
@@ -193,7 +193,7 @@ wsc_release(ws_client_t *wsc)
 {
   if(atomic_dec(&wsc->wsc_refcount))
     return;
-  htsbuf_queue_flush(&wsc->wsc_sendq);
+  mbuf_clear(&wsc->wsc_sendq);
   pthread_mutex_destroy(&wsc->wsc_sendq_mutex);
   free(wsc);
 }
@@ -437,7 +437,7 @@ ws_client_connect(const char *hostname, int port, const char *path,
   }
 
   pthread_mutex_init(&wsc->wsc_sendq_mutex, NULL);
-  htsbuf_queue_init(&wsc->wsc_sendq, 0);
+  mbuf_init(&wsc->wsc_sendq);
 
   atomic_set(&wsc->wsc_refcount, 1);
   return wsc;
