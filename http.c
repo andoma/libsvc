@@ -503,7 +503,7 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
   http_send_common_headers(hr, &hdrs, now);
 
   if(maxage == 0) {
-    mbuf_qprintf(&hdrs, "Cache-Control: no-cache\r\n");
+    mbuf_qprintf(&hdrs, "Cache-Control: no-cache, no-store, must-revalidate\r\n");
   } else {
     mbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", http_mktime(now, 0));
 
