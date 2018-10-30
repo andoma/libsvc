@@ -50,6 +50,18 @@ atomic_get_and_set(atomic_t *a, int v)
 }
 
 
+static inline void
+atomic_max(atomic_t *a, int v)
+{
+  while(1) {
+    const int current = atomic_get(a);
+    const int newval = v > current ? v : current;
+    if(__sync_bool_compare_and_swap(&a->v, current, newval))
+      break;
+  }
+}
+
+
 
 #else
 #error Missing atomic ops
