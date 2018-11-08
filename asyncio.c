@@ -589,7 +589,7 @@ ssldump(asyncio_fd_t *af)
   char errbuf[512];
   while((e = ERR_get_error()) != 0) {
     ERR_error_string_n(e, errbuf, sizeof(errbuf));
-      trace(LOG_ERR, "SSL: %s", errbuf);
+      trace(LOG_DEBUG, "SSL: %s", errbuf);
   }
 }
 
@@ -713,7 +713,7 @@ asyncio_ssl_handshake(asyncio_fd_t *af)
 
   default:
 #if 1
-    trace(LOG_ERR, "SSL: Unable to handshake, err:%d r:%d errno:%d",
+    trace(LOG_DEBUG, "SSL: Unable to handshake, err:%d r:%d errno:%d",
           err, r, errno);
     ssldump(af);
 #endif
