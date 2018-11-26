@@ -1603,7 +1603,7 @@ http_server_init(const char *config_prefix)
 
   if(ba == NULL) {
     hs->hs_bind_address = strdup("127.0.0.1");
-  } if(!strcmp(ba, "*")) {
+  } else if(!strcmp(ba, "*")) {
     hs->hs_bind_address = NULL;
   } else {
     hs->hs_bind_address = strdup(ba);
