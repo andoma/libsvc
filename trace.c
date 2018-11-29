@@ -237,6 +237,10 @@ xlog(int level, const xlog_kv_t *kv, const char *fmt, ...)
   while(kv != NULL) {
     if(kv->key == NULL)
       break;
+    if(kv->type == XLOG_TYPE_STRING && kv->value_str == NULL) {
+      kv++;
+      continue;
+    }
     mbuf_append_str(&mq, prefix);
     prefix = ", ";
     switch(kv->type) {
