@@ -1,7 +1,9 @@
 #define _GNU_SOURCE
 
 #include "trap.h"
+#ifdef linux
 #include "features.h"
+#endif
 
 #if defined(__GLIBC__) && (defined(__i386__) || defined(__x86_64__))
 
