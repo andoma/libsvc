@@ -1,11 +1,10 @@
+#define _GNU_SOURCE
+
 #include "trap.h"
+#include "features.h"
 
 #if defined(__GLIBC__) && (defined(__i386__) || defined(__x86_64__))
 
-
-
-
-#define _GNU_SOURCE
 #include <link.h>
 #include <unistd.h>
 #include <stdlib.h>
