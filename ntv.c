@@ -461,7 +461,7 @@ ntv_t *
 ntv_boolean(int value)
 {
   ntv_t *ntv = ntv_create(NTV_BOOLEAN);
-  ntv->ntv_boolean = value;
+  ntv->ntv_boolean = !!value;
   return ntv;
 }
 
