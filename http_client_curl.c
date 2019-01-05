@@ -48,7 +48,6 @@
 #include "mbuf.h"
 #include "err.h"
 
-
 static pthread_mutex_t curl_pool_mutex = PTHREAD_MUTEX_INITIALIZER;
 static CURL *curl_pool;  // A "pool" of one is also a pool
 
@@ -173,6 +172,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   CURL *curl = get_handle();
   int auth_retry_code = 0;
   memset(hcr, 0, sizeof(http_client_response_t));
+
+  curl_mime *form = NULL;
 
  retry:
   auth_cb = NULL;
@@ -325,6 +326,25 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       outfile = NULL;
       break;
 
+    case HCR_TAG_MULTIPARTFILE: {
+      const char *fieldname = va_arg(ap, const char *);
+      if(fieldname != NULL) {
+        form = curl_mime_init(curl);
+        curl_mimepart *field = curl_mime_addpart(form);
+        curl_mime_name(field, fieldname);
+        const char *mpf_data = va_arg(ap, const char *);
+        size_t mpf_size = va_arg(ap, size_t);
+
+        curl_mime_data(field, mpf_data, mpf_size);
+        curl_mime_filename(field, "file");
+        curl_easy_setopt(curl, CURLOPT_MIMEPOST, form);
+      } else {
+        va_arg(ap, const char *);
+        va_arg(ap, size_t);
+      }
+    }
+      break;
+
     default:
       abort();
     }
@@ -374,6 +394,9 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   if(sendf != NULL)
     fclose(sendf);
+
+  if(form)
+    curl_mime_free(form);
 
   if(slist != NULL) {
     curl_slist_free_all(slist);
