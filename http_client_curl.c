@@ -173,8 +173,9 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   int auth_retry_code = 0;
   memset(hcr, 0, sizeof(http_client_response_t));
 
+#if CURL_AT_LEAST_VERSION(7,56,0)
   curl_mime *form = NULL;
-
+#endif
  retry:
   auth_cb = NULL;
   ow.curl = NULL;
@@ -326,6 +327,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       outfile = NULL;
       break;
 
+#if CURL_AT_LEAST_VERSION(7,56,0)
     case HCR_TAG_MULTIPARTFILE: {
       const char *fieldname = va_arg(ap, const char *);
       if(fieldname != NULL) {
@@ -344,7 +346,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       }
     }
       break;
-
+#endif
     default:
       abort();
     }
@@ -395,9 +397,10 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   if(sendf != NULL)
     fclose(sendf);
 
+#if CURL_AT_LEAST_VERSION(7,56,0)
   if(form)
     curl_mime_free(form);
-
+#endif
   if(slist != NULL) {
     curl_slist_free_all(slist);
     slist = NULL;
