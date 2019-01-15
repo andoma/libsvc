@@ -109,10 +109,12 @@ strvec_search(const strvec_t *vec, const char *value)
 }
 
 
-void
+int
 strvec_insert_sorted(strvec_t *vec, const char *value)
 {
-  return strvec_insert(vec, strvec_search(vec, value), value);
+  int position = strvec_search(vec, value);
+  strvec_insert(vec, position, value);
+  return position;
 }
 
 
