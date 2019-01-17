@@ -137,6 +137,8 @@ typedef struct http_connection {
   http_sniffer_t *hc_sniffer;
   void *hc_sniffer_opaque;
 
+  int hc_ws_flags;
+
 } http_connection_t;
 
 
@@ -1949,7 +1951,8 @@ websocket_session_start(http_request_t *hr,
                         void *opaque,
                         const char *selected_protocol,
                         int compression_level,
-                        int max_backlog)
+                        int max_backlog,
+                        int flags)
 {
   http_connection_t *hc = hr->hr_connection;
   SHA_CTX shactx;
@@ -2047,6 +2050,7 @@ websocket_session_start(http_request_t *hr,
 
   mbuf_qprintf(&out, "\r\n");
   asyncio_sendq(hc->hc_af, &out, 0);
+  hc->hc_ws_flags = flags;
   return 0;
 }
 
@@ -2077,6 +2081,7 @@ typedef struct ws_server_data {
   TAILQ_ENTRY(ws_server_data) wsd_link;
   http_connection_t *wsd_hc;
   void *wsd_data;
+  int64_t wsd_timestamp;
   int wsd_opcode;
   int wsd_arg;
   int wsd_flags;
@@ -2149,7 +2154,8 @@ ws_dispatch_data(ws_server_data_t *wsd)
 
   default:
     wsp->wsp_receive(hc->hc_ws_opaque,
-                     wsd->wsd_opcode, wsd->wsd_data, wsd->wsd_arg);
+                     wsd->wsd_opcode, wsd->wsd_data, wsd->wsd_arg,
+                     wsd->wsd_timestamp);
     free(wsd->wsd_data);
     break;
   }
@@ -2169,7 +2175,8 @@ ws_dispatch(void *aux)
  *
  */
 static void
-ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg, int flags)
+ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg, int flags,
+            int64_t timestamp)
 {
   if(hc->hc_max_backlog &&
      atomic_add_and_fetch(&hc->hc_backlog, 1) == hc->hc_max_backlog) {
@@ -2186,6 +2193,7 @@ ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg, int flags)
   wsd->wsd_arg = arg;
   wsd->wsd_flags = flags;
   wsd->wsd_hc = hc;
+  wsd->wsd_timestamp = timestamp;
   atomic_inc(&hc->hc_refcount);
 
   task_run_in_group(ws_dispatch, wsd, hc->hc_task_group);
@@ -2312,7 +2320,7 @@ websocket_close(http_connection_t *hc, const uint8_t *data, int len)
     }
   }
   asyncio_timer_disarm(&hc->hc_timer);
-  ws_enq_data(hc, WSD_OPCODE_DISCONNECT, msg, close_code, 0);
+  ws_enq_data(hc, WSD_OPCODE_DISCONNECT, msg, close_code, 0, 0);
 }
 
 
@@ -2324,6 +2332,9 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
                        int flags)
 {
   http_connection_t *hc = opaque;
+
+  const int64_t ts = hc->hc_ws_flags & WEBSOCKET_SERVER_PACKET_TIMESTAMP ?
+    asyncio_now() : 0;
 
   hc->hc_ws_pong_wait = 0;
 
@@ -2340,7 +2351,7 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
     return 0;
 
   default:
-    ws_enq_data(hc, opcode, *data, len, flags);
+    ws_enq_data(hc, opcode, *data, len, flags, ts);
     *data = NULL;
     return 0;
   }
@@ -2353,7 +2364,7 @@ websocket_timer(http_connection_t *hc)
   if(hc->hc_ws_pong_wait >= 2) {
     asyncio_timer_disarm(&hc->hc_timer);
     ws_enq_data(hc, WSD_OPCODE_DISCONNECT, strdup("Connection timed out"),
-                WS_STATUS_ABNORMALLY_CLOSED, 0);
+                WS_STATUS_ABNORMALLY_CLOSED, 0, 0);
     return;
   }
 

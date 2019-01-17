@@ -180,7 +180,8 @@ void http_server_init_session_cookie(const char *password, uint8_t generation);
 typedef int (websocket_connected_t)(struct http_request *hr);
 
 typedef void (websocket_receive_t)(void *opaque, int opcode,
-                                   const uint8_t *data, size_t len);
+                                   const uint8_t *data, size_t len,
+                                   int64_t timestamp);
 
 typedef void (websocket_disconnected_t)(void *opaque, int error,
                                         const char *errmsg);
@@ -206,6 +207,9 @@ int websocket_session_start(struct http_request *hr,
                             void *opaque,
                             const char *selected_protocol,
                             int compression_level,
-                            int max_backlog);
+                            int max_backlog,
+                            int flags);
+
+#define WEBSOCKET_SERVER_PACKET_TIMESTAMP 0x1
 
 const char *http_mktime(time_t t, int delta);
