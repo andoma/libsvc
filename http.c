@@ -367,8 +367,11 @@ http_log(http_request_t *hr, int status, const char *str)
   const char *ua =
     logua ? http_arg_get(&hr->hr_request_headers, "user-agent") : NULL;
 
-  trace(level, "HTTP %s -- %d (%s) %s T:%"PRId64"+%"PRId64"us%s%s",
-        hr->hr_path, status, str, hr->hr_peer_addr, d1, d2,
+  trace(level, "HTTP %s%s%s -- %d (%s) %s T:%"PRId64"+%"PRId64"us%s%s",
+        hr->hr_path,
+        hr->hr_args ? "?" : "",
+        hr->hr_args ?: "",
+        status, str, hr->hr_peer_addr, d1, d2,
         logua ? ", user-agent: " : "",
         logua ? (ua ?: "<unset>") : "");
 }
