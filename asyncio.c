@@ -542,7 +542,7 @@ static void
 do_write_unlocked(asyncio_fd_t *af)
 {
   af_lock(af);
-  int err = af->af_locked_write(af);
+  int err = af->af_fd == -1 ? 0 : af->af_locked_write(af);
   af_unlock(af);
   if(err)
     do_error(af, err);
