@@ -190,7 +190,7 @@ set_nonblocking(int fd, int on)
  *
  */
 static void
-setup_tcp_socket(int fd)
+setup_tcp_socket(int fd, int no_delay)
 {
   int val;
 
@@ -212,8 +212,8 @@ setup_tcp_socket(int fd)
   setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof(val));
 #endif
 
-  //  val = 1;
-  //  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
+  val = !!no_delay;
+  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
 
   set_nonblocking(fd, 1);
 }
@@ -902,7 +902,7 @@ do_accept(asyncio_fd_t *af)
     return;
   }
 
-  setup_tcp_socket(fd);
+  setup_tcp_socket(fd, af->af_flags & ASYNCIO_FLAG_NO_DELAY);
 
   slen = sizeof(struct sockaddr_storage);
   if(getsockname(fd, (struct sockaddr *)&local, &slen)) {
@@ -1330,7 +1330,7 @@ asyncio_sendq_with_hdr(asyncio_fd_t *af, const void *hdr_buf, size_t hdr_len,
 asyncio_fd_t *
 asyncio_bind(const char *bindaddr, int port,
              asyncio_accept_cb_t *cb,
-             void *opaque)
+             void *opaque, int flags)
 {
   int fd, ret;
   int one = 1;
@@ -1343,7 +1343,7 @@ asyncio_bind(const char *bindaddr, int port,
 
   setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(int));
 
-  setup_tcp_socket(fd);
+  setup_tcp_socket(fd, 0);
 
   if(bindaddr == NULL) {
     struct sockaddr_in6 la = {
@@ -1384,6 +1384,7 @@ asyncio_bind(const char *bindaddr, int port,
   listen(fd, 100);
 
   asyncio_fd_t *af = asyncio_fd_create(fd, EPOLLIN);
+  af->af_flags = flags;
   af->af_pollin = &do_accept;
   af->af_accept = cb;
   af->af_opaque = opaque;
@@ -1420,7 +1421,7 @@ asyncio_stream(int fd,
                const char *hostname)
 {
   int poll_flags = EPOLLIN;
-  setup_tcp_socket(fd);
+  setup_tcp_socket(fd, flags & ASYNCIO_FLAG_NO_DELAY);
   asyncio_fd_t *af = asyncio_fd_create(fd, 0);
 
   af->af_flags = flags;

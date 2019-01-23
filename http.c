@@ -75,6 +75,8 @@ typedef struct http_server {
 
   http_sniffer_t *hs_sniffer;
 
+  int hs_asyncio_flags;
+
 } http_server_t;
 
 
@@ -1544,7 +1546,7 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
   hc->hc_server = hs;
   atomic_inc(&hs->hs_refcount);
   hc->hc_af = asyncio_stream(fd, http_server_read, http_server_error, hc,
-                             ASYNCIO_FLAG_THREAD_SAFE,
+                             hs->hs_asyncio_flags | ASYNCIO_FLAG_THREAD_SAFE,
                              hs->hs_sslctx, NULL);
 
   asyncio_timer_init(&hc->hc_timer, http_server_timeout, hc);
@@ -1561,7 +1563,7 @@ http_server_start(void *aux)
 {
   http_server_t *hs = aux;
   hs->hs_fd = asyncio_bind(hs->hs_bind_address, hs->hs_port,
-                           http_server_accept, hs);
+                           http_server_accept, hs, hs->hs_asyncio_flags);
 
   if(hs->hs_fd == NULL) {
     trace(LOG_ERR, "HTTP: Failed to bind %s:%d",
@@ -1640,7 +1642,7 @@ http_server_init(const char *config_prefix)
 
 struct http_server *
 http_server_create(int port, const char *bind_address, void *sslctx,
-                   http_sniffer_t *sniffer)
+                   http_sniffer_t *sniffer, int no_delay)
 {
   http_server_t *hs = calloc(1, sizeof(http_server_t));
   atomic_set(&hs->hs_refcount, 1);
@@ -1648,6 +1650,8 @@ http_server_create(int port, const char *bind_address, void *sslctx,
   hs->hs_bind_address = bind_address ? strdup(bind_address) : NULL;
   hs->hs_sslctx = sslctx;
   hs->hs_sniffer = sniffer;
+  if(no_delay)
+    hs->hs_asyncio_flags = ASYNCIO_FLAG_NO_DELAY;
   asyncio_run_task(http_server_start, hs);
   return hs;
 }

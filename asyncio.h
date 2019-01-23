@@ -53,6 +53,7 @@ int64_t asyncio_now(void);
 
 #define ASYNCIO_FLAG_THREAD_SAFE     0x1
 #define ASYNCIO_FLAG_SSL_VERIFY_CERT 0x2
+#define ASYNCIO_FLAG_NO_DELAY        0x4
 
 typedef struct asyncio_sslctx asyncio_sslctx_t;
 
@@ -73,9 +74,9 @@ typedef void (asyncio_read_cb_t)(void *opaque, struct mbuf *hq);
 typedef void (asyncio_poll_cb_t)(struct asyncio_fd *);
 
 asyncio_fd_t *asyncio_bind(const char *bindaddr,
-                         int port,
-                         asyncio_accept_cb_t *cb,
-                         void *opaque);
+                           int port,
+                           asyncio_accept_cb_t *cb,
+                           void *opaque, int flags);
 
 asyncio_fd_t *asyncio_connect(const char *hostname,
 			    int port, int timeout,
