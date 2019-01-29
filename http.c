@@ -140,7 +140,7 @@ typedef struct http_connection {
   void *hc_sniffer_opaque;
 
   int hc_ws_flags;
-
+  int hc_ws_mode;
 } http_connection_t;
 
 
@@ -2058,6 +2058,7 @@ websocket_session_start(http_request_t *hr,
   mbuf_qprintf(&out, "\r\n");
   asyncio_sendq(hc->hc_af, &out, 0);
   hc->hc_ws_flags = flags;
+  hc->hc_ws_mode = 1;
   return 0;
 }
 
@@ -2085,7 +2086,6 @@ websocket_route_add(const char *path,
  *
  */
 typedef struct ws_server_data {
-  TAILQ_ENTRY(ws_server_data) wsd_link;
   http_connection_t *wsd_hc;
   void *wsd_data;
   int64_t wsd_timestamp;
@@ -2173,8 +2173,13 @@ static void
 ws_dispatch(void *aux)
 {
   ws_server_data_t *wsd = aux;
-  ws_dispatch_data(wsd);
-  http_connection_release(wsd->wsd_hc);
+  http_connection_t *hc = wsd->wsd_hc;
+  if(hc->hc_ws_mode) {
+    ws_dispatch_data(wsd);
+  } else {
+    free(wsd->wsd_data);
+  }
+  http_connection_release(hc);
   free(wsd);
 }
 
