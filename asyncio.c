@@ -1738,6 +1738,9 @@ asyncio_sslctx_server_from_pem(const char *priv_key_pem,
   SSL_CTX_use_PrivateKey(ctx, priv_key);
   SSL_CTX_use_certificate(ctx, cert);
 
+  SSL_CTX_set_cipher_list(ctx,
+                          "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH");
+
   X509_free(cert);
   EVP_PKEY_free(priv_key);
 
