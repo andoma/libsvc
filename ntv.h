@@ -135,6 +135,7 @@ int ntv_has_field(const ntv_t *ntv, const char *key);
 
 // Get operations on maps
 
+const ntv_t *ntv_get(const ntv_t *ntv, const char *key);
 int     ntv_get_int(const ntv_t *ntv, const char *key, int default_value);
 int64_t ntv_get_int64(const ntv_t *ntv, const char *key, int64_t default_value);
 double  ntv_get_double(const ntv_t *ntv, const char *key, double default_value);

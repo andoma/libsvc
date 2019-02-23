@@ -277,6 +277,11 @@ ntv_field_name_get(const ntv_t *parent, const char *fieldname, ntv_type type)
   return fieldname ? ntv_field_name_find(parent, fieldname, type) : parent;
 }
 
+const ntv_t *
+ntv_get(const ntv_t *parent, const char *fieldname)
+{
+  return ntv_field_name_find(parent, fieldname, -1);
+}
 
 int64_t
 ntv_get_int64(const ntv_t *n, const char *key, int64_t default_value)
