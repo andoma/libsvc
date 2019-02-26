@@ -1738,8 +1738,11 @@ asyncio_sslctx_server_from_pem(const char *priv_key_pem,
   SSL_CTX_use_PrivateKey(ctx, priv_key);
   SSL_CTX_use_certificate(ctx, cert);
 
-  SSL_CTX_set_cipher_list(ctx,
-                          "DHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA:DHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA");
+  const char *cipher_list = getenv("LIBSVC_CIPHERLIST");
+  if(cipher_list == NULL)
+    cipher_list = "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
+
+  SSL_CTX_set_cipher_list(ctx, cipher_list);
 
   X509_free(cert);
   EVP_PKEY_free(priv_key);
