@@ -62,8 +62,8 @@ typedef struct task {
 
 static struct task_queue tasks = TAILQ_HEAD_INITIALIZER(tasks);
 static struct task_group_queue task_groups =TAILQ_HEAD_INITIALIZER(task_groups);
-static atomic_t num_task_threads;
-static unsigned int num_task_threads_avail;
+static int num_task_threads;
+static int num_task_threads_avail;
 static pthread_mutex_t task_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t task_cond = PTHREAD_COND_INITIALIZER;
 static int task_sys_running = 1;
@@ -163,7 +163,7 @@ task_thread(void *aux)
     }
   }
 
-  atomic_add(&num_task_threads, -1);
+  num_task_threads--;
   if(task_sys_running) {
     pthread_detach(tt->tid);
     LIST_REMOVE(tt, link);
@@ -181,7 +181,7 @@ static void
 task_launch_thread(void)
 {
   assert(task_sys_running != 0);
-  atomic_add(&num_task_threads, 1);
+  num_task_threads++;
 
   task_thread_t *tt = calloc(1, sizeof(task_thread_t));
   LIST_INSERT_HEAD(&task_threads, tt, link);
@@ -198,7 +198,7 @@ task_schedule()
   if(num_task_threads_avail > 0) {
     pthread_cond_signal(&task_cond);
   } else {
-    if(atomic_get(&num_task_threads) < MAX_TASK_THREADS) {
+    if(num_task_threads < MAX_TASK_THREADS) {
       task_launch_thread();
     }
   }
@@ -318,10 +318,9 @@ task_stop(void)
 void
 task_get_stats(task_stats_t *stats)
 {
-  stats->num_threads = atomic_get(&num_task_threads);
-
   pthread_mutex_lock(&task_mutex);
 
+  stats->num_threads = num_task_threads;
   stats->idle_threads = num_task_threads_avail;
   stats->tasks_enqueued = tasks_enqueued;
 
@@ -332,6 +331,9 @@ task_get_stats(task_stats_t *stats)
 int
 task_system_overload(void)
 {
+  pthread_mutex_lock(&task_mutex);
+  const int active = num_task_threads - num_task_threads_avail;
+  pthread_mutex_unlock(&task_mutex);
   const int limit = MAX_TASK_THREADS * 3 / 4;
-  return atomic_get(&num_task_threads) > limit;
+  return active > limit;
 }
