@@ -750,21 +750,6 @@ http_dispatch_request(http_request_t *hr)
   }
 
   http_connection_t *hc = hr->hr_connection;
-  if(hc != NULL) {
-    http_server_t *hs = hc->hc_server;
-    if(hs->hs_real_ip_header != NULL) {
-      if((v = http_arg_get(&hr->hr_request_headers,
-                           hs->hs_real_ip_header)) != NULL) {
-        hr->hr_peer_addr = strdup(v);
-      }
-    }
-
-    if(hr->hr_peer_addr == NULL) {
-      hr->hr_peer_addr = strdup(hc->hc_peer_addr);
-    }
-  } else {
-    hr->hr_peer_addr = strdup("0.0.0.0");
-  }
 
   if((v = http_arg_get(&hr->hr_request_headers, "Cookie")) != NULL) {
     v = mystrdupa(v);
@@ -1202,6 +1187,29 @@ http_create_request(http_connection_t *hc, int continue_check)
   hr->hr_method = hc->hc_parser.method;
   hr->hr_major = hc->hc_parser.http_major;
   hr->hr_minor = hc->hc_parser.http_minor;
+
+  http_server_t *hs = hc->hc_server;
+  if(hs->hs_real_ip_header != NULL) {
+    const char *v;
+    if((v = http_arg_get(&hr->hr_request_headers,
+                         hs->hs_real_ip_header)) != NULL) {
+      hr->hr_peer_addr = strdup(v);
+    }
+  }
+
+  if(hr->hr_peer_addr == NULL) {
+    hr->hr_peer_addr = strdup(hc->hc_peer_addr);
+  }
+
+  if(task_system_overload()) {
+    hr->hr_keep_alive = 0;
+    hr->hr_req_process = asyncio_now();
+    http_error(hr, 503);
+    http_request_destroy(hr);
+    return;
+  }
+
+
   task_run_in_group(http_dispatch_request_task, hr, hc->hc_task_group);
 }
 

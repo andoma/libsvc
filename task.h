@@ -48,3 +48,5 @@ typedef struct task_stats {
 } task_stats_t;
 
 void task_get_stats(task_stats_t *stats);
+
+int task_system_overload(void);
