@@ -299,12 +299,13 @@ http_stream_file_thread(void *aux)
                         HCR_AUTHCB(hsf->hsf_auth_cb, hsf->hsf_opaque),
                         NULL);
 
+  fclose(fp);
+
   pthread_mutex_lock(&hsf->hsf_mutex);
   hsf->hsf_eof = 1;
   pthread_cond_signal(&hsf->hsf_cond);
   pthread_mutex_unlock(&hsf->hsf_mutex);
 
-  fclose(fp);
   return NULL;
 }
 
