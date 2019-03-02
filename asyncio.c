@@ -97,6 +97,8 @@ struct asyncio_fd {
   uint8_t af_pending_shutdown;
   int af_pending_error;
 
+  char *af_title;
+
 #if defined(WITH_OPENSSL)
   int af_ssl_established;
   int af_ssl_read_status;
@@ -441,6 +443,7 @@ asyncio_fd_release(asyncio_fd_t *af)
   mbuf_clear(&af->af_sendq);
   mbuf_clear(&af->af_recvq);
   free(af->af_hostname);
+  free(af->af_title);
   free(af);
 }
 
@@ -589,7 +592,7 @@ ssldump(asyncio_fd_t *af)
   char errbuf[512];
   while((e = ERR_get_error()) != 0) {
     ERR_error_string_n(e, errbuf, sizeof(errbuf));
-      trace(LOG_DEBUG, "SSL: %s", errbuf);
+    trace(LOG_INFO, "SSL: %s: %s", af->af_title, errbuf);
   }
 }
 
@@ -713,8 +716,8 @@ asyncio_ssl_handshake(asyncio_fd_t *af)
 
   default:
 #if 1
-    trace(LOG_DEBUG, "SSL: Unable to handshake, err:%d r:%d errno:%d",
-          err, r, errno);
+    trace(LOG_INFO, "SSL: %s: Unable to handshake, err:%d r:%d errno:%d",
+          af->af_title, err, r, errno);
     ssldump(af);
 #endif
     return ENOLINK;
@@ -1418,7 +1421,8 @@ asyncio_stream(int fd,
                void *opaque,
                int flags,
                asyncio_sslctx_t *sslctx,
-               const char *hostname)
+               const char *hostname,
+               const char *title)
 {
   int poll_flags = EPOLLIN;
   setup_tcp_socket(fd, flags & ASYNCIO_FLAG_NO_DELAY);
@@ -1431,6 +1435,8 @@ asyncio_stream(int fd,
     pthread_mutex_init(&af->af_sendq_mutex, NULL);
     pthread_cond_init(&af->af_sendq_cond, NULL);
   }
+
+  af->af_title = strdup(title);
 
   if(sslctx != NULL) {
 #if defined(WITH_OPENSSL)

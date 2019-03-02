@@ -1555,7 +1555,7 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
   atomic_inc(&hs->hs_refcount);
   hc->hc_af = asyncio_stream(fd, http_server_read, http_server_error, hc,
                              hs->hs_asyncio_flags | ASYNCIO_FLAG_THREAD_SAFE,
-                             hs->hs_sslctx, NULL);
+                             hs->hs_sslctx, NULL, hc->hc_peer_addr);
 
   asyncio_timer_init(&hc->hc_timer, http_server_timeout, hc);
   asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);

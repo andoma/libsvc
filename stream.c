@@ -80,7 +80,7 @@ stream_connect(const char *hostname, int port, int timeout_ms,
     asyncio_flags |= ASYNCIO_FLAG_SSL_VERIFY_CERT;
 
   s->s_af = asyncio_stream(fd, stream_bytes_avail, stream_error,
-                           s, asyncio_flags, sslctx, hostname);
+                           s, asyncio_flags, sslctx, hostname, hostname);
   if(sslctx != NULL)
     asyncio_sslctx_free(sslctx);
   return s;

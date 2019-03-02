@@ -94,7 +94,8 @@ asyncio_fd_t *asyncio_stream(int fd,
                              void *opaque,
                              int flags,
                              asyncio_sslctx_t *sslctx,
-                             const char *hostname);
+                             const char *hostname,
+                             const char *title);
 
 void asyncio_close(asyncio_fd_t *af);
 
