@@ -53,6 +53,7 @@
 #include "trace.h"
 #include "talloc.h"
 #include "sock.h"
+#include "misc.h"
 
 LIST_HEAD(asyncio_timer_list, asyncio_timer);
 LIST_HEAD(asyncio_worker_list, asyncio_worker);
@@ -1664,54 +1665,6 @@ asyncio_run_task_blocking(void (*fn)(void *aux), void *aux)
 
 #if defined(WITH_OPENSSL)
 
-asyncio_sslctx_t *
-asyncio_sslctx_server_from_files(const char *priv_key_file,
-                                 const char *cert_file)
-{
-  SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
-
-  int r = SSL_CTX_use_PrivateKey_file(ctx, priv_key_file, SSL_FILETYPE_PEM);
-  if(r != 1) {
-    trace(LOG_ERR, "Unable to load private key file %s", priv_key_file);
-    return NULL;
-  }
-  r = SSL_CTX_use_certificate_file(ctx, cert_file, SSL_FILETYPE_PEM);
-  if(r != 1) {
-    trace(LOG_ERR, "Unable to load certificate file %s", cert_file);
-    return NULL;
-  }
-
-  r = SSL_CTX_check_private_key(ctx);
-  if(r != 1) {
-    trace(LOG_ERR, "Certificate/private key file mismatch");
-    return NULL;
-  }
-
-  SSL_CTX_set_options(ctx,
-                      SSL_OP_NO_SSLv2 |
-                      SSL_OP_NO_SSLv3 |
-                      SSL_OP_NO_TLSv1);
-
-  asyncio_sslctx_t *ret = calloc(1, sizeof(asyncio_sslctx_t));
-  ret->ctx = ctx;
-  return ret;
-}
-
-
-
-static X509 *
-x509_from_pem(const char *pem)
-{
-  if(pem == NULL)
-    return NULL;
-
-  size_t pemlen = strlen(pem);
-  BIO *bio = BIO_new_mem_buf((void *)pem, pemlen);
-  X509 *x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
-  BIO_free(bio);
-  return x509;
-}
-
 
 static EVP_PKEY *
 evp_from_private_pem(const char *pem)
@@ -1735,39 +1688,90 @@ asyncio_sslctx_server_from_pem(const char *priv_key_pem,
   if(priv_key == NULL)
     return NULL;
 
-  X509 *cert = x509_from_pem(cert_pem);
-  if(cert == NULL)
-    return NULL;
-
   SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
 
   SSL_CTX_use_PrivateKey(ctx, priv_key);
-  SSL_CTX_use_certificate(ctx, cert);
-
-  const char *cipher_list = getenv("LIBSVC_CIPHERLIST");
-  if(cipher_list == NULL)
-    cipher_list = "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
-
-  SSL_CTX_set_cipher_list(ctx, cipher_list);
-
-  X509_free(cert);
   EVP_PKEY_free(priv_key);
+
+  if(cert_pem != NULL) {
+    BIO *bio = BIO_new_mem_buf((void *)cert_pem, strlen(cert_pem));
+
+    X509 *cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+    if(cert == NULL) {
+      SSL_CTX_free(ctx);
+      BIO_free(bio);
+      trace(LOG_ERR, "Unable to load certificate");
+      return NULL;
+    }
+
+    SSL_CTX_use_certificate(ctx, cert);
+    X509_free(cert);
+    X509 *ca;
+
+    while((ca = PEM_read_bio_X509(bio, NULL, NULL, NULL)) != NULL) {
+      if(!SSL_CTX_add0_chain_cert(ctx, ca)) {
+        trace(LOG_ERR, "Unable to add CA certificate chain");
+        X509_free(ca);
+        SSL_CTX_free(ctx);
+        BIO_free(bio);
+        return NULL;
+      }
+    }
+
+    BIO_free(bio);
+  }
+
+  SSL_CTX_set_cipher_list(ctx, getenv("LIBSVC_CIPHERLIST") ?: "HIGH");
 
   int r = SSL_CTX_check_private_key(ctx);
   if(r != 1) {
     trace(LOG_ERR, "Certificate/private key file mismatch");
+    SSL_CTX_free(ctx);
     return NULL;
   }
 
   SSL_CTX_set_options(ctx,
                       SSL_OP_NO_SSLv2 |
                       SSL_OP_NO_SSLv3 |
-                      SSL_OP_NO_TLSv1);
+                      SSL_OP_NO_TLSv1 |
+                      SSL_OP_NO_TLSv1_1);
 
   asyncio_sslctx_t *ret = calloc(1, sizeof(asyncio_sslctx_t));
   ret->ctx = ctx;
   return ret;
 }
+
+
+
+asyncio_sslctx_t *
+asyncio_sslctx_server_from_files(const char *priv_key_file,
+                                 const char *cert_file)
+{
+
+  char *cert_pem = readfile(cert_file, NULL);
+  if(cert_pem == NULL) {
+    trace(LOG_ERR, "Unable to load certificate file %s", cert_file);
+    return NULL;
+  }
+
+  char *priv_key_pem = readfile(priv_key_file, NULL);
+  if(priv_key_pem == NULL) {
+    free(cert_pem);
+    trace(LOG_ERR, "Unable to load private key file %s", priv_key_file);
+    return NULL;
+  }
+
+  asyncio_sslctx_t *ctx =
+    asyncio_sslctx_server_from_pem(priv_key_pem, cert_pem);
+  memset(priv_key_pem, 0, strlen(priv_key_pem));
+  free(priv_key_pem);
+  free(cert_pem);
+  return ctx;
+}
+
+
+
+
 
 
 void
