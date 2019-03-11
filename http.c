@@ -1540,8 +1540,13 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
     break;
   case AF_INET6:
     if(inet_ntop(AF_INET6, &((struct sockaddr_in6 *)peer)->sin6_addr,
-                 tmpbuf, sizeof(tmpbuf)) != NULL)
-      hc->hc_peer_addr = strdup(tmpbuf);
+                 tmpbuf, sizeof(tmpbuf)) != NULL) {
+      if(!memcmp(tmpbuf, "::ffff:", 7)) {
+        hc->hc_peer_addr = strdup(tmpbuf + 7);
+      } else {
+        hc->hc_peer_addr = strdup(tmpbuf);
+      }
+    }
     memcpy(&hc->hc_peer_sockaddr, peer, sizeof(struct sockaddr_in6));
     break;
   }
