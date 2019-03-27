@@ -58,7 +58,7 @@ http_client_ntv_to_args(const ntv_t *ntv)
       str = url_escape_tmp(f->ntv_string, URL_ESCAPE_PARAM);
       break;
     case NTV_DOUBLE:
-      my_double2str(buf, sizeof(buf), f->ntv_double);
+      my_double2str(buf, sizeof(buf), f->ntv_double, -1);
       str = buf;
       break;
     case NTV_INT:

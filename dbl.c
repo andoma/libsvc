@@ -163,9 +163,8 @@ getdigit(double *val, int *cnt)
 
 
 int
-my_double2str(char *buf, size_t bufsize, double realvalue)
+my_double2str(char *buf, size_t bufsize, double realvalue, int precision)
 {
-  int precision = -1;
   char *bufpt;
   char prefix;
   char xtype = xGENERIC;

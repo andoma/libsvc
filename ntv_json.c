@@ -36,7 +36,8 @@
  *
  */
 static void
-ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int flags)
+ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int flags,
+               int precision)
 {
   ntv_t *f;
   char buf[100];
@@ -61,11 +62,11 @@ ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int flags)
 
     switch(f->ntv_type) {
     case NTV_MAP:
-      ntv_json_write(f, m, indent, flags);
+      ntv_json_write(f, m, indent, flags, precision);
       break;
 
     case NTV_LIST:
-      ntv_json_write(f, m, indent, flags);
+      ntv_json_write(f, m, indent, flags, precision);
       break;
 
     case NTV_STRING:
@@ -82,7 +83,7 @@ ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int flags)
       break;
 
     case NTV_DOUBLE:
-      my_double2str(buf, sizeof(buf), f->ntv_double);
+      my_double2str(buf, sizeof(buf), f->ntv_double, precision);
       mbuf_append(m, buf, strlen(buf));
       break;
 
@@ -117,11 +118,20 @@ ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int flags)
  *
  */
 void
-ntv_json_serialize(const ntv_t *msg, mbuf_t *m, int flags)
+ntv_json_serialize_ex(const ntv_t *msg, mbuf_t *m, int flags, int precision)
 {
-  ntv_json_write(msg, m, 0, flags);
+  ntv_json_write(msg, m, 0, flags, precision);
   if(flags & NTV_JSON_F_PRETTY)
     mbuf_append(m, "\n", 1);
+}
+
+/**
+ *
+ */
+void
+ntv_json_serialize(const ntv_t *msg, mbuf_t *m, int flags)
+{
+  ntv_json_serialize_ex(msg, m, flags, -1);
 }
 
 
@@ -129,15 +139,25 @@ ntv_json_serialize(const ntv_t *msg, mbuf_t *m, int flags)
  *
  */
 char *
-ntv_json_serialize_to_str(const ntv_t *msg, int pretty)
+ntv_json_serialize_to_str_ex(const ntv_t *msg, int flags, int precision)
 {
   if(msg == NULL)
     return NULL;
 
   mbuf_t m;
   mbuf_init(&m);
-  ntv_json_serialize(msg, &m, pretty);
+  ntv_json_serialize_ex(msg, &m, flags, precision);
   return mbuf_clear_to_string(&m);
+}
+
+
+/**
+ *
+ */
+char *
+ntv_json_serialize_to_str(const ntv_t *msg, int flags)
+{
+  return ntv_json_serialize_to_str_ex(msg, flags, -1);
 }
 
 /**

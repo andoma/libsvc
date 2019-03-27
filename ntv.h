@@ -207,8 +207,13 @@ struct mbuf;
 #define NTV_JSON_F_WIDE           0x2
 #define NTV_JSON_F_MINIMAL_ESCAPE 0x4
 
+void ntv_json_serialize_ex(const ntv_t *msg, struct mbuf *m, int flags,
+                           int precision);
+
 void ntv_json_serialize(const ntv_t *msg, struct mbuf *m, int flags);
 char *ntv_json_serialize_to_str(const ntv_t *msg, int pretty);
+char *ntv_json_serialize_to_str_ex(const ntv_t *msg, int pretty,
+                                   int precision);
 
 ntv_t *ntv_json_deserialize(const char *src, char *errbuf, size_t errlen);
 
