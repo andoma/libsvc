@@ -647,7 +647,7 @@ mbuf_append_u32_be(mbuf_t *m, uint32_t u32)
 
 
 static int
-mbuf_deflate0(z_stream *z, mbuf_t *dst, int flush)
+mbuf_deflate_out(z_stream *z, mbuf_t *dst, int flush)
 {
   uint8_t out[16384];
 
@@ -663,6 +663,31 @@ mbuf_deflate0(z_stream *z, mbuf_t *dst, int flush)
   return 0;
 }
 
+static int
+mbuf_deflate_in(z_stream *z, mbuf_t *dst, mbuf_t *src)
+{
+  mbuf_data_t *md = TAILQ_FIRST(&src->mq_buffers);
+  if(md == NULL)
+    return 0;
+
+  size_t offset = md->md_data_off;
+
+  while(md != NULL) {
+    z->next_in  = md->md_data     + offset;
+    z->avail_in = md->md_data_len - offset;
+
+    if(mbuf_deflate_out(z, dst, 0)) {
+      deflateEnd(z);
+      return -1;
+    }
+    offset = 0;
+    md = TAILQ_NEXT(md, md_link);
+  }
+
+  int r = mbuf_deflate_out(z, dst, 1);
+  deflateEnd(z);
+  return r;
+}
 
 
 
@@ -671,28 +696,18 @@ mbuf_deflate(mbuf_t *dst, mbuf_t *src, int level)
 {
   z_stream z = {};
 
-  mbuf_data_t *md = TAILQ_FIRST(&src->mq_buffers);
-  if(md == NULL)
-    return 0;
-
-  size_t offset = md->md_data_off;
-
   if(deflateInit(&z, level) != Z_OK)
     return -1;
+  return mbuf_deflate_in(&z, dst, src);
+}
 
-  while(md != NULL) {
-    z.next_in  = md->md_data     + offset;
-    z.avail_in = md->md_data_len - offset;
 
-    if(mbuf_deflate0(&z, dst, 0)) {
-      deflateEnd(&z);
-      return -1;
-    }
-    offset = 0;
-    md = TAILQ_NEXT(md, md_link);
-  }
+int
+mbuf_gzip(mbuf_t *dst, mbuf_t *src, int level)
+{
+  z_stream z = {};
 
-  int r = mbuf_deflate0(&z, dst, 1);
-  deflateEnd(&z);
-  return r;
+  if(deflateInit2(&z, level, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY) != Z_OK)
+    return -1;
+  return mbuf_deflate_in(&z, dst, src);
 }

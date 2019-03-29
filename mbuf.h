@@ -117,3 +117,6 @@ char *mbuf_clear_to_string(mbuf_t *mq)
 
 int mbuf_deflate(mbuf_t *dst, mbuf_t *src, int level)
   __attribute__((warn_unused_result));
+
+int mbuf_gzip(mbuf_t *dst, mbuf_t *src, int level)
+  __attribute__((warn_unused_result));
