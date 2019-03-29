@@ -29,6 +29,8 @@
 #include <stdarg.h>
 #include <sys/param.h>
 
+#include <zlib.h>
+
 #include "mbuf.h"
 #include "trace.h"
 
@@ -640,4 +642,57 @@ mbuf_append_u32_be(mbuf_t *m, uint32_t u32)
   uint8_t data[4] = {u32 >> 24, u32 >> 16, u32 >> 8, u32};
   mbuf_append(m, data, sizeof(data));
 
+}
+
+
+
+static int
+mbuf_deflate0(z_stream *z, mbuf_t *dst, int flush)
+{
+  uint8_t out[16384];
+
+  do {
+    z->avail_out = sizeof(out);
+    z->next_out = out;
+
+    if(deflate(z, flush) == Z_STREAM_ERROR)
+      return -1;
+    mbuf_append(dst, out, sizeof(out) - z->avail_out);
+  } while(z->avail_out == 0);
+
+  return 0;
+}
+
+
+
+
+int
+mbuf_deflate(mbuf_t *dst, mbuf_t *src, int level)
+{
+  z_stream z = {};
+
+  mbuf_data_t *md = TAILQ_FIRST(&src->mq_buffers);
+  if(md == NULL)
+    return 0;
+
+  size_t offset = md->md_data_off;
+
+  if(deflateInit(&z, level) != Z_OK)
+    return -1;
+
+  while(md != NULL) {
+    z.next_in  = md->md_data     + offset;
+    z.avail_in = md->md_data_len - offset;
+
+    if(mbuf_deflate0(&z, dst, 0)) {
+      deflateEnd(&z);
+      return -1;
+    }
+    offset = 0;
+    md = TAILQ_NEXT(md, md_link);
+  }
+
+  int r = mbuf_deflate0(&z, dst, 1);
+  deflateEnd(&z);
+  return r;
 }

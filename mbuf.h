@@ -112,5 +112,8 @@ void mbuf_hexdump(const char *prefix, mbuf_t *mq);
 
 const void *mbuf_pullup(mbuf_t *mq, size_t bytes);
 
-char *mbuf_clear_to_string(mbuf_t *mq);
+char *mbuf_clear_to_string(mbuf_t *mq)
+  __attribute__((warn_unused_result));
 
+int mbuf_deflate(mbuf_t *dst, mbuf_t *src, int level)
+  __attribute__((warn_unused_result));
