@@ -128,6 +128,8 @@ void asyncio_fd_release(asyncio_fd_t *af);
 
 int asyncio_wait_send_buffer(asyncio_fd_t *af, int size);
 
+size_t asyncio_fd_get_queue_length(asyncio_fd_t *af);
+
 /*************************************************************************
  * Workers
  *************************************************************************/

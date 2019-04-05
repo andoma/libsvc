@@ -524,6 +524,16 @@ asyncio_wait_send_buffer(asyncio_fd_t *af, int size)
 /**
  *
  */
+size_t
+asyncio_fd_get_queue_length(asyncio_fd_t *af)
+{
+  return af->af_sendq.mq_size;
+}
+
+
+/**
+ *
+ */
 static void
 do_error(asyncio_fd_t *af, int error)
 {
