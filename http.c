@@ -139,7 +139,9 @@ typedef struct http_connection {
   http_sniffer_t *hc_sniffer;
   void *hc_sniffer_opaque;
 
-  int hc_ws_flags;
+  atomic_t hc_ws_timestamps;
+  atomic_t hc_ws_direct;
+
   int hc_ws_mode;
 } http_connection_t;
 
@@ -2070,7 +2072,13 @@ websocket_session_start(http_request_t *hr,
 
   mbuf_qprintf(&out, "\r\n");
   asyncio_sendq(hc->hc_af, &out, 0);
-  hc->hc_ws_flags = flags;
+
+  if(flags & WEBSOCKET_SERVER_PACKET_TIMESTAMP)
+    atomic_set(&hc->hc_ws_timestamps, 1);
+
+  if(flags & WEBSOCKET_SERVER_NO_BINARY_MSG_DISPATCH)
+    atomic_set(&hc->hc_ws_direct, 1);
+
   hc->hc_ws_mode = 1;
   return 0;
 }
@@ -2209,6 +2217,8 @@ ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg, int flags,
     free(data);
     data = strdup("Message backlog exceeded");
     arg = WS_STATUS_ABNORMALLY_CLOSED;
+
+    atomic_set(&hc->hc_ws_direct, 0);
     opcode = WSD_OPCODE_DISCONNECT;
   }
 
@@ -2345,6 +2355,7 @@ websocket_close(http_connection_t *hc, const uint8_t *data, int len)
     }
   }
   asyncio_timer_disarm(&hc->hc_timer);
+  atomic_set(&hc->hc_ws_direct, 0);
   ws_enq_data(hc, WSD_OPCODE_DISCONNECT, msg, close_code, 0, 0);
 }
 
@@ -2358,8 +2369,7 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
 {
   http_connection_t *hc = opaque;
 
-  const int64_t ts = hc->hc_ws_flags & WEBSOCKET_SERVER_PACKET_TIMESTAMP ?
-    asyncio_now() : 0;
+  const int64_t ts = atomic_get(&hc->hc_ws_timestamps) ? asyncio_now() : 0;
 
   hc->hc_ws_pong_wait = 0;
 
@@ -2376,8 +2386,7 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
     return 0;
 
   default:
-    if(hc->hc_ws_flags & WEBSOCKET_SERVER_NO_BINARY_MSG_DISPATCH &&
-       opcode == 2) {
+    if(atomic_get(&hc->hc_ws_direct) && opcode == 2) {
       const ws_server_path_t *wsp = hc->hc_ws_path;
       wsp->wsp_receive(hc->hc_ws_opaque, opcode, *data, len, ts);
       free(*data);
@@ -2395,6 +2404,7 @@ websocket_timer(http_connection_t *hc)
 {
   if(hc->hc_ws_pong_wait >= 2) {
     asyncio_timer_disarm(&hc->hc_timer);
+    atomic_set(&hc->hc_ws_direct, 0);
     ws_enq_data(hc, WSD_OPCODE_DISCONNECT, strdup("Connection timed out"),
                 WS_STATUS_ABNORMALLY_CLOSED, 0, 0);
     return;
