@@ -212,5 +212,6 @@ int websocket_session_start(struct http_request *hr,
                             int flags);
 
 #define WEBSOCKET_SERVER_PACKET_TIMESTAMP 0x1
+#define WEBSOCKET_SERVER_NO_BINARY_MSG_DISPATCH 0x2
 
 const char *http_mktime(time_t t, int delta);

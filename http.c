@@ -2376,7 +2376,14 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
     return 0;
 
   default:
-    ws_enq_data(hc, opcode, *data, len, flags, ts);
+    if(hc->hc_ws_flags & WEBSOCKET_SERVER_NO_BINARY_MSG_DISPATCH &&
+       opcode == 2) {
+      const ws_server_path_t *wsp = hc->hc_ws_path;
+      wsp->wsp_receive(hc->hc_ws_opaque, opcode, *data, len, ts);
+      free(*data);
+    } else {
+      ws_enq_data(hc, opcode, *data, len, flags, ts);
+    }
     *data = NULL;
     return 0;
   }
