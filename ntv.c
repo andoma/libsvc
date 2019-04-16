@@ -472,6 +472,13 @@ ntv_boolean(int value)
 
 
 ntv_t *
+ntv_null(void)
+{
+  return ntv_create(NTV_NULL);
+}
+
+
+ntv_t *
 ntv_str(const char *str)
 {
   if(str == NULL)
