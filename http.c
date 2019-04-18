@@ -1204,11 +1204,13 @@ http_create_request(http_connection_t *hc, int continue_check)
   }
 
   if(task_system_overload()) {
-    hr->hr_keep_alive = 0;
-    hr->hr_req_process = asyncio_now();
-    http_error(hr, 503);
-    http_request_destroy(hr);
-    return;
+    if(http_arg_get(&hr->hr_request_headers, "x-ignore-overload-check") == NULL) {
+      hr->hr_keep_alive = 0;
+      hr->hr_req_process = asyncio_now();
+      http_error(hr, 503);
+      http_request_destroy(hr);
+      return;
+    }
   }
 
 
