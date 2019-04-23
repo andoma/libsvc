@@ -2413,7 +2413,7 @@ websocket_timer(http_connection_t *hc)
   }
 
   uint32_t ping = 0;
-  websocket_send(hc, 9, &ping, 4);
+  websocket_send(hc, WS_OPCODE_PING, &ping, 4);
   asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
   hc->hc_ws_pong_wait++;
 }
