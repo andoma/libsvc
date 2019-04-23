@@ -186,7 +186,7 @@ static int websocket_packet_input(void *opaque, int opcode,
 
 static int websocket_response(http_request_t *hr);
 
-static void websocket_timer(http_connection_t *hc);
+static void websocket_timer(http_connection_t *hc, int64_t now);
 
 static void http_connection_release(http_connection_t *hc);
 
@@ -1504,12 +1504,12 @@ http_server_error(void *opaque, int error)
  *
  */
 static void
-http_server_timeout(void *aux)
+http_server_timeout(void *aux, int64_t now)
 {
   http_connection_t *hc = aux;
 
   if(hc->hc_ws_path != NULL) {
-    websocket_timer(hc);
+    websocket_timer(hc, now);
   } else {
     http_connection_close(hc);
   }
@@ -2402,7 +2402,7 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
 
 
 static void
-websocket_timer(http_connection_t *hc)
+websocket_timer(http_connection_t *hc, int64_t now)
 {
   if(hc->hc_ws_pong_wait >= 2) {
     asyncio_timer_disarm(&hc->hc_timer);

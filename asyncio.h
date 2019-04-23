@@ -34,12 +34,13 @@
 typedef struct asyncio_timer {
   LIST_ENTRY(asyncio_timer) at_link;
   int64_t at_expire;
-  void (*at_fn)(void *opaque);
+  void (*at_fn)(void *opaque, int64_t now);
   void *at_opaque;
 } asyncio_timer_t;
 
-void asyncio_timer_init(asyncio_timer_t *at, void (*fn)(void *opaque),
-			void *opque);
+void asyncio_timer_init(asyncio_timer_t *at, void (*fn)(void *opaque,
+                                                        int64_t now),
+			void *opaque);
 
 void asyncio_timer_arm_delta(asyncio_timer_t *at, uint64_t delta);
 

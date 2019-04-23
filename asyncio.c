@@ -248,7 +248,7 @@ asyncio_wakeup_worker(int id)
  *
  */
 void
-asyncio_timer_init(asyncio_timer_t *at, void (*fn)(void *opaque),
+asyncio_timer_init(asyncio_timer_t *at, void (*fn)(void *opaque, int64_t now),
 		   void *opaque)
 {
   at->at_fn = fn;
@@ -960,7 +960,7 @@ tw_step(void)
     while((at = LIST_FIRST(&tmplist)) != NULL) {
       LIST_REMOVE(at, at_link);
       at->at_expire = 0;
-      at->at_fn(at->at_opaque);
+      at->at_fn(at->at_opaque, now);
       cbs++;
     }
   }
