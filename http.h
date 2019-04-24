@@ -209,7 +209,8 @@ int websocket_session_start(struct http_request *hr,
                             const char *selected_protocol,
                             int compression_level,
                             int max_backlog,
-                            int flags);
+                            int flags,
+                            int keep_alive_interval);
 
 #define WEBSOCKET_SERVER_PACKET_TIMESTAMP 0x1
 #define WEBSOCKET_SERVER_NO_BINARY_MSG_DISPATCH 0x2

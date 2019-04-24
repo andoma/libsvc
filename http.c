@@ -141,6 +141,7 @@ typedef struct http_connection {
 
   atomic_t hc_ws_timestamps;
   atomic_t hc_ws_direct;
+  atomic_t hc_ws_ka_interval;
   atomic_t hc_ws_rtt;
 
   int hc_ws_mode;
@@ -1983,7 +1984,8 @@ websocket_session_start(http_request_t *hr,
                         const char *selected_protocol,
                         int compression_level,
                         int max_backlog,
-                        int flags)
+                        int flags,
+                        int ka_interval)
 {
   http_connection_t *hc = hr->hr_connection;
   SHA_CTX shactx;
@@ -2087,6 +2089,8 @@ websocket_session_start(http_request_t *hr,
 
   if(flags & WEBSOCKET_SERVER_NO_BINARY_MSG_DISPATCH)
     atomic_set(&hc->hc_ws_direct, 1);
+
+  atomic_set(&hc->hc_ws_ka_interval, ka_interval ?: 10);
 
   hc->hc_ws_mode = 1;
   return 0;
@@ -2433,7 +2437,8 @@ websocket_timer(http_connection_t *hc, int64_t now)
   }
 
   websocket_send(hc, WS_OPCODE_PING, &now, sizeof(now));
-  asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
+  asyncio_timer_arm_delta(&hc->hc_timer,
+                          atomic_get(&hc->hc_ws_ka_interval) * 1000000);
   hc->hc_ws_pong_wait++;
 }
 
