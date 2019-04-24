@@ -531,6 +531,13 @@ asyncio_fd_get_queue_length(asyncio_fd_t *af)
 }
 
 
+int
+asyncio_get_fd(asyncio_fd_t *af)
+{
+  return af->af_fd;
+}
+
+
 /**
  *
  */

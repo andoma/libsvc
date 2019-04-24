@@ -2442,3 +2442,10 @@ websocket_get_rtt(struct http_connection *hc)
 {
   return atomic_get(&hc->hc_ws_rtt) / 1000000.0;
 }
+
+
+int
+websocket_get_fd(struct http_connection *hc)
+{
+  return asyncio_get_fd(hc->hc_af);
+}

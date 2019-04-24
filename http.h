@@ -217,3 +217,5 @@ int websocket_session_start(struct http_request *hr,
 const char *http_mktime(time_t t, int delta);
 
 double websocket_get_rtt(struct http_connection *hc);
+
+int websocket_get_fd(struct http_connection *hc);
