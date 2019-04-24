@@ -48,6 +48,8 @@ void asyncio_timer_disarm(asyncio_timer_t *at);
 
 int64_t asyncio_now(void);
 
+int64_t asyncio_get_monotime(void);
+
 /**************************************************************************
  * IO
  **************************************************************************/

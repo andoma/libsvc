@@ -260,7 +260,7 @@ asyncio_timer_init(asyncio_timer_t *at, void (*fn)(void *opaque, int64_t now),
 /**
  *
  */
-static int64_t
+int64_t
 asyncio_get_monotime(void)
 {
 #if _POSIX_TIMERS > 0 && defined(_POSIX_MONOTONIC_CLOCK)

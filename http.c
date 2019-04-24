@@ -1967,7 +1967,7 @@ websocket_response(http_request_t *hr)
   int r = wsp->wsp_connected(hr);
 
   if(!r) {
-    int64_t now = asyncio_now();
+    int64_t now = asyncio_get_monotime();
     websocket_send(hc, WS_OPCODE_PING, &now, sizeof(now));
   }
   return r;
@@ -2377,8 +2377,8 @@ websocket_handle_pong(http_connection_t *hc, const uint8_t *data, int len)
 
   int64_t then;
   memcpy(&then, data, 8);
-
-  atomic_set(&hc->hc_ws_rtt, asyncio_now() - then);
+  int64_t now = asyncio_get_monotime();
+  atomic_set(&hc->hc_ws_rtt, now - then);
   hc->hc_ws_pong_wait = 0;
 }
 
