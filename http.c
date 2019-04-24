@@ -141,6 +141,7 @@ typedef struct http_connection {
 
   atomic_t hc_ws_timestamps;
   atomic_t hc_ws_direct;
+  atomic_t hc_ws_rtt;
 
   int hc_ws_mode;
 } http_connection_t;
@@ -1963,7 +1964,13 @@ websocket_response(http_request_t *hr)
   if(k == NULL)
     return 400;
 
-  return wsp->wsp_connected(hr);
+  int r = wsp->wsp_connected(hr);
+
+  if(!r) {
+    int64_t now = asyncio_now();
+    websocket_send(hc, WS_OPCODE_PING, &now, sizeof(now));
+  }
+  return r;
 }
 
 
@@ -2362,6 +2369,19 @@ websocket_close(http_connection_t *hc, const uint8_t *data, int len)
 }
 
 
+static void
+websocket_handle_pong(http_connection_t *hc, const uint8_t *data, int len)
+{
+  if(len != 8)
+    return;
+
+  int64_t then;
+  memcpy(&then, data, 8);
+
+  atomic_set(&hc->hc_ws_rtt, asyncio_now() - then);
+  hc->hc_ws_pong_wait = 0;
+}
+
 /**
  *
  */
@@ -2373,7 +2393,6 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
 
   const int64_t ts = atomic_get(&hc->hc_ws_timestamps) ? asyncio_now() : 0;
 
-  hc->hc_ws_pong_wait = 0;
 
   switch(opcode) {
   case WS_OPCODE_CLOSE:
@@ -2385,6 +2404,7 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
     return 0;
 
   case WS_OPCODE_PONG:
+    websocket_handle_pong(hc, *data, len);
     return 0;
 
   default:
@@ -2412,8 +2432,13 @@ websocket_timer(http_connection_t *hc, int64_t now)
     return;
   }
 
-  uint32_t ping = 0;
-  websocket_send(hc, WS_OPCODE_PING, &ping, 4);
+  websocket_send(hc, WS_OPCODE_PING, &now, sizeof(now));
   asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
   hc->hc_ws_pong_wait++;
+}
+
+double
+websocket_get_rtt(struct http_connection *hc)
+{
+  return atomic_get(&hc->hc_ws_rtt) / 1000000.0;
 }
