@@ -193,13 +193,15 @@ void websocket_route_add(const char *path,
                          websocket_disconnected_t *error);
 
 void websocket_send(struct http_connection *hc,
-                    int opcode, const void *data, size_t len);
+                    int opcode, const void *data, size_t len,
+                    int queue_index);
 
 void websocket_sendq(struct http_connection *hc,
-                     int opcode, struct mbuf *hq);
+                     int opcode, struct mbuf *hq,
+                     int queue_index);
 
-
-void websocket_send_json(struct http_connection *hc, const struct ntv *msg);
+void websocket_send_json(struct http_connection *hc, const struct ntv *msg,
+                         int queue_index);
 
 void websocket_send_close(struct http_connection *hc, int code,
                           const char *reason);

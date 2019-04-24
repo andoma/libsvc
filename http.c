@@ -1969,7 +1969,7 @@ websocket_response(http_request_t *hr)
 
   if(!r) {
     int64_t now = asyncio_get_monotime();
-    websocket_send(hc, WS_OPCODE_PING, &now, sizeof(now));
+    websocket_send(hc, WS_OPCODE_PING, &now, sizeof(now), -1);
   }
   return r;
 }
@@ -2250,18 +2250,19 @@ ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg, int flags,
 
 void
 websocket_send(struct http_connection *hc,
-               int opcode, const void *data, size_t len)
+               int opcode, const void *data, size_t len, int queue_index)
 {
   uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
   int hlen = websocket_build_hdr(hdr, opcode, len, 0);
-  asyncio_send_with_hdr(hc->hc_af, hdr, hlen, data, len, 0);
+  asyncio_send_with_hdr(hc->hc_af, hdr, hlen, data, len, 0, queue_index);
 }
 
 /**
  *
  */
 void
-websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq)
+websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq,
+                int queue_index)
 {
   uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
 
@@ -2299,13 +2300,14 @@ websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq)
     //    printf("Compressed %zd to %zd\n", mq->mq_size, comp.mq_size);
     mq->mq_size = 0;
     int hlen = websocket_build_hdr(hdr, opcode, comp.mq_size, 1);
-    asyncio_sendq_with_hdr_locked(hc->hc_af, hdr, hlen, &comp, 0);
+    asyncio_sendq_with_hdr_locked(hc->hc_af, hdr, hlen, &comp, 0,
+                                  queue_index);
     asyncio_send_unlock(hc->hc_af);
     return;
   }
 
   int hlen = websocket_build_hdr(hdr, opcode, mq->mq_size, 0);
-  asyncio_sendq_with_hdr(hc->hc_af, hdr, hlen, mq, 0);
+  asyncio_sendq_with_hdr(hc->hc_af, hdr, hlen, mq, 0, queue_index);
 }
 
 
@@ -2313,13 +2315,14 @@ websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq)
  *
  */
 void
-websocket_send_json(http_connection_t *hc, const struct ntv *msg)
+websocket_send_json(http_connection_t *hc, const struct ntv *msg,
+                    int queue_index)
 {
   mbuf_t hq;
   mbuf_init(&hq);
 
   ntv_json_serialize(msg, &hq, 0);
-  websocket_sendq(hc, 1, &hq);
+  websocket_sendq(hc, 1, &hq, queue_index);
 }
 
 
@@ -2340,7 +2343,7 @@ websocket_send_close(struct http_connection *hc, int code,
   uint8_t *buf = alloca(len);
   wr16_be(buf, code);
   memcpy(buf + 2, reason, rlen);
-  websocket_send(hc, WS_OPCODE_CLOSE, buf, len);
+  websocket_send(hc, WS_OPCODE_CLOSE, buf, len, -2);
 }
 
 
@@ -2352,7 +2355,7 @@ websocket_close(http_connection_t *hc, const uint8_t *data, int len)
 {
   if(!hc->hc_ws_close_sent) {
     // Echo back close
-    websocket_send(hc, WS_OPCODE_CLOSE, data, len);
+    websocket_send(hc, WS_OPCODE_CLOSE, data, len, -2);
     hc->hc_ws_close_sent = 1;
   }
 
@@ -2404,7 +2407,7 @@ websocket_packet_input(void *opaque, int opcode, uint8_t **data, int len,
     return 0;
 
   case WS_OPCODE_PING:
-    websocket_send(hc, WS_OPCODE_PONG, *data, len);
+    websocket_send(hc, WS_OPCODE_PONG, *data, len, -1);
     return 0;
 
   case WS_OPCODE_PONG:
@@ -2436,7 +2439,7 @@ websocket_timer(http_connection_t *hc, int64_t now)
     return;
   }
 
-  websocket_send(hc, WS_OPCODE_PING, &now, sizeof(now));
+  websocket_send(hc, WS_OPCODE_PING, &now, sizeof(now), -1);
   asyncio_timer_arm_delta(&hc->hc_timer,
                           atomic_get(&hc->hc_ws_ka_interval) * 1000000);
   hc->hc_ws_pong_wait++;

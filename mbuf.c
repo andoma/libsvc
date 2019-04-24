@@ -80,6 +80,26 @@ mbuf_clear(mbuf_t *mq)
 }
 
 
+
+/**
+ *
+ */
+static void
+mbuf_append_som(mbuf_t *mq, const void *buf, size_t len)
+{
+  mq->mq_size += len;
+  mbuf_data_t *md = malloc(sizeof(mbuf_data_t));
+  TAILQ_INSERT_TAIL(&mq->mq_buffers, md, md_link);
+  size_t c = MAX(len, mq->mq_alloc_size);
+  md->md_data = malloc(c);
+  md->md_data_size = c;
+  md->md_data_len = len;
+  md->md_data_off = 0;
+  md->md_flags = MBUF_SOM;
+  memcpy(md->md_data, buf, len);
+}
+
+
 /**
  *
  */
@@ -110,6 +130,7 @@ mbuf_append(mbuf_t *mq, const void *buf, size_t len)
   md->md_data_size = c;
   md->md_data_len = len;
   md->md_data_off = 0;
+  md->md_flags = 0;
   memcpy(md->md_data, buf, len);
 }
 
@@ -128,6 +149,7 @@ mbuf_prepend(mbuf_t *mq, const void *buf, size_t len)
   md->md_data_size = len;
   md->md_data_len = len;
   md->md_data_off = 0;
+  md->md_flags = 0;
   memcpy(md->md_data, buf, len);
 }
 
@@ -155,6 +177,7 @@ mbuf_append_prealloc(mbuf_t *mq, void *buf, size_t len)
   md->md_data_size = len;
   md->md_data_len = len;
   md->md_data_off = 0;
+  md->md_flags = 0;
 }
 
 /**
@@ -594,6 +617,7 @@ mbuf_pullup(mbuf_t *mq, size_t bytes)
   md->md_data_size = bytes;
   md->md_data_len = bytes;
   md->md_data_off = 0;
+  md->md_flags = 0;
   mq->mq_size += bytes;
   return data;
 }
@@ -710,4 +734,151 @@ mbuf_gzip(mbuf_t *dst, mbuf_t *src, int level)
   if(deflateInit2(&z, level, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY) != Z_OK)
     return -1;
   return mbuf_deflate_in(&z, dst, src);
+}
+
+
+
+struct mbuf_grp_queue {
+  TAILQ_ENTRY(mbuf_grp_queue) mgq_link;
+  mbuf_t mgq_q;
+  int mgq_index;
+};
+
+struct mbuf_grp {
+  TAILQ_HEAD(, mbuf_grp_queue) mg_queues;
+  struct mbuf_grp_queue *mg_current;
+  struct mbuf_grp_queue *mg_recycle;
+  size_t mg_total_size;
+};
+
+
+mbuf_grp_t *
+mbuf_grp_create(mbuf_grp_mode_t mode)
+{
+  struct mbuf_grp *mg = calloc(1, sizeof(struct mbuf_grp));
+  TAILQ_INIT(&mg->mg_queues);
+  return mg;
+}
+
+void
+mbuf_grp_destroy(mbuf_grp_t *mg)
+{
+  struct mbuf_grp_queue *mgq, *n;
+  for(mgq = TAILQ_FIRST(&mg->mg_queues); mgq != NULL; mgq = n) {
+    n = TAILQ_NEXT(mgq, mgq_link);
+    mbuf_clear(&mgq->mgq_q);
+    free(mgq);
+  }
+  free(mg);
+}
+
+static void
+mgq_deactivate(mbuf_grp_t *mg, struct mbuf_grp_queue *mgq)
+{
+  assert(TAILQ_FIRST(&mgq->mgq_q.mq_buffers) == NULL);
+  assert(mgq->mgq_q.mq_size == 0);
+  TAILQ_REMOVE(&mg->mg_queues, mgq, mgq_link);
+  if(mg->mg_recycle != NULL) {
+    free(mg->mg_recycle);
+  }
+  mg->mg_recycle = mgq;
+}
+
+static struct mbuf_grp_queue *
+mgq_make(mbuf_grp_t *mg, int queue_index)
+{
+  struct mbuf_grp_queue *mgq = mg->mg_recycle;
+  mg->mg_recycle = NULL;
+  if(mgq == NULL) {
+    mgq = malloc(sizeof(struct mbuf_grp_queue));
+    mbuf_init(&mgq->mgq_q);
+  }
+  mgq->mgq_index = queue_index;
+  return mgq;
+}
+
+
+static struct mbuf_grp_queue *
+mgq_find(mbuf_grp_t *mg, int queue_index)
+{
+  struct mbuf_grp_queue *mgq;
+  TAILQ_FOREACH(mgq, &mg->mg_queues, mgq_link) {
+    if(mgq->mgq_index == queue_index)
+      return mgq;
+    if(mgq->mgq_index > queue_index) {
+      struct mbuf_grp_queue *n = mgq_make(mg, queue_index);
+      TAILQ_INSERT_BEFORE(mgq, n, mgq_link);
+      return n;
+    }
+  }
+  struct mbuf_grp_queue *n = mgq_make(mg, queue_index);
+  TAILQ_INSERT_TAIL(&mg->mg_queues, n, mgq_link);
+  return n;
+}
+
+
+void
+mbuf_grp_append(mbuf_grp_t *mg, int queue_index,
+                const void *data, size_t len, int start_of_message)
+{
+  if(len == 0)
+    return;
+  struct mbuf_grp_queue *mgq = mgq_find(mg, queue_index);
+  if(start_of_message) {
+    mbuf_append_som(&mgq->mgq_q, data, len);
+  } else {
+    mbuf_append(&mgq->mgq_q, data, len);
+  }
+  mg->mg_total_size += len;
+}
+
+
+void
+mbuf_grp_appendq(mbuf_grp_t *mg, int queue_index, mbuf_t *src)
+{
+  if(src->mq_size == 0)
+    return;
+
+  struct mbuf_grp_queue *mgq = mgq_find(mg, queue_index);
+  mg->mg_total_size += src->mq_size;
+  mbuf_appendq(&mgq->mgq_q, src);
+}
+
+size_t
+mbuf_grp_peek_no_copy(mbuf_grp_t *mg, const void **buf)
+{
+  if(mg->mg_current == NULL)
+    mg->mg_current = TAILQ_FIRST(&mg->mg_queues);
+
+  if(mg->mg_current == NULL)
+    return 0;
+  return mbuf_peek_no_copy(&mg->mg_current->mgq_q, buf);
+}
+
+
+void
+mbuf_grp_drop(mbuf_grp_t *mg, size_t size)
+{
+  struct mbuf_grp_queue *mgq = mg->mg_current;
+  assert(mgq != NULL);
+  mbuf_drop(&mgq->mgq_q, size);
+  mg->mg_total_size -= size;
+  const mbuf_data_t *md = TAILQ_FIRST(&mgq->mgq_q.mq_buffers);
+
+  if(md == NULL) {
+    mg->mg_current = NULL;
+    mgq_deactivate(mg, mgq);
+    return;
+  }
+
+  if(md->md_flags & MBUF_SOM) {
+    mg->mg_current = NULL;
+  }
+}
+
+
+size_t
+mbuf_grp_size(mbuf_grp_t *mg)
+{
+  return mg->mg_total_size;
 }

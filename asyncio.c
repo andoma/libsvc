@@ -80,7 +80,7 @@ struct asyncio_fd {
 
   void *af_opaque;
 
-  mbuf_t af_sendq;
+  mbuf_grp_t *af_sendq;
   mbuf_t af_recvq;
 
   char *af_hostname;
@@ -408,7 +408,7 @@ asyncio_fd_create(int fd, int initial_poll_flags)
   asyncio_fd_t *af = calloc(1, sizeof(asyncio_fd_t));
   af->af_fd = fd;
   atomic_set(&af->af_refcount, 1);
-  mbuf_init(&af->af_sendq);
+  af->af_sendq = mbuf_grp_create(MBUF_GRP_MODE_STRICT_PRIORITY);
   mbuf_init(&af->af_recvq);
   mod_poll_flags(af, initial_poll_flags, 0);
   return af;
@@ -441,7 +441,7 @@ asyncio_fd_release(asyncio_fd_t *af)
     pthread_cond_destroy(&af->af_sendq_cond);
   }
 
-  mbuf_clear(&af->af_sendq);
+  mbuf_grp_destroy(af->af_sendq);
   mbuf_clear(&af->af_recvq);
   free(af->af_hostname);
   free(af->af_title);
@@ -456,10 +456,10 @@ asyncio_fd_release(asyncio_fd_t *af)
 static int
 do_write_locked(asyncio_fd_t *af)
 {
-  char tmp[1024];
-
   while(1) {
-    int avail = mbuf_peek(&af->af_sendq, tmp, sizeof(tmp));
+    const void *buf;
+
+    size_t avail = mbuf_grp_peek_no_copy(af->af_sendq, &buf);
     if(avail == 0) {
       if(af->af_pending_shutdown) {
         shutdown(af->af_fd, 2);
@@ -469,7 +469,7 @@ do_write_locked(asyncio_fd_t *af)
       return 0;
     }
 
-    int r = send(af->af_fd, tmp, avail, MSG_NOSIGNAL);
+    int r = send(af->af_fd, buf, avail, MSG_NOSIGNAL);
     if(r == 0)
       break;
 
@@ -480,8 +480,8 @@ do_write_locked(asyncio_fd_t *af)
       mod_poll_flags(af, 0, EPOLLOUT);
       return errno;
     }
-
-    mbuf_drop(&af->af_sendq, r);
+    assert(r < avail);
+    mbuf_grp_drop(af->af_sendq, r);
 
     if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
       pthread_cond_signal(&af->af_sendq_cond);
@@ -511,7 +511,7 @@ asyncio_wait_send_buffer(asyncio_fd_t *af, int size)
       break;
     }
 
-    if(size > af->af_sendq.mq_size)
+    if(size > mbuf_grp_size(af->af_sendq))
       break;
 
     pthread_cond_wait(&af->af_sendq_cond, &af->af_sendq_mutex);
@@ -527,7 +527,7 @@ asyncio_wait_send_buffer(asyncio_fd_t *af, int size)
 size_t
 asyncio_fd_get_queue_length(asyncio_fd_t *af)
 {
-  return af->af_sendq.mq_size;
+  return mbuf_grp_size(af->af_sendq);
 }
 
 
@@ -721,7 +721,7 @@ asyncio_ssl_handshake(asyncio_fd_t *af)
 
   case SSL_ERROR_NONE:
     mod_poll_flags(af, EPOLLIN, EPOLLOUT);
-    if(af->af_sendq.mq_size)
+    if(mbuf_grp_size(af->af_sendq))
       mod_poll_flags(af, EPOLLOUT, 0);
 
     af->af_ssl_established = 1;
@@ -866,7 +866,6 @@ do_ssl_write_locked(asyncio_fd_t *af)
   if(!af->af_ssl_established) {
     return asyncio_ssl_handshake(af);
   }
-  char tmp[1024];
 
   if(af->af_ssl_read_status == SSL_ERROR_WANT_WRITE) {
     do_ssl_read_locked(af);
@@ -875,7 +874,8 @@ do_ssl_write_locked(asyncio_fd_t *af)
 
   while(1) {
     af->af_ssl_write_status = 0;
-    int avail = mbuf_peek(&af->af_sendq, tmp, sizeof(tmp));
+    const void *buf;
+    const size_t avail = mbuf_grp_peek_no_copy(af->af_sendq, &buf);
     if(avail == 0) {
       if(af->af_pending_shutdown) {
         SSL_shutdown(af->af_ssl);
@@ -884,11 +884,11 @@ do_ssl_write_locked(asyncio_fd_t *af)
       return 0;
     }
 
-    int r = SSL_write(af->af_ssl, tmp, avail);
-    int err = SSL_get_error(af->af_ssl, r);
+    const int r = SSL_write(af->af_ssl, buf, avail);
+    const int err = SSL_get_error(af->af_ssl, r);
     switch(err) {
     case SSL_ERROR_NONE:
-      mbuf_drop(&af->af_sendq, r);
+      mbuf_grp_drop(af->af_sendq, r);
       if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
         pthread_cond_signal(&af->af_sendq_cond);
       continue;
@@ -1136,7 +1136,7 @@ asyncio_shutdown(asyncio_fd_t *af)
   af_lock(af);
 
   if(af->af_fd != -1) {
-    if(af->af_sendq.mq_size) {
+    if(mbuf_grp_size(af->af_sendq)) {
       af->af_pending_shutdown = 1;
 #if defined(WITH_OPENSSL)
     } else if(af->af_ssl != NULL) {
@@ -1173,7 +1173,7 @@ asyncio_send(asyncio_fd_t *af, const void *buf, size_t len, int cork)
   af_lock(af);
 
   if(af->af_fd != -1) {
-    mbuf_append(&af->af_sendq, buf, len);
+    mbuf_grp_append(af->af_sendq, 0, buf, len, 0);
 
     if(!cork)
       rval = send_locked_write(af);
@@ -1193,8 +1193,9 @@ int
 asyncio_send_with_hdr(asyncio_fd_t *af,
                       const void *hdr_buf, size_t hdr_len,
                       const void *buf, size_t len,
-                      int cork)
+                      int cork, int queue_index)
 {
+  int start_of_message = 1;
   int rval = 0;
   af_lock(af);
 
@@ -1205,18 +1206,21 @@ asyncio_send_with_hdr(asyncio_fd_t *af,
 #endif
 
   if(af->af_fd != -1) {
-    int qempty = af->af_sendq.mq_size == 0;
+    int qempty = mbuf_grp_size(af->af_sendq) == 0;
 
     if(!cork && qempty && no_ssl) {
       int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL | MSG_MORE);
       if(r > 0) {
         hdr_buf += r;
         hdr_len -= r;
+        start_of_message = 0;
       }
     }
 
     if(hdr_len > 0) {
-      mbuf_append(&af->af_sendq, hdr_buf, hdr_len);
+      mbuf_grp_append(af->af_sendq, queue_index,
+                      hdr_buf, hdr_len, start_of_message);
+      start_of_message = 0;
       qempty = 0;
     }
 
@@ -1229,7 +1233,7 @@ asyncio_send_with_hdr(asyncio_fd_t *af,
     }
 
     if(len > 0) {
-      mbuf_append(&af->af_sendq, buf, len);
+      mbuf_grp_append(af->af_sendq, queue_index, buf, len, start_of_message);
       qempty = 0;
     }
 
@@ -1254,7 +1258,7 @@ asyncio_sendq(asyncio_fd_t *af, mbuf_t *q, int cork)
   af_lock(af);
 
   if(af->af_fd != -1) {
-    mbuf_appendq(&af->af_sendq, q);
+    mbuf_grp_appendq(af->af_sendq, 0, q);
     if(!cork)
       rval = send_locked_write(af);
   } else {
@@ -1291,10 +1295,11 @@ asyncio_send_unlock(asyncio_fd_t *af)
  */
 int
 asyncio_sendq_with_hdr_locked(asyncio_fd_t *af, const void *hdr_buf,
-                              size_t hdr_len, mbuf_t *q, int cork)
+                              size_t hdr_len, mbuf_t *q, int cork,
+                              int queue_index)
 {
   int rval = 0;
-
+  int start_of_message = 1;
 #if defined(WITH_OPENSSL)
   const int no_ssl = af->af_ssl == NULL;
 #else
@@ -1302,21 +1307,23 @@ asyncio_sendq_with_hdr_locked(asyncio_fd_t *af, const void *hdr_buf,
 #endif
 
   if(af->af_fd != -1) {
-    int qempty = af->af_sendq.mq_size == 0;
+    int qempty = mbuf_grp_size(af->af_sendq)== 0;
 
     if(!cork && qempty && no_ssl) {
       int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL | MSG_MORE);
       if(r > 0) {
         hdr_buf += r;
         hdr_len -= r;
+        start_of_message = 0;
       }
     }
 
     if(hdr_len > 0) {
-      mbuf_append(&af->af_sendq, hdr_buf, hdr_len);
+      mbuf_grp_append(af->af_sendq, queue_index,
+                      hdr_buf, hdr_len, start_of_message);
       qempty = 0;
     }
-    mbuf_appendq(&af->af_sendq, q);
+    mbuf_grp_appendq(af->af_sendq, queue_index, q);
     if(!cork)
       rval = send_locked_write(af);
   } else {
@@ -1333,12 +1340,13 @@ asyncio_sendq_with_hdr_locked(asyncio_fd_t *af, const void *hdr_buf,
  */
 int
 asyncio_sendq_with_hdr(asyncio_fd_t *af, const void *hdr_buf, size_t hdr_len,
-                       mbuf_t *q, int cork)
+                       mbuf_t *q, int cork, int queue_index)
 {
   if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
     pthread_mutex_lock(&af->af_sendq_mutex);
 
-  int rval = asyncio_sendq_with_hdr_locked(af, hdr_buf, hdr_len, q, cork);
+  int rval = asyncio_sendq_with_hdr_locked(af, hdr_buf, hdr_len, q, cork,
+                                           queue_index);
   if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
     pthread_mutex_unlock(&af->af_sendq_mutex);
   return rval;

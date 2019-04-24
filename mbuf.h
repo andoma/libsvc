@@ -39,7 +39,10 @@ typedef struct mbuf_data {
   size_t md_data_size; /* Size of allocation hb_data */
   size_t md_data_len;  /* Number of valid bytes from hd_data */
   size_t md_data_off;  /* Offset in data, used for partial reads */
+  int    md_flags;
 } mbuf_data_t;
+
+#define MBUF_SOM 0x1   /* Start-of-message */
 
 typedef struct mbuf {
   struct mbuf_data_queue mq_buffers;
@@ -120,3 +123,29 @@ int mbuf_deflate(mbuf_t *dst, mbuf_t *src, int level)
 
 int mbuf_gzip(mbuf_t *dst, mbuf_t *src, int level)
   __attribute__((warn_unused_result));
+
+
+/**
+ * Group of queues for prioritized packet scheduling
+ */
+
+typedef struct mbuf_grp mbuf_grp_t;
+
+typedef enum {
+  MBUF_GRP_MODE_STRICT_PRIORITY = 0,
+} mbuf_grp_mode_t;
+
+mbuf_grp_t *mbuf_grp_create(mbuf_grp_mode_t mode);
+
+void mbuf_grp_destroy(mbuf_grp_t *mg);
+
+void mbuf_grp_append(mbuf_grp_t *mg, int queue,
+                     const void *data, size_t len, int start_of_message);
+
+void mbuf_grp_appendq(mbuf_grp_t *mg, int queue, mbuf_t *src);
+
+size_t mbuf_grp_peek_no_copy(mbuf_grp_t *mg, const void **buf);
+
+void mbuf_grp_drop(mbuf_grp_t *mg, size_t size);
+
+size_t mbuf_grp_size(mbuf_grp_t *mg);
