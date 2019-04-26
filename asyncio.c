@@ -76,7 +76,7 @@ struct asyncio_fd {
   asyncio_read_cb_t *af_bytes_avail;
   asyncio_connect_cb_t *af_connect;
 
-  int (*af_locked_write)(struct asyncio_fd *af);
+  int (*af_locked_write)(struct asyncio_fd *af, int canwrite);
 
   void *af_opaque;
 
@@ -454,7 +454,7 @@ asyncio_fd_release(asyncio_fd_t *af)
  *
  */
 static int
-do_write_locked(asyncio_fd_t *af)
+do_write_locked(asyncio_fd_t *af, int can_write)
 {
   while(1) {
     const void *buf;
@@ -560,10 +560,10 @@ do_error(asyncio_fd_t *af, int error)
  *
  */
 static void
-do_write_unlocked(asyncio_fd_t *af)
+do_write_pollout(asyncio_fd_t *af)
 {
   af_lock(af);
-  int err = af->af_fd == -1 ? 0 : af->af_locked_write(af);
+  int err = af->af_fd == -1 ? 0 : af->af_locked_write(af, 1);
   af_unlock(af);
   if(err)
     do_error(af, err);
@@ -779,7 +779,7 @@ do_ssl_update_poll_flags_ex(asyncio_fd_t *af, int line)
 #define do_ssl_update_poll_flags(af) \
   do_ssl_update_poll_flags_ex(af, __LINE__)
 
-static int do_ssl_write_locked(asyncio_fd_t *af);
+static int do_ssl_write_locked(asyncio_fd_t *af, int canwrite);
 
 
 /**
@@ -846,7 +846,7 @@ do_ssl_read(asyncio_fd_t *af)
   }
 
   if(af->af_ssl_write_status == SSL_ERROR_WANT_READ) {
-    do_ssl_write_locked(af);
+    do_ssl_write_locked(af, 1);
     return;
   }
 
@@ -861,7 +861,7 @@ do_ssl_read(asyncio_fd_t *af)
 
 
 static int
-do_ssl_write_locked(asyncio_fd_t *af)
+do_ssl_write_locked(asyncio_fd_t *af, int canwrite)
 {
   if(!af->af_ssl_established) {
     return asyncio_ssl_handshake(af);
@@ -872,6 +872,9 @@ do_ssl_write_locked(asyncio_fd_t *af)
     return 0;
   }
 
+  if(!canwrite && af->af_ssl_write_status) {
+    return 0; // Just trying to write and we're still haven't got POLLOUT
+  }
   while(1) {
     af->af_ssl_write_status = 0;
     const void *buf;
@@ -1155,7 +1158,7 @@ asyncio_shutdown(asyncio_fd_t *af)
 static int
 send_locked_write(asyncio_fd_t *af)
 {
-  const int err = af->af_locked_write(af);
+  const int err = af->af_locked_write(af, 0);
   if(err) {
     return -1;
   }
@@ -1497,7 +1500,7 @@ asyncio_stream(int fd,
     af->af_locked_write = &do_write_locked;
   }
 
-  af->af_pollout = &do_write_unlocked;
+  af->af_pollout = &do_write_pollout;
 
   af->af_bytes_avail = read;
   af->af_error = err;
