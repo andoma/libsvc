@@ -160,10 +160,13 @@ void http_route_add(const char *path, http_callback2_t *callback, int flags);
 
 struct http_server *http_server_init(const char *config);
 
+#define HTTP_SERVER_NO_DELAY        0x1
+#define HTTP_SERVER_LOW_SEND_BUFFER 0x2
+
 struct http_server *http_server_create(int port, const char *bind_address,
                                        void *sslctx,
                                        http_sniffer_t *sniffer,
-                                       int no_delay);
+                                       int flags);
 
 void http_server_destroy(struct http_server *hs);
 
