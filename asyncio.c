@@ -1211,7 +1211,7 @@ asyncio_send_with_hdr(asyncio_fd_t *af,
   if(af->af_fd != -1) {
     int qempty = mbuf_grp_size(af->af_sendq) == 0;
 
-    if(!cork && qempty && no_ssl) {
+    if(!cork && qempty && no_ssl && hdr_len) {
       int r = send(af->af_fd, hdr_buf, hdr_len, MSG_NOSIGNAL | MSG_MORE);
       if(r > 0) {
         hdr_buf += r;
