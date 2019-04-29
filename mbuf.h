@@ -149,3 +149,5 @@ size_t mbuf_grp_peek_no_copy(mbuf_grp_t *mg, const void **buf);
 void mbuf_grp_drop(mbuf_grp_t *mg, size_t size);
 
 size_t mbuf_grp_size(mbuf_grp_t *mg);
+
+size_t mbuf_grp_size_for_queue(mbuf_grp_t *mg, int queue_index);

@@ -882,3 +882,15 @@ mbuf_grp_size(mbuf_grp_t *mg)
 {
   return mg->mg_total_size;
 }
+
+size_t
+mbuf_grp_size_for_queue(mbuf_grp_t *mg, int queue_index)
+{
+  struct mbuf_grp_queue *mgq;
+
+  TAILQ_FOREACH(mgq, &mg->mg_queues, mgq_link) {
+  if(mgq->mgq_index == queue_index)
+    return mgq->mgq_q.mq_size;
+  }
+  return 0;
+}
