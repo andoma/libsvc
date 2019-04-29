@@ -77,6 +77,8 @@ typedef struct http_server {
 
   int hs_flags;
 
+  char *hs_congestion_algo;
+
 } http_server_t;
 
 
@@ -209,6 +211,7 @@ http_server_release(http_server_t *hs)
 
   free(hs->hs_real_ip_header);
   free(hs->hs_bind_address);
+  free(hs->hs_congestion_algo);
   free(hs);
 }
 
@@ -1569,9 +1572,22 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
   if(hs->hs_flags & HTTP_SERVER_LOW_SEND_BUFFER) {
     int val = 2048;
     if(setsockopt(fd, IPPROTO_TCP, TCP_NOTSENT_LOWAT, &val, sizeof(val)) < 0) {
-      perror("setsockopt");
+      trace(LOG_DEBUG, "HTTP: Connection from %s, "
+            "Unable to enable TCP_NOTSEND_LOWAT: %s",
+            hc->hc_peer_addr, strerror(errno));
     }
   }
+
+#if defined(__linux__)
+  if(hs->hs_congestion_algo) {
+    if(setsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, hs->hs_congestion_algo,
+                  strlen(hs->hs_congestion_algo)) < 0) {
+      trace(LOG_DEBUG, "HTTP: Connection from %s, "
+            "Unable to set TCP conection to %s: %s",
+            hc->hc_peer_addr, hs->hs_congestion_algo, strerror(errno));
+    }
+  }
+#endif
 
   int asyncio_flags = ASYNCIO_FLAG_THREAD_SAFE;
   if(hs->hs_flags & HTTP_SERVER_NO_DELAY)
@@ -1676,7 +1692,8 @@ http_server_init(const char *config_prefix)
 
 struct http_server *
 http_server_create(int port, const char *bind_address, void *sslctx,
-                   http_sniffer_t *sniffer, int flags)
+                   http_sniffer_t *sniffer, int flags,
+                   const char *congestion_algo)
 {
   http_server_t *hs = calloc(1, sizeof(http_server_t));
   atomic_set(&hs->hs_refcount, 1);
@@ -1685,6 +1702,7 @@ http_server_create(int port, const char *bind_address, void *sslctx,
   hs->hs_sslctx = sslctx;
   hs->hs_sniffer = sniffer;
   hs->hs_flags = flags;
+  hs->hs_congestion_algo = congestion_algo ? strdup(congestion_algo) : NULL;
   asyncio_run_task(http_server_start, hs);
   return hs;
 }
