@@ -70,6 +70,9 @@ void mbuf_qprintf(mbuf_t *m, const char *fmt, ...)
 
 void mbuf_append(mbuf_t *m, const void *buf, size_t len);
 
+// Set start-of-message flag and append
+void mbuf_append_som(mbuf_t *mq, const void *buf, size_t len);
+
 void mbuf_append_str(mbuf_t *m, const char *buf);
 
 void mbuf_append_prealloc(mbuf_t *m, void *buf, size_t len);

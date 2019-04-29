@@ -84,7 +84,7 @@ mbuf_clear(mbuf_t *mq)
 /**
  *
  */
-static void
+void
 mbuf_append_som(mbuf_t *mq, const void *buf, size_t len)
 {
   mq->mq_size += len;
