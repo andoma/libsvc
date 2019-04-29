@@ -1261,7 +1261,7 @@ asyncio_sendq(asyncio_fd_t *af, mbuf_t *q, int cork, int queue_index)
   af_lock(af);
 
   if(af->af_fd != -1) {
-    mbuf_grp_appendq(af->af_sendq, 0, q);
+    mbuf_grp_appendq(af->af_sendq, queue_index, q);
     if(!cork)
       rval = send_locked_write(af);
   } else {
