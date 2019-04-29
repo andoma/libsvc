@@ -1255,7 +1255,7 @@ asyncio_send_with_hdr(asyncio_fd_t *af,
  *
  */
 int
-asyncio_sendq(asyncio_fd_t *af, mbuf_t *q, int cork)
+asyncio_sendq(asyncio_fd_t *af, mbuf_t *q, int cork, int queue_index)
 {
   int rval = 0;
   af_lock(af);

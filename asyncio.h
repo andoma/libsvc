@@ -109,7 +109,7 @@ int asyncio_send_with_hdr(asyncio_fd_t *af,
                           const void *buf, size_t len,
                           int cork, int queue_index);
 
-int asyncio_sendq(asyncio_fd_t *af, mbuf_t *hq, int cork);
+int asyncio_sendq(asyncio_fd_t *af, mbuf_t *hq, int cork, int queue_index);
 
 int asyncio_sendq_with_hdr(asyncio_fd_t *af, const void *hdr_buf,
                            size_t hdr_len, mbuf_t *q,

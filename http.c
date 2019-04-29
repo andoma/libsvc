@@ -399,7 +399,7 @@ http_send_100_continue(http_request_t *hr)
 
   mbuf_qprintf(&q, "%s 100 Continue\r\n\r\n",
                  http_req_ver_str(hr));
-  asyncio_sendq(hr->hr_connection->hc_af, &q, 0);
+  asyncio_sendq(hr->hr_connection->hc_af, &q, 0, 0);
   http_log(hr, 100, "Continue");
   return 0;
 }
@@ -446,7 +446,7 @@ http_send_chunk(http_request_t *hr, const void *data, size_t len)
   mbuf_qprintf(&hq, "%zx\r\n", len);
   mbuf_append(&hq, data, len);
   mbuf_append(&hq, "\r\n", 2);
-  int r = asyncio_sendq(hr->hr_connection->hc_af, &hq, 0);
+  int r = asyncio_sendq(hr->hr_connection->hc_af, &hq, 0, 0);
   mbuf_clear(&hq);
   return r;
 }
@@ -569,7 +569,7 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
   //  mbuf_dump_raw_stderr(&hdrs);
   //  fprintf(stderr, "----------------------------\n");
 
-  asyncio_sendq(hr->hr_connection->hc_af, &hdrs, 0);
+  asyncio_sendq(hr->hr_connection->hc_af, &hdrs, 0, 0);
   return 0;
 }
 
@@ -595,7 +595,7 @@ http_send_reply(http_request_t *hr, int rc, const char *content,
   if(hr->hr_no_output)
     return 0;
 
-  asyncio_sendq(hr->hr_connection->hc_af, &hr->hr_reply, 0);
+  asyncio_sendq(hr->hr_connection->hc_af, &hr->hr_reply, 0, 0);
   return 0;
 }
 
@@ -645,7 +645,7 @@ http_err(http_request_t *hr, int error, const char *str)
     return 0;
 
   if(!hr->hr_no_output)
-    asyncio_sendq(hr->hr_connection->hc_af, &hr->hr_reply, 0);
+    asyncio_sendq(hr->hr_connection->hc_af, &hr->hr_reply, 0, 0);
   return 0;
 }
 
@@ -2114,7 +2114,7 @@ websocket_session_start(http_request_t *hr,
   http_send_common_headers(hr, &out, time(NULL));
 
   mbuf_qprintf(&out, "\r\n");
-  asyncio_sendq(hc->hc_af, &out, 0);
+  asyncio_sendq(hc->hc_af, &out, 0, 0);
 
   if(flags & WEBSOCKET_SERVER_PACKET_TIMESTAMP)
     atomic_set(&hc->hc_ws_timestamps, 1);
