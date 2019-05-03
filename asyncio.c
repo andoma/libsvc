@@ -480,7 +480,7 @@ do_write_locked(asyncio_fd_t *af, int can_write)
       mod_poll_flags(af, 0, EPOLLOUT);
       return errno;
     }
-    assert(r < avail);
+    assert(r <= avail);
     mbuf_grp_drop(af->af_sendq, r);
 
     if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE)
