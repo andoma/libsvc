@@ -769,6 +769,8 @@ mbuf_grp_destroy(mbuf_grp_t *mg)
     mbuf_clear(&mgq->mgq_q);
     free(mgq);
   }
+  if(mg->mg_recycle != NULL)
+    free(mg->mg_recycle);
   free(mg);
 }
 
