@@ -527,7 +527,10 @@ asyncio_wait_send_buffer(asyncio_fd_t *af, int size)
 size_t
 asyncio_fd_get_queue_length(asyncio_fd_t *af, int queue_index)
 {
-  return mbuf_grp_size_for_queue(af->af_sendq, queue_index);
+  af_lock(af);
+  size_t r = mbuf_grp_size_for_queue(af->af_sendq, queue_index);
+  af_unlock(af);
+  return r;
 }
 
 
