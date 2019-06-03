@@ -167,7 +167,7 @@ void
 mbuf_append_prealloc(mbuf_t *mq, void *buf, size_t len)
 {
   mbuf_data_t *md;
-
+  assert(len != 0);
   mq->mq_size += len;
 
   md = malloc(sizeof(mbuf_data_t));
@@ -267,7 +267,9 @@ mbuf_peek_no_copy(mbuf_t *mq, const void **buf)
   if(md == NULL)
     return 0;
   *buf = md->md_data + md->md_data_off;
-  return md->md_data_len - md->md_data_off;
+  const size_t s = md->md_data_len - md->md_data_off;
+  assert(s != 0);
+  return s;
 }
 
 
