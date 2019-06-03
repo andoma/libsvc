@@ -1403,6 +1403,7 @@ http_connection_shutdown_task(void *aux)
 static void
 http_connection_close(http_connection_t *hc)
 {
+  assert(hc->hc_closed == 0);
   if(hc->hc_sniffer != NULL && hc->hc_sniffer_opaque != NULL) {
     hc->hc_sniffer(hc->hc_sniffer_opaque, hc, NULL);
     hc->hc_sniffer = NULL;
@@ -1447,7 +1448,7 @@ http_server_read(void *opaque, struct mbuf *mq)
     hc->hc_sniffer = NULL;
   }
 
-  while(hc->hc_ws_path == NULL) {
+  while(!hc->hc_ws_mode) {
 
     if(hc->hc_read_disabled)
       return;
