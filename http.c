@@ -2299,6 +2299,8 @@ websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq,
   uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
 
   if(hc->hc_z_out != NULL) {
+    const size_t bufsize = 4096;
+    void *buf = NULL;
     z_stream *z = hc->hc_z_out;
     mbuf_t comp;
     mbuf_init(&comp);
@@ -2313,20 +2315,24 @@ websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq,
       int flush = TAILQ_NEXT(md, md_link) ? Z_NO_FLUSH : Z_SYNC_FLUSH;
 
       do {
-        size_t bufsize = 4096;
-        void *buf = malloc(bufsize);
+        if(buf == NULL)
+          buf = malloc(bufsize);
         z->next_out = buf;
         z->avail_out = bufsize;
 
         int ret = deflate(z, flush);
         assert(ret != Z_STREAM_ERROR);
         size_t have = bufsize - z->avail_out;
-        mbuf_append_prealloc(&comp, buf, have);
+        if(have > 0) {
+          mbuf_append_prealloc(&comp, buf, have);
+          buf = NULL;
+        }
       } while(z->avail_out == 0);
 
       assert(z->avail_in == 0);
       mbuf_data_free(mq, md);
     }
+    free(buf);
 
     mbuf_drop_tail(&comp, 4); // Drop the flush trailer
     //    printf("Compressed %zd to %zd\n", mq->mq_size, comp.mq_size);
