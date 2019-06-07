@@ -182,6 +182,49 @@ aws_sig4_gen_signature(const char *http_method,
 
 
 
+char *
+aws_sig4_gen_auth_header(const char *http_method,
+                         const char *uri,
+                         const ntv_t *query_args,
+                         const ntv_t *headers,
+                         const char *payload_hash,
+                         time_t timestamp,
+                         const char *aws_key_id,
+                         const char *aws_key_secret,
+                         const char *service,
+                         const char *region)
+{
+  scoped_char *signature =
+    aws_sig4_gen_signature(http_method, uri, query_args, headers, payload_hash,
+                           timestamp, aws_key_id, aws_key_secret, service,
+                           region);
+
+  scoped_char *isodate = aws_isodate(timestamp);
+
+  scoped_char *signed_headers = NULL;
+
+  if(headers != NULL) {
+    scoped_strvec(signed_headers_vec);
+    NTV_FOREACH_TYPE(f, headers, NTV_STRING) {
+      scoped_char *header = strdup(f->ntv_name);
+      lowercase(header);
+      strvec_insert_sorted(&signed_headers_vec, header);
+    }
+    signed_headers = strvec_join(&signed_headers_vec, ";");
+  }
+
+  return fmt("AWS4-HMAC-SHA256 Credential=%s/%8.8s/%s/%s/aws4_request,"
+             "SignedHeaders=%s,"
+             "Signature=%s",
+             aws_key_id,
+             isodate,
+             region,
+             service,
+             signed_headers,
+             signature);
+}
+
+
 void
 aws_test(void)
 {

@@ -19,6 +19,16 @@ char *aws_sig4_gen_signature(const char *http_method,
                              const char *service,
                              const char *region);
 
+char *aws_sig4_gen_auth_header(const char *http_method,
+                               const char *uri,
+                               const ntv_t *query_args,
+                               const ntv_t *headers,
+                               const char *payload_hash,
+                               time_t timestamp,
+                               const char *aws_key_id,
+                               const char *aws_key_secret,
+                               const char *service,
+                               const char *region);
 
 char *aws_SHA256_hex(const void *data, size_t len);
 
