@@ -65,8 +65,8 @@ lowercase(char *s)
 }
 
 
-static char *
-SHA256_hex(const void *data, size_t len)
+char *
+aws_SHA256_hex(const void *data, size_t len)
 {
   uint8_t crdigest[32];
   SHA256((void *)data, len, crdigest);
@@ -83,7 +83,6 @@ aws_sig4_canonical_request_hash(const char *http_method,
                                 const ntv_t *headers,
                                 const char *payload_hash)
 {
-
   scoped_char *canonical_uri =
     url_escape_alloc(uri, URL_ESCAPE_PATH);
 
@@ -121,7 +120,7 @@ aws_sig4_canonical_request_hash(const char *http_method,
         signed_headers ?: "",
         payload_hash);
 
-  return SHA256_hex(canonical_request, strlen(canonical_request));
+  return aws_SHA256_hex(canonical_request, strlen(canonical_request));
 }
 
 
@@ -244,7 +243,7 @@ aws_test(void)
   }
 
   if(1) {
-    scoped_char *content_hash = SHA256_hex("", 0);
+    scoped_char *content_hash = aws_SHA256_hex("", 0);
 
     scoped_ntv_t *headers =
       ntv_map("x-amz-date", ntv_str("20130524T000000Z"),
@@ -266,7 +265,7 @@ aws_test(void)
   }
 
   if(1) {
-    scoped_char *content_hash = SHA256_hex("", 0);
+    scoped_char *content_hash = aws_SHA256_hex("", 0);
 
     scoped_ntv_t *headers =
       ntv_map("x-amz-date", ntv_str("20130524T000000Z"),

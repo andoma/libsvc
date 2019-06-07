@@ -20,4 +20,6 @@ char *aws_sig4_gen_signature(const char *http_method,
                              const char *region);
 
 
+char *aws_SHA256_hex(const void *data, size_t len);
+
 void aws_test(void);
