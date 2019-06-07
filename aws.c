@@ -77,6 +77,17 @@ aws_SHA256_hex(const void *data, size_t len)
 
 
 char *
+aws_isodate(time_t timestamp)
+{
+  struct tm tm0, *tm;
+  tm = gmtime_r(&timestamp, &tm0);
+  return fmt("%04d%02d%02dT%02d%02d%02dZ",
+             tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+             tm->tm_hour, tm->tm_min, tm->tm_sec);
+}
+
+
+char *
 aws_sig4_canonical_request_hash(const char *http_method,
                                 const char *uri,
                                 const ntv_t *query_args,
@@ -136,13 +147,7 @@ aws_sig4_gen_signature(const char *http_method,
                        const char *service,
                        const char *region)
 {
-  struct tm tm0, *tm;
-  tm = gmtime_r(&timestamp, &tm0);
-  char timestamp_str[32];
-  snprintf(timestamp_str, sizeof(timestamp_str),
-           "%04d%02d%02dT%02d%02d%02dZ",
-           tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-           tm->tm_hour, tm->tm_min, tm->tm_sec);
+  scoped_char *timestamp_str = aws_isodate(timestamp);
 
   scoped_char *crhex =
     aws_sig4_canonical_request_hash(http_method, uri, query_args,

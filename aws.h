@@ -22,4 +22,6 @@ char *aws_sig4_gen_signature(const char *http_method,
 
 char *aws_SHA256_hex(const void *data, size_t len);
 
+char *aws_isodate(time_t timestamp);
+
 void aws_test(void);
