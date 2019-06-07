@@ -35,6 +35,8 @@ int url_escape(char *dst, const int size, const char *src, int how);
 
 char *url_escape_tmp(const char *src, int how);
 
+char *url_escape_alloc(const char *src, int how);
+
 #define BASE64_STANDARD 0
 #define BASE64_URL      1
 

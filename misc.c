@@ -653,6 +653,18 @@ url_escape_tmp(const char *src, int how)
   return r;
 }
 
+/**
+ *
+ */
+char *
+url_escape_alloc(const char *src, int how)
+{
+  int len = url_escape(NULL, 0, src, how);
+  char *r = malloc(len);
+  url_escape(r, len, src, how);
+  return r;
+}
+
 
 
 
