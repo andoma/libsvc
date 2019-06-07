@@ -58,6 +58,28 @@ ntv_create_list(void)
   return ntv_create(NTV_LIST);
 }
 
+ntv_t *
+ntv_nocase(ntv_t *ntv)
+{
+  ntv->ntv_flags |= NTV_NOCASE;
+  return ntv;
+}
+
+
+static int
+nocase_strcmp(const char *s1, const char *s2)
+{
+  for(; *s1 && *s2; s1++, s2++)
+    if(!(*s1 == *s2 || (*s1 ^ 32) == *s2))
+      break;
+
+  if(*s1 == *s2)
+    return 0;
+  if((*s1 | 32) < (*s2 | 32))
+    return -1;
+  return 1;
+}
+
 
 static void
 ntv_field_clear(ntv_t *f, ntv_type newtype)
@@ -167,10 +189,18 @@ ntv_field_name_find(const ntv_t *parent, const char *fieldname,
     return NULL;
   }
 
-  TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
-    if(!strcmp(sub->ntv_name, fieldname) &&
-       ((int)type == -1 || type == sub->ntv_type))
-      return sub;
+  if(parent->ntv_flags & NTV_NOCASE) {
+    TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
+      if(!nocase_strcmp(sub->ntv_name, fieldname) &&
+         ((int)type == -1 || type == sub->ntv_type))
+        return sub;
+    }
+  } else {
+    TAILQ_FOREACH(sub, &parent->ntv_children, ntv_link) {
+      if(!strcmp(sub->ntv_name, fieldname) &&
+         ((int)type == -1 || type == sub->ntv_type))
+        return sub;
+    }
   }
   return NULL;
 }
@@ -593,6 +623,7 @@ ntv_copy(const ntv_t *src)
 
   ntv_t *dst = ntv_create(src->ntv_type);
   ntv_merge(dst, src);
+  dst->ntv_flags |= src->ntv_flags & (NTV_NOCASE);
   return dst;
 }
 
@@ -620,6 +651,16 @@ ntv_sort_cmp(const void *A, const void *B)
   const ntv_t *b = *(const ntv_t **)B;
 
   return strcmp(a->ntv_name, b->ntv_name);
+}
+
+
+static int
+ntv_sort_nocase_cmp(const void *A, const void *B)
+{
+  const ntv_t *a = *(const ntv_t **)A;
+  const ntv_t *b = *(const ntv_t **)B;
+
+  return nocase_strcmp(a->ntv_name, b->ntv_name);
 }
 
 static int
@@ -659,11 +700,16 @@ ntv_cmp_map(const ntv_t *aa, const ntv_t *bb)
     bv[i++] = b;
 
 
-  qsort(av, num, sizeof(ntv_t *), ntv_sort_cmp);
-  qsort(bv, num, sizeof(ntv_t *), ntv_sort_cmp);
+  qsort(av, num, sizeof(ntv_t *),
+        aa->ntv_flags & NTV_NOCASE ? ntv_sort_nocase_cmp : ntv_sort_cmp);
+  qsort(bv, num, sizeof(ntv_t *),
+        bb->ntv_flags & NTV_NOCASE ? ntv_sort_nocase_cmp : ntv_sort_cmp);
+
+  const int nocase = (aa->ntv_flags | bb->ntv_flags) & NTV_NOCASE;
 
   for(i = 0; i < num; i++) {
-    if(strcmp(av[i]->ntv_name, bv[i]->ntv_name))
+    if(nocase ? nocase_strcmp(av[i]->ntv_name, bv[i]->ntv_name) :
+       strcmp(av[i]->ntv_name, bv[i]->ntv_name))
       break;
     if(ntv_cmp(av[i], bv[i]))
       break;
