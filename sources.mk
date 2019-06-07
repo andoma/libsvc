@@ -29,6 +29,7 @@ libsvc_SRCS += \
 	mbuf.c \
 	trap.c \
 	err.c \
+	aws.c \
 
 libsvc_INCS += \
 	libsvc.h \
