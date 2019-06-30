@@ -153,6 +153,8 @@ enable_syslog(const char *program, const char *facility)
   const char *x;
   if(!strcmp(facility, "daemon")) {
     f = LOG_DAEMON;
+  } else if(!strcmp(facility, "mail")) {
+    f = LOG_MAIL;
   } else if((x = mystrbegins(facility, "local")) != NULL) {
     f = atoi(x);
     if(f > 7) {
