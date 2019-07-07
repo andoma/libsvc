@@ -41,6 +41,7 @@ typedef enum {
   NTV_DONT_FREE = 0x2,
   NTV_REFCOUNTED = 0x4,
   NTV_NOCASE = 0x8,
+  NTV_ALLOW_DUPS = 0x10,
 } ntv_flags;
 
 typedef enum {
@@ -118,6 +119,7 @@ ntv_t *ntv_create_list(void);
 void ntv_delete_field(const ntv_t *ntv, const char *key);
 
 ntv_t *ntv_nocase(ntv_t *ntv);
+ntv_t *ntv_allow_dups(ntv_t *ntv);
 
 void ntv_release(ntv_t *ntv);
 ntv_t *ntv_retain(ntv_t *ntv) __attribute__ ((warn_unused_result));

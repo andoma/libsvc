@@ -65,6 +65,13 @@ ntv_nocase(ntv_t *ntv)
   return ntv;
 }
 
+ntv_t *
+ntv_allow_dups(ntv_t *ntv)
+{
+  ntv->ntv_flags |= NTV_ALLOW_DUPS;
+  return ntv;
+}
+
 
 static int
 nocase_strcmp(const char *s1, const char *s2)
@@ -240,15 +247,21 @@ ntv_detach_field(ntv_t *parent, const char *key)
 static ntv_t *
 ntv_field_name_prep(ntv_t *parent, const char *fieldname, ntv_type type)
 {
-  ntv_t *f = ntv_field_name_find(parent, fieldname, -1);
-  if(f != NULL) {
-    ntv_field_clear(f, type);
-  } else {
-    f = ntv_create(type);
-    f->ntv_name = fieldname != NULL ? strdup(fieldname) : NULL;
-    TAILQ_INSERT_TAIL(&parent->ntv_children, f, ntv_link);
-    f->ntv_parent = parent;
+  if(parent == NULL)
+    return NULL;
+
+  if(!(parent->ntv_flags & NTV_ALLOW_DUPS)) {
+    ntv_t *f = ntv_field_name_find(parent, fieldname, -1);
+    if(f != NULL) {
+      ntv_field_clear(f, type);
+      return f;
+    }
   }
+
+  ntv_t *f = ntv_create(type);
+  f->ntv_name = fieldname != NULL ? strdup(fieldname) : NULL;
+  TAILQ_INSERT_TAIL(&parent->ntv_children, f, ntv_link);
+  f->ntv_parent = parent;
   return f;
 }
 
@@ -622,8 +635,8 @@ ntv_copy(const ntv_t *src)
     return NULL;
 
   ntv_t *dst = ntv_create(src->ntv_type);
+  dst->ntv_flags |= src->ntv_flags & (NTV_NOCASE | NTV_ALLOW_DUPS);
   ntv_merge(dst, src);
-  dst->ntv_flags |= src->ntv_flags & (NTV_NOCASE);
   return dst;
 }
 
