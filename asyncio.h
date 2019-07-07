@@ -68,8 +68,6 @@ typedef int (asyncio_accept_cb_t)(void *opaque, int fd,
                                   struct sockaddr *peer,
                                   struct sockaddr *self);
 
-typedef int (asyncio_connect_cb_t)(void *opaque, const char *msg);
-
 typedef void (asyncio_error_cb_t)(void *opaque, int error);
 
 typedef void (asyncio_read_cb_t)(void *opaque, struct mbuf *hq);
@@ -81,15 +79,10 @@ asyncio_fd_t *asyncio_bind(const char *bindaddr,
                            asyncio_accept_cb_t *cb,
                            void *opaque, int flags);
 
-asyncio_fd_t *asyncio_connect(const char *hostname,
-			    int port, int timeout,
-			    asyncio_connect_cb_t *cb,
-			    asyncio_read_cb_t *read,
-			    asyncio_error_cb_t *err,
-			    void *opaque);
-
 asyncio_fd_t *asyncio_dgram(int fd, asyncio_poll_cb_t *input,
                           void *opaque);
+
+asyncio_fd_t *asyncio_connect(int fd, asyncio_error_cb_t *cb, void *opaque);
 
 asyncio_fd_t *asyncio_stream(int fd,
                              asyncio_read_cb_t *read,
@@ -99,6 +92,8 @@ asyncio_fd_t *asyncio_stream(int fd,
                              asyncio_sslctx_t *sslctx,
                              const char *hostname,
                              const char *title);
+
+int asyncio_detach(asyncio_fd_t *af);
 
 void asyncio_close(asyncio_fd_t *af);
 

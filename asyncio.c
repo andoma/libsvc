@@ -74,7 +74,6 @@ struct asyncio_fd {
   asyncio_poll_cb_t *af_pollin;
   asyncio_poll_cb_t *af_pollout;
   asyncio_read_cb_t *af_bytes_avail;
-  asyncio_connect_cb_t *af_connect;
 
   int (*af_locked_write)(struct asyncio_fd *af, int canwrite);
 
@@ -1441,6 +1440,42 @@ asyncio_dgram(int fd,
   af->af_opaque = opaque;
   return af;
 }
+
+
+static void
+asyncio_connect_pollout(struct asyncio_fd *af)
+{
+  int err;
+  socklen_t sockerrlen = sizeof(err);
+  getsockopt(af->af_fd, SOL_SOCKET, SO_ERROR, (void *)&err, &sockerrlen);
+  af->af_error(af->af_opaque, err);
+}
+
+/**
+ *
+ */
+asyncio_fd_t *
+asyncio_connect(int fd, asyncio_error_cb_t *cb, void *opaque)
+{
+  set_nonblocking(fd, 1);
+  asyncio_fd_t *af = asyncio_fd_create(fd, EPOLLOUT);
+  af->af_pollout = asyncio_connect_pollout;
+  af->af_error = cb;
+  af->af_opaque = opaque;
+  return af;
+}
+
+
+int
+asyncio_detach(asyncio_fd_t *af)
+{
+  int fd = af->af_fd;
+  mod_poll_flags(af, 0, -1);
+  af->af_fd = -1;
+  return fd;
+}
+
+
 
 
 /**
