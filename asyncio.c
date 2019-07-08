@@ -58,6 +58,8 @@
 LIST_HEAD(asyncio_timer_list, asyncio_timer);
 LIST_HEAD(asyncio_worker_list, asyncio_worker);
 
+static LIST_HEAD(, asyncio_fd) deferred_processings;
+
 struct asyncio_sslctx {
   SSL_CTX *ctx;
   int client;
@@ -95,6 +97,7 @@ struct asyncio_fd {
   uint16_t af_flags;
 
   uint8_t af_pending_shutdown;
+  uint8_t af_deferred_processing;
   int af_pending_error;
 
   char *af_title;
@@ -105,6 +108,7 @@ struct asyncio_fd {
   int af_ssl_write_status;
   SSL *af_ssl;
 #endif
+  LIST_ENTRY(asyncio_fd) af_deferred_processing_link;
 };
 
 
@@ -959,7 +963,6 @@ tw_step(void)
 
   while(timerwheel_read_pos != target_slot) {
     timerwheel_read_pos = (timerwheel_read_pos + 1) & TW_SLOT_MASK;
-
     for(at = LIST_FIRST(&timerwheel[timerwheel_read_pos]);
         at != NULL; at = next) {
       next = LIST_NEXT(at, at_link);
@@ -983,6 +986,22 @@ tw_step(void)
 }
 
 
+
+static void
+process_deferred(void)
+{
+  asyncio_fd_t *af;
+
+  while((af = LIST_FIRST(&deferred_processings)) != NULL) {
+    LIST_REMOVE(af, af_deferred_processing_link);
+    af->af_deferred_processing = 0;
+    if(af->af_recvq.mq_size)
+      af->af_bytes_avail(af->af_opaque, &af->af_recvq);
+  }
+}
+
+
+
 /**
  *
  */
@@ -995,6 +1014,8 @@ asyncio_loop(void *aux)
     talloc_cleanup();
 
     int timeout = tw_step();
+
+    process_deferred();
 
 #ifdef __linux__
 
@@ -1109,6 +1130,11 @@ void
 asyncio_close(asyncio_fd_t *af)
 {
   assert(pthread_self() == asyncio_tid);
+
+  if(af->af_deferred_processing) {
+    af->af_deferred_processing = 0;
+    LIST_REMOVE(af, af_deferred_processing_link);
+  }
 
   af_lock(af);
 
@@ -1556,8 +1582,10 @@ asyncio_process_pending(asyncio_fd_t *af)
 {
   assert(pthread_self() == asyncio_tid);
 
-  if(af->af_recvq.mq_size)
-    af->af_bytes_avail(af->af_opaque, &af->af_recvq);
+  if(!af->af_deferred_processing) {
+    af->af_deferred_processing = 1;
+    LIST_INSERT_HEAD(&deferred_processings, af, af_deferred_processing_link);
+  }
 }
 
 
