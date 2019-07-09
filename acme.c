@@ -127,8 +127,6 @@ static int
 acme_POST(http_client_response_t *hcr, const char *url,
           ntv_t *payload, const char *kid, char **nonce, RSA *rsa)
 {
-  printf("POST PAYLOAD\n");
-  ntv_print(payload);
   scoped_char *req = generate_request(url, payload, kid, *nonce, rsa);
   ntv_release(payload);
   char errbuf[512];
@@ -144,8 +142,6 @@ acme_POST(http_client_response_t *hcr, const char *url,
     return -1;
   }
 
-  printf("POST RESPONSE\n");
-  ntv_print(hcr->hcr_json_result);
   strset(nonce, NULL);
   *nonce = get_nonce(hcr);
   return 0;
@@ -184,7 +180,7 @@ make_CSR(const strvec_t *domains, RSA *rsa)
   X509_REQ_sign(x509_req, pkey, EVP_sha256());
   EVP_PKEY_free(pkey);
 
-  X509_REQ_print_fp(stdout, x509_req);
+  //  X509_REQ_print_fp(stdout, x509_req);
 
   size_t buflen = 0;
   scoped_char *buf = NULL;
@@ -208,7 +204,6 @@ acme_process_auth(const acme_callbacks_t *callbacks, void *opaque,
     trace(LOG_WARNING, "ACME: GET failed %s %s", auth_url, errbuf);
     return -1;
   }
-
 
   const ntv_t *identifier =
     ntv_get_map(auth_get.hcr_json_result, "identifier");
@@ -239,14 +234,16 @@ acme_process_auth(const acme_callbacks_t *callbacks, void *opaque,
     scoped_char *jwk_json = ntv_json_serialize_to_str(jwk, 0);
     SHA256((void *)jwk_json, strlen(jwk_json), digest);
     scoped_char *digest_b64 = b64(digest, sizeof(digest));
+    scoped_char *key_auth = fmt("%s.%s", token, digest_b64);
 
-    if(!strcmp(type, "http-01")) {
-      if(callbacks->present_http_01(opaque, domainname, token, digest_b64))
+
+    if(callbacks->present_http_01 != NULL && !strcmp(type, "http-01")) {
+
+      if(callbacks->present_http_01(opaque, domainname, token, key_auth))
         continue;
 
-    } else if(!strcmp(type, "dns-01")) {
+    } else if(callbacks->present_dns_01 != NULL && !strcmp(type, "dns-01")) {
 
-      scoped_char *key_auth = fmt("%s.%s", token, digest_b64);
       SHA256((void *)key_auth, strlen(key_auth), digest);
       scoped_char *proof = b64(digest, sizeof(digest));
 
@@ -283,6 +280,7 @@ acme_process_auth(const acme_callbacks_t *callbacks, void *opaque,
         sleep(1);
         continue;
       }
+      return -1;
     }
   }
   return -1;
@@ -587,9 +585,7 @@ acme_acquire_cert(const acme_callbacks_t *callbacks, void *opaque,
     set_params(cert, domains, contact, directory_url);
   }
 
-  const int days = is_cert_valid(cert);
-
-  if(days >= 30)
+  if(is_cert_valid(cert) >= 30)
     return cert;
 
   const time_t now = time(NULL);
@@ -608,7 +604,7 @@ acme_acquire_cert(const acme_callbacks_t *callbacks, void *opaque,
                               NTV_JSON_F_MINIMAL_ESCAPE);
   callbacks->save_cert(opaque, saved_json);
 
-  if(days >= 1)
+  if(is_cert_valid(cert) >= 1)
     return cert;
 
   ntv_release(cert);
