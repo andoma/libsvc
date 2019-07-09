@@ -869,6 +869,8 @@ ntv_num_children(const ntv_t *ntv)
 {
   const ntv_t *f;
   int r = 0;
+  if(ntv == NULL)
+    return 0;
   TAILQ_FOREACH(f, &ntv->ntv_children, ntv_link)
     r++;
   return r;
