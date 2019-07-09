@@ -1805,6 +1805,15 @@ asyncio_run_task_blocking(void (*fn)(void *aux), void *aux)
 #if defined(WITH_OPENSSL)
 
 
+const char *
+asyncio_fd_get_sni_name(asyncio_fd_t *af)
+{
+  if(af->af_ssl == NULL)
+    return NULL;
+  return SSL_get_servername(af->af_ssl, TLSEXT_NAMETYPE_host_name);
+}
+
+
 static EVP_PKEY *
 evp_from_private_pem(const char *pem)
 {
