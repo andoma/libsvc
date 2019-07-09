@@ -60,11 +60,52 @@ LIST_HEAD(asyncio_worker_list, asyncio_worker);
 
 static LIST_HEAD(, asyncio_fd) deferred_processings;
 
-struct asyncio_sslctx {
+struct asyncio_sslctx_host {
+  char *hostname;
   SSL_CTX *ctx;
-  int client;
 };
 
+struct asyncio_sslctx {
+  atomic_t refcount;
+  unsigned int client;
+
+  size_t num_hosts;
+  struct asyncio_sslctx_host hosts[0];
+};
+
+
+static struct asyncio_sslctx *
+sslctx_alloc(size_t num_hosts)
+{
+  assert(num_hosts > 0);
+
+  asyncio_sslctx_t *as = calloc(1, sizeof(struct asyncio_sslctx) +
+                                sizeof(struct asyncio_sslctx_host) * num_hosts);
+  as->num_hosts = num_hosts;
+  atomic_set(&as->refcount, 1);
+  return as;
+}
+
+
+static asyncio_sslctx_t *
+sslctx_retain(asyncio_sslctx_t *ctx)
+{
+  if(ctx)
+    atomic_inc(&ctx->refcount);
+  return ctx;
+}
+
+static void
+sslctx_release(asyncio_sslctx_t *ctx)
+{
+  if(!ctx || atomic_dec(&ctx->refcount))
+    return;
+  for(size_t i = 0; i < ctx->num_hosts; i++) {
+    SSL_CTX_free(ctx->hosts[i].ctx);
+    free(ctx->hosts[i].hostname);
+  }
+  free(ctx);
+}
 
 /**
  *
@@ -107,6 +148,7 @@ struct asyncio_fd {
   int af_ssl_read_status;
   int af_ssl_write_status;
   SSL *af_ssl;
+  asyncio_sslctx_t *af_sslctx;
 #endif
   LIST_ENTRY(asyncio_fd) af_deferred_processing_link;
 };
@@ -448,6 +490,7 @@ asyncio_fd_release(asyncio_fd_t *af)
   mbuf_clear(&af->af_recvq);
   free(af->af_hostname);
   free(af->af_title);
+  sslctx_release(af->af_sslctx);
   free(af);
 }
 
@@ -1534,7 +1577,9 @@ asyncio_stream(int fd,
   if(sslctx != NULL) {
 #if defined(WITH_OPENSSL)
 
-    af->af_ssl = SSL_new(sslctx->ctx);
+    af->af_sslctx = sslctx_retain(sslctx);
+
+    af->af_ssl = SSL_new(sslctx->hosts[0].ctx);
     if(SSL_set_fd(af->af_ssl, fd) == 0) {
       trace(LOG_ERR, "SSL: Unable to set FD");
     }
@@ -1774,9 +1819,8 @@ evp_from_private_pem(const char *pem)
 }
 
 
-asyncio_sslctx_t *
-asyncio_sslctx_server_from_pem(const char *priv_key_pem,
-                               const char *cert_pem)
+static SSL_CTX *
+ssl_ctx_from_pem(const char *priv_key_pem, const char *cert_pem)
 {
   EVP_PKEY *priv_key = evp_from_private_pem(priv_key_pem);
   if(priv_key == NULL)
@@ -1829,13 +1873,22 @@ asyncio_sslctx_server_from_pem(const char *priv_key_pem,
                       SSL_OP_NO_SSLv3 |
                       SSL_OP_NO_TLSv1 |
                       SSL_OP_NO_TLSv1_1);
-
-  asyncio_sslctx_t *ret = calloc(1, sizeof(asyncio_sslctx_t));
-  ret->ctx = ctx;
-  return ret;
+  return ctx;
 }
 
 
+asyncio_sslctx_t *
+asyncio_sslctx_server_from_pem(const char *priv_key_pem,
+                               const char *cert_pem)
+{
+  SSL_CTX *ctx = ssl_ctx_from_pem(priv_key_pem, cert_pem);
+  if(ctx == NULL)
+    return NULL;
+
+  asyncio_sslctx_t *as = sslctx_alloc(1);
+  as->hosts[0].ctx = ctx;
+  return as;
+}
 
 asyncio_sslctx_t *
 asyncio_sslctx_server_from_files(const char *priv_key_file,
@@ -1863,6 +1916,49 @@ asyncio_sslctx_server_from_files(const char *priv_key_file,
   return ctx;
 }
 
+static int
+select_vhost_cb(SSL *s, int *ad, void *arg)
+{
+  const char *servername = SSL_get_servername(s, TLSEXT_NAMETYPE_host_name);
+  if(servername == NULL)
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
+
+  asyncio_sslctx_t *as = arg;
+  for(size_t i = 0; i < as->num_hosts; i++) {
+    if(!strcasecmp(servername, as->hosts[i].hostname)) {
+      SSL_set_SSL_CTX(s, as->hosts[i].ctx);
+      return SSL_TLSEXT_ERR_OK;
+    }
+  }
+  return SSL_TLSEXT_ERR_ALERT_FATAL;
+}
+
+
+asyncio_sslctx_t *
+asyncio_sslctx_server_hosts(const asyncio_sslhost_t *hosts, size_t num_hosts)
+{
+  if(num_hosts == 0)
+    return NULL;
+
+  asyncio_sslctx_t *as = sslctx_alloc(num_hosts);
+  for(size_t i = 0; i < num_hosts; i++) {
+
+    SSL_CTX *ctx = ssl_ctx_from_pem(hosts[i].priv_key_pem, hosts[i].cert_pem);
+    if(ctx == NULL) {
+      sslctx_release(as);
+      return NULL;
+    }
+    as->hosts[i].ctx = ctx;
+    as->hosts[i].hostname = strdup(hosts[i].hostname);
+
+    if(i == 0) {
+      SSL_CTX_set_tlsext_servername_arg(ctx, as);
+      SSL_CTX_set_tlsext_servername_callback(ctx, select_vhost_cb);
+    }
+  }
+  return as;
+}
+
 
 
 
@@ -1871,8 +1967,7 @@ asyncio_sslctx_server_from_files(const char *priv_key_file,
 void
 asyncio_sslctx_free(asyncio_sslctx_t *ctx)
 {
-  SSL_CTX_free(ctx->ctx);
-  free(ctx);
+  sslctx_release(ctx);
 }
 
 asyncio_sslctx_t *
@@ -1892,10 +1987,10 @@ asyncio_sslctx_client(void)
 
   SSL_CTX_set_verify_depth(ctx, 3);
 
-  asyncio_sslctx_t *ret = calloc(1, sizeof(asyncio_sslctx_t));
-  ret->client = 1;
-  ret->ctx = ctx;
-  return ret;
+  asyncio_sslctx_t *as = sslctx_alloc(1);
+  as->client = 1;
+  as->hosts[0].ctx = ctx;
+  return as;
 }
 
 

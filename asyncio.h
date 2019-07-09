@@ -154,6 +154,15 @@ asyncio_sslctx_t *asyncio_sslctx_server_from_files(const char *priv_key_file,
 asyncio_sslctx_t *asyncio_sslctx_server_from_pem(const char *priv_key_pem,
                                                  const char *cert_pem);
 
+typedef struct {
+  const char *hostname;
+  const char *priv_key_pem;
+  const char *cert_pem;
+} asyncio_sslhost_t;
+
+asyncio_sslctx_t *asyncio_sslctx_server_hosts(const asyncio_sslhost_t *hosts,
+                                              size_t num_hosts);
+
 asyncio_sslctx_t *asyncio_sslctx_client(void);
 
 void asyncio_sslctx_free(asyncio_sslctx_t *ctx);
