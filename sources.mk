@@ -30,6 +30,7 @@ libsvc_SRCS += \
 	trap.c \
 	err.c \
 	aws.c \
+	acme.c \
 
 libsvc_INCS += \
 	libsvc.h \
