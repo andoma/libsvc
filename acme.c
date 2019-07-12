@@ -411,7 +411,7 @@ acme_request_cert_with_key(const acme_callbacks_t *callbacks, void *opaque,
                            const strvec_t *domains,
                            const char *contact, RSA *acme_key,
                            const char *directory_url,
-                           ntv_t *storage)
+                           ntv_t *storage, int keysize)
 {
   char errbuf[512];
   scoped_http_result(dir_result);
@@ -465,7 +465,7 @@ acme_request_cert_with_key(const acme_callbacks_t *callbacks, void *opaque,
     }
   }
 
-  RSA *cert_key = RSA_generate_key(4096, RSA_F4, NULL, NULL);
+  RSA *cert_key = RSA_generate_key(keysize, RSA_F4, NULL, NULL);
   scoped_char *csr = make_CSR(domains, cert_key);
 
   int r = acme_request_finalize(domains, new_order.hcr_json_result, csr,
@@ -480,7 +480,7 @@ static int
 acme_request_cert(const acme_callbacks_t *callbacks, void *opaque,
                   const strvec_t *domains, const char *contact,
                   const char *directory_url,
-                  ntv_t *storage)
+                  ntv_t *storage, int keysize)
 {
   scoped_char *acme_pem = callbacks->account_key_get(opaque);
   RSA *acme_key = rsa_from_private_pem(acme_pem);
@@ -498,7 +498,8 @@ acme_request_cert(const acme_callbacks_t *callbacks, void *opaque,
   }
 
   int r = acme_request_cert_with_key(callbacks, opaque, domains, contact,
-                                     acme_key, directory_url, storage);
+                                     acme_key, directory_url, storage,
+                                     keysize);
   RSA_free(acme_key);
   return r;
 }
@@ -570,7 +571,7 @@ set_params(ntv_t *c,
 ntv_t *
 acme_acquire_cert(const acme_callbacks_t *callbacks, void *opaque,
                   const strvec_t *domains, const char *contact,
-                  const char *directory_url)
+                  const char *directory_url, int keysize)
 {
   scoped_char *loaded_json = callbacks->load_cert(opaque);
   ntv_t *cert = loaded_json ? ntv_json_deserialize(loaded_json, NULL, 0) : NULL;
@@ -594,7 +595,7 @@ acme_acquire_cert(const acme_callbacks_t *callbacks, void *opaque,
 
   if(prev_attempt + 7200 < now) {
     acme_request_cert(callbacks, opaque, domains,
-                      contact, directory_url, cert);
+                      contact, directory_url, cert, keysize);
   }
 
   ntv_set_int64(cert, "attempt", now);

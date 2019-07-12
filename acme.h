@@ -25,4 +25,4 @@ struct strvec;
 
 ntv_t *acme_acquire_cert(const acme_callbacks_t *callbacks, void *opaque,
                          const strvec_t *domains, const char *contact,
-                         const char *directory_url);
+                         const char *directory_url, int keysize);
