@@ -41,7 +41,6 @@ typedef enum {
   NTV_DONT_FREE = 0x2,
   NTV_REFCOUNTED = 0x4,
   NTV_NOCASE = 0x8,
-  NTV_ALLOW_DUPS = 0x10,
 } ntv_flags;
 
 typedef enum {
@@ -119,7 +118,6 @@ ntv_t *ntv_create_list(void);
 void ntv_delete_field(const ntv_t *ntv, const char *key);
 
 ntv_t *ntv_nocase(ntv_t *ntv);
-ntv_t *ntv_allow_dups(ntv_t *ntv);
 
 void ntv_release(ntv_t *ntv);
 ntv_t *ntv_retain(ntv_t *ntv) __attribute__ ((warn_unused_result));
@@ -192,6 +190,24 @@ void ntv_set_bin(ntv_t *ntv, const char *key, const void *data,
 void ntv_set_bin_prealloc(ntv_t *ntv, const char *key, void *data,
                           size_t datalen);
 void ntv_set_ntv(ntv_t *ntv, const char *key, struct ntv *sub);
+
+
+// Add operations on maps (This is incompatible with most JSON parsers)
+
+void ntv_add_int(ntv_t *ntv, const char *key, int value);
+void ntv_add_int64(ntv_t *ntv, const char *key, int64_t value);
+void ntv_add_double(ntv_t *ntv, const char *key, double value);
+void ntv_add_null(ntv_t *ntv, const char *key);
+void ntv_add_boolean(ntv_t *ntv, const char *key, bool value);
+void ntv_add_str(ntv_t *ntv, const char *key, const char *value);
+void ntv_add_strf(ntv_t *ntv, const char *key, const char *fmt, ...)
+   __attribute__ ((format (printf, 3, 4)));
+
+void ntv_add_bin(ntv_t *ntv, const char *key, const void *data,
+                 size_t datalen);
+void ntv_add_bin_prealloc(ntv_t *ntv, const char *key, void *data,
+                          size_t datalen);
+void ntv_add_ntv(ntv_t *ntv, const char *key, struct ntv *sub);
 
 // Set operations on lists
 

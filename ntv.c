@@ -65,13 +65,6 @@ ntv_nocase(ntv_t *ntv)
   return ntv;
 }
 
-ntv_t *
-ntv_allow_dups(ntv_t *ntv)
-{
-  ntv->ntv_flags |= NTV_ALLOW_DUPS;
-  return ntv;
-}
-
 
 static int
 nocase_strcmp(const char *s1, const char *s2)
@@ -245,12 +238,13 @@ ntv_detach_field(ntv_t *parent, const char *key)
 
 
 static ntv_t *
-ntv_field_name_prep(ntv_t *parent, const char *fieldname, ntv_type type)
+ntv_field_name_prep(ntv_t *parent, const char *fieldname, ntv_type type,
+                    int replace)
 {
   if(parent == NULL)
     return NULL;
 
-  if(!(parent->ntv_flags & NTV_ALLOW_DUPS)) {
+  if(replace) {
     ntv_t *f = ntv_field_name_find(parent, fieldname, -1);
     if(f != NULL) {
       ntv_field_clear(f, type);
@@ -400,31 +394,31 @@ ntv_get_mutable_list(ntv_t *n, const char *key)
 void
 ntv_set_int(ntv_t *ntv, const char *key, int value)
 {
-  ntv_field_name_prep(ntv, key, NTV_INT)->ntv_s64 = value;
+  ntv_field_name_prep(ntv, key, NTV_INT, 1)->ntv_s64 = value;
 }
 
 void
 ntv_set_int64(ntv_t *ntv, const char *key, int64_t value)
 {
-  ntv_field_name_prep(ntv, key, NTV_INT)->ntv_s64 = value;
+  ntv_field_name_prep(ntv, key, NTV_INT, 1)->ntv_s64 = value;
 }
 
 void
 ntv_set_double(ntv_t *ntv, const char *key, double value)
 {
-  ntv_field_name_prep(ntv, key, NTV_DOUBLE)->ntv_double = value;
+  ntv_field_name_prep(ntv, key, NTV_DOUBLE, 1)->ntv_double = value;
 }
 
 void
 ntv_set_null(ntv_t *ntv, const char *key)
 {
-  ntv_field_name_prep(ntv, key, NTV_NULL);
+  ntv_field_name_prep(ntv, key, NTV_NULL, 1);
 }
 
 void
 ntv_set_boolean(ntv_t *ntv, const char *key, bool value)
 {
-  ntv_field_name_prep(ntv, key, NTV_BOOLEAN)->ntv_boolean = value;
+  ntv_field_name_prep(ntv, key, NTV_BOOLEAN, 1)->ntv_boolean = value;
 }
 
 void
@@ -433,14 +427,14 @@ ntv_set_str(ntv_t *ntv, const char *key, const char *value)
   if(value == NULL)
     ntv_delete_field(ntv, key);
   else
-    ntv_field_name_prep(ntv, key, NTV_STRING)->ntv_string = strdup(value);
+    ntv_field_name_prep(ntv, key, NTV_STRING, 1)->ntv_string = strdup(value);
 }
 
 void
 ntv_set_strf(ntv_t *m, const char *key, const char *fmt, ...)
 {
   va_list ap;
-  ntv_t *f = ntv_field_name_prep(m, key, NTV_STRING);
+  ntv_t *f = ntv_field_name_prep(m, key, NTV_STRING, 1);
   va_start(ap, fmt);
   if(vasprintf(&f->ntv_string, fmt, ap) == -1)
     f->ntv_type = NTV_NULL;
@@ -453,7 +447,7 @@ ntv_set_bin(ntv_t *ntv, const char *key, const void *data, size_t datalen)
   if(data == NULL) {
     ntv_delete_field(ntv, key);
   } else {
-    ntv_t *f = ntv_field_name_prep(ntv, key, NTV_BINARY);
+    ntv_t *f = ntv_field_name_prep(ntv, key, NTV_BINARY, 1);
     f->ntv_bin = malloc(datalen);
     memcpy(f->ntv_bin, data, datalen);
     f->ntv_binsize = datalen;
@@ -467,7 +461,7 @@ ntv_set_bin_prealloc(ntv_t *ntv, const char *key, void *data, size_t datalen)
   if(data == NULL) {
     ntv_delete_field(ntv, key);
   } else {
-    ntv_t *f = ntv_field_name_prep(ntv, key, NTV_BINARY);
+    ntv_t *f = ntv_field_name_prep(ntv, key, NTV_BINARY, 1);
     f->ntv_bin = data;
     f->ntv_binsize = datalen;
   }
@@ -478,6 +472,94 @@ void
 ntv_set_ntv(ntv_t *n, const char *key, ntv_t *sub)
 {
   ntv_delete_field(n, key);
+  if(sub == NULL)
+    return;
+  free(sub->ntv_name);
+  sub->ntv_name = key ? strdup(key) : NULL;
+
+  TAILQ_INSERT_TAIL(&n->ntv_children, sub, ntv_link);
+  sub->ntv_parent = n;
+}
+
+
+
+
+void
+ntv_add_int(ntv_t *ntv, const char *key, int value)
+{
+  ntv_field_name_prep(ntv, key, NTV_INT, 0)->ntv_s64 = value;
+}
+
+void
+ntv_add_int64(ntv_t *ntv, const char *key, int64_t value)
+{
+  ntv_field_name_prep(ntv, key, NTV_INT, 0)->ntv_s64 = value;
+}
+
+void
+ntv_add_double(ntv_t *ntv, const char *key, double value)
+{
+  ntv_field_name_prep(ntv, key, NTV_DOUBLE, 0)->ntv_double = value;
+}
+
+void
+ntv_add_null(ntv_t *ntv, const char *key)
+{
+  ntv_field_name_prep(ntv, key, NTV_NULL, 0);
+}
+
+void
+ntv_add_boolean(ntv_t *ntv, const char *key, bool value)
+{
+  ntv_field_name_prep(ntv, key, NTV_BOOLEAN, 0)->ntv_boolean = value;
+}
+
+void
+ntv_add_str(ntv_t *ntv, const char *key, const char *value)
+{
+  if(value != NULL)
+    ntv_field_name_prep(ntv, key, NTV_STRING, 0)->ntv_string = strdup(value);
+}
+
+void
+ntv_add_strf(ntv_t *m, const char *key, const char *fmt, ...)
+{
+  va_list ap;
+  ntv_t *f = ntv_field_name_prep(m, key, NTV_STRING, 0);
+  va_start(ap, fmt);
+  if(vasprintf(&f->ntv_string, fmt, ap) == -1)
+    f->ntv_type = NTV_NULL;
+  va_end(ap);
+}
+
+void
+ntv_add_bin(ntv_t *ntv, const char *key, const void *data, size_t datalen)
+{
+  if(data == NULL)
+    return;
+
+  ntv_t *f = ntv_field_name_prep(ntv, key, NTV_BINARY, 0);
+  f->ntv_bin = malloc(datalen);
+  memcpy(f->ntv_bin, data, datalen);
+  f->ntv_binsize = datalen;
+}
+
+
+void
+ntv_add_bin_prealloc(ntv_t *ntv, const char *key, void *data, size_t datalen)
+{
+  if(data == NULL)
+    return;
+
+  ntv_t *f = ntv_field_name_prep(ntv, key, NTV_BINARY, 0);
+  f->ntv_bin = data;
+  f->ntv_binsize = datalen;
+}
+
+
+void
+ntv_add_ntv(ntv_t *n, const char *key, ntv_t *sub)
+{
   if(sub == NULL)
     return;
   free(sub->ntv_name);
@@ -583,7 +665,6 @@ ntv_list(ntv_t *f, ...)
 }
 
 
-
 static void
 ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
 {
@@ -614,6 +695,36 @@ ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
 }
 
 
+static void
+ntv_add_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
+{
+  switch(f->ntv_type) {
+  case NTV_NULL:
+    ntv_add_null(dst, dstname);
+    break;
+  case NTV_BOOLEAN:
+    ntv_add_boolean(dst, dstname, f->ntv_boolean);
+    break;
+  case NTV_MAP:
+  case NTV_LIST:
+    ntv_add_ntv(dst, dstname, ntv_copy(f));
+    break;
+  case NTV_STRING:
+    ntv_add_str(dst, dstname, f->ntv_string);
+    break;
+  case NTV_BINARY:
+    ntv_add_bin(dst, dstname, f->ntv_bin, f->ntv_binsize);
+    break;
+  case NTV_INT:
+    ntv_add_int64(dst, dstname, f->ntv_s64);
+    break;
+  case NTV_DOUBLE:
+    ntv_add_double(dst, dstname, f->ntv_double);
+    break;
+  }
+}
+
+
 void
 ntv_merge(ntv_t *dst, const ntv_t *src)
 {
@@ -635,8 +746,12 @@ ntv_copy(const ntv_t *src)
     return NULL;
 
   ntv_t *dst = ntv_create(src->ntv_type);
-  dst->ntv_flags |= src->ntv_flags & (NTV_NOCASE | NTV_ALLOW_DUPS);
-  ntv_merge(dst, src);
+  dst->ntv_flags |= src->ntv_flags & (NTV_NOCASE);
+
+  const ntv_t *f;
+  TAILQ_FOREACH(f, &src->ntv_children, ntv_link) {
+    ntv_add_from_field(dst, f->ntv_name, f);
+  }
   return dst;
 }
 
