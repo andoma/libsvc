@@ -121,7 +121,7 @@ void
 ntv_json_serialize_ex(const ntv_t *msg, mbuf_t *m, int flags, int precision)
 {
   ntv_json_write(msg, m, 0, flags, precision);
-  if(flags & NTV_JSON_F_PRETTY)
+  if(flags & (NTV_JSON_F_PRETTY | NTV_JSON_F_TRAILING_LF))
     mbuf_append(m, "\n", 1);
 }
 
