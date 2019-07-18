@@ -76,7 +76,7 @@ generate_request(const char *url,
             NULL);
 
   if(kid == NULL)
-    ntv_set(protected, "jwk", make_jwk(rsa));
+    ntv_set_ntv(protected, "jwk", make_jwk(rsa));
 
   scoped_char *protected_json = ntv_json_serialize_to_str(protected, 0);
   scoped_char *protected_b64  = b64s(protected_json);
@@ -388,8 +388,8 @@ acme_request_finalize(const strvec_t *domains, const ntv_t *order,
         return -1;
 
       scoped_char *pkey_pem = rsa_to_pem(cert_key);
-      ntv_set(storage, "pkey", pkey_pem);
-      ntv_set(storage, "cert", cert_req.hcr_body);
+      ntv_set_str(storage, "pkey", pkey_pem);
+      ntv_set_str(storage, "cert", cert_req.hcr_body);
 
       scoped_char *joined_domains = strvec_join(domains, ",");
       trace(LOG_NOTICE, "ACME: New cert for %s expires in %d days",
@@ -441,10 +441,10 @@ acme_request_cert_with_key(const acme_callbacks_t *callbacks, void *opaque,
   ntv_t *identifiers = ntv_create_list();
 
   for(int i = 0; i < domains->count; i++) {
-    ntv_set(identifiers, NULL,
-            ntv_map("type", ntv_str("dns"),
-                    "value", ntv_str(strvec_get(domains, i)),
-                    NULL));
+    ntv_set_ntv(identifiers, NULL,
+                ntv_map("type", ntv_str("dns"),
+                        "value", ntv_str(strvec_get(domains, i)),
+                        NULL));
   }
 
   scoped_http_result(new_order);
@@ -554,15 +554,15 @@ set_params(ntv_t *c,
            const strvec_t *domains, const char *contact,
            const char *directory_url)
 {
-  ntv_set(c, "contact", contact);
-  ntv_set(c, "directory_url", directory_url);
+  ntv_set_str(c, "contact", contact);
+  ntv_set_str(c, "directory_url", directory_url);
 
   ntv_t *list = ntv_create_list();
   for(int i = 0; i < domains->count; i++) {
-    ntv_set(list, NULL, strvec_get(domains, i));
+    ntv_set_str(list, NULL, strvec_get(domains, i));
   }
 
-  ntv_set(c, "domains", list);
+  ntv_set_ntv(c, "domains", list);
 }
 
 
