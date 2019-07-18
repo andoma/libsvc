@@ -60,11 +60,11 @@ LIST_HEAD(asyncio_worker_list, asyncio_worker);
 
 static LIST_HEAD(, asyncio_fd) deferred_processings;
 
+#if defined(WITH_OPENSSL)
 struct asyncio_sslctx_host {
   char *hostname;
   SSL_CTX *ctx;
 };
-
 struct asyncio_sslctx {
   atomic_t refcount;
   unsigned int client;
@@ -106,6 +106,7 @@ sslctx_release(asyncio_sslctx_t *ctx)
   }
   free(ctx);
 }
+#endif
 
 /**
  *
@@ -490,7 +491,10 @@ asyncio_fd_release(asyncio_fd_t *af)
   mbuf_clear(&af->af_recvq);
   free(af->af_hostname);
   free(af->af_title);
+
+#if defined(WITH_OPENSSL)
   sslctx_release(af->af_sslctx);
+#endif
   free(af);
 }
 
@@ -1973,12 +1977,6 @@ asyncio_sslctx_server_hosts(const asyncio_sslhost_t *hosts, size_t num_hosts)
 
 
 
-void
-asyncio_sslctx_free(asyncio_sslctx_t *ctx)
-{
-  sslctx_release(ctx);
-}
-
 asyncio_sslctx_t *
 asyncio_sslctx_client(void)
 {
@@ -2002,6 +2000,32 @@ asyncio_sslctx_client(void)
   return as;
 }
 
+void
+asyncio_sslctx_free(asyncio_sslctx_t *ctx)
+{
+  sslctx_release(ctx);
+}
 
+#else
+
+asyncio_sslctx_t *
+asyncio_sslctx_client(void)
+{
+  return NULL;
+}
+
+asyncio_sslctx_t *
+asyncio_sslctx_server_from_files(const char *priv_key_file,
+                                 const char *cert_file)
+{
+  return NULL;
+}
+
+
+void
+asyncio_sslctx_free(asyncio_sslctx_t *ctx)
+{
+}
 
 #endif
+
