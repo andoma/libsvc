@@ -2114,6 +2114,10 @@ websocket_session_start(http_request_t *hr,
 
   http_send_common_headers(hr, &out, time(NULL));
 
+  http_arg_t *ra;
+  TAILQ_FOREACH(ra, &hr->hr_response_headers, link)
+    mbuf_qprintf(&out, "%s: %s\r\n", ra->key, ra->val);
+
   mbuf_qprintf(&out, "\r\n");
   asyncio_sendq(hc->hc_af, &out, 0, 0);
 
