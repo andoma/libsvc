@@ -14,6 +14,13 @@ extern ws_client_t *ws_client_connect(const char *hostname, int port,
                                       const char *username,
                                       const char *password);
 
+extern ws_client_t *ws_client_connect_url(const char *url,
+                                          void (*input)(void *aux, int opcode,
+                                                        const void *buf,
+                                                        size_t len),
+                                          void *aux, int timeout,
+                                          char *errbuf, size_t errlen);
+
 extern int ws_client_send(ws_client_t *wsc, int opcode,
                           const void *data, size_t len);
 

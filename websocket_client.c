@@ -17,6 +17,7 @@
 #include "misc.h"
 #include "bytestream.h"
 #include "websocket.h"
+#include "http_parser.h"
 
 /**
  *
@@ -441,6 +442,57 @@ ws_client_connect(const char *hostname, int port, const char *path,
 
   atomic_set(&wsc->wsc_refcount, 1);
   return wsc;
+}
+
+
+
+static char *
+get_field(const struct http_parser_url *p, const char *url,
+          enum http_parser_url_fields field)
+{
+  if(!(p->field_set & 1 << field))
+    return NULL;
+  char *buf = malloc(p->field_data[field].len + 1);
+  buf[p->field_data[field].len] = 0;
+  return memcpy(buf, url + p->field_data[field].off, p->field_data[field].len);
+}
+
+
+
+/**
+ *
+ */
+ws_client_t *
+ws_client_connect_url(const char *url,
+                      void (*input)(void *aux, int opcode,
+                                    const void *buf, size_t len),
+                      void *aux, int timeout,
+                      char *errbuf, size_t errlen)
+{
+  struct http_parser_url p;
+  http_parser_url_init(&p);
+  if(http_parser_parse_url(url, strlen(url), 0, &p)) {
+    snprintf(errbuf, errlen, "URL doesn't parse");
+    return NULL;
+  }
+
+  scoped_char *schema   = get_field(&p, url, UF_SCHEMA);
+  if(schema == NULL) {
+    snprintf(errbuf, errlen, "Missing schema");
+    return NULL;
+  }
+
+  scoped_char *hostname = get_field(&p, url, UF_HOST);
+  scoped_char *path     = get_field(&p, url, UF_PATH);
+  const int is_tls = !strcmp(schema, "wss");
+
+  const int port = p.port ?: (is_tls ? 443 : 80);
+
+  tcp_ssl_info_t tsi = {};
+  return ws_client_connect(hostname, port, path,
+                           is_tls ? &tsi : NULL,
+                           input, aux, timeout, errbuf, errlen,
+                           NULL, NULL);
 }
 
 
