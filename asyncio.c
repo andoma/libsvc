@@ -1085,6 +1085,9 @@ asyncio_loop(void *aux)
 
     for(i = 0; i < r; i++) {
       asyncio_fd_t *af = ev[i].data.ptr;
+      if(af->af_fd == -1)
+        continue;
+
       if(ev[i].events & EPOLLIN) {
 	af->af_pollin(af);
       }
