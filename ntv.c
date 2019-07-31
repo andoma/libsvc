@@ -533,6 +533,19 @@ ntv_add_strf(ntv_t *m, const char *key, const char *fmt, ...)
 }
 
 void
+ntv_add_str_prealloc(ntv_t *parent, char *key, char *value)
+{
+  if(parent == NULL)
+    return;
+
+  ntv_t *f = ntv_create(NTV_STRING);
+  f->ntv_name = key;
+  TAILQ_INSERT_TAIL(&parent->ntv_children, f, ntv_link);
+  f->ntv_parent = parent;
+  f->ntv_string = value;
+}
+
+void
 ntv_add_bin(ntv_t *ntv, const char *key, const void *data, size_t datalen)
 {
   if(data == NULL)

@@ -202,6 +202,7 @@ void ntv_add_boolean(ntv_t *ntv, const char *key, bool value);
 void ntv_add_str(ntv_t *ntv, const char *key, const char *value);
 void ntv_add_strf(ntv_t *ntv, const char *key, const char *fmt, ...)
    __attribute__ ((format (printf, 3, 4)));
+void ntv_add_str_prealloc(ntv_t *ntv, char *key, char *value);
 
 void ntv_add_bin(ntv_t *ntv, const char *key, const void *data,
                  size_t datalen);
