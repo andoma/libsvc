@@ -26,14 +26,13 @@ extern "C" {
 
 /* Also update SONAME in the Makefile whenever you change these. */
 #define HTTP_PARSER_VERSION_MAJOR 2
-#define HTTP_PARSER_VERSION_MINOR 7
-#define HTTP_PARSER_VERSION_PATCH 1
+#define HTTP_PARSER_VERSION_MINOR 9
+#define HTTP_PARSER_VERSION_PATCH 2
 
-#include <sys/types.h>
+#include <stddef.h>
 #if defined(_WIN32) && !defined(__MINGW32__) && \
   (!defined(_MSC_VER) || _MSC_VER<1600) && !defined(__WINE__)
 #include <BaseTsd.h>
-#include <stddef.h>
 typedef __int8 int8_t;
 typedef unsigned __int8 uint8_t;
 typedef __int16 int16_t;
@@ -202,6 +201,8 @@ enum http_status
   /* RFC-2068, section 19.6.1.2 */  \
   XX(31, LINK,        LINK)         \
   XX(32, UNLINK,      UNLINK)       \
+  /* icecast */                     \
+  XX(33, SOURCE,      SOURCE)       \
 
 enum http_method
   {
@@ -406,6 +407,9 @@ int http_should_keep_alive(const http_parser *parser);
 /* Returns a string version of the HTTP method. */
 const char *http_method_str(enum http_method m);
 
+/* Returns a string version of the HTTP status code. */
+const char *http_status_str(enum http_status s);
+
 /* Return a string name of the given error */
 const char *http_errno_name(enum http_errno err);
 
@@ -425,6 +429,9 @@ void http_parser_pause(http_parser *parser, int paused);
 
 /* Checks if this is the final chunk of the body. */
 int http_body_is_final(const http_parser *parser);
+
+/* Change the maximum header size provided at compile time. */
+void http_parser_set_max_header_size(uint32_t size);
 
 #ifdef __cplusplus
 }
