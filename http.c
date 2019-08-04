@@ -453,7 +453,7 @@ http_send_chunk(http_request_t *hr, const void *data, size_t len)
 
 
 int
-http_wait_send_buffe(http_request_t *hr, int bytes)
+http_wait_send_buffer(http_request_t *hr, int bytes)
 {
   if(hr->hr_connection == NULL)
     return 0;

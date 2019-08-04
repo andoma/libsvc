@@ -143,7 +143,7 @@ struct asyncio_fd *http_connection_get_af(struct http_connection *hc);
 
 int http_send_chunk(http_request_t *hc, const void *data, size_t len);
 
-int http_wait_send_buffe(http_request_t *hr, int bytes);
+int http_wait_send_buffer(http_request_t *hr, int bytes);
 
 typedef int (http_callback_t)(http_request_t *hc,
 			      const char *remain, void *opaque);

@@ -599,7 +599,7 @@ do_error(asyncio_fd_t *af, int error)
 {
   if(af->af_flags & ASYNCIO_FLAG_THREAD_SAFE) {
     pthread_mutex_lock(&af->af_sendq_mutex);
-    af->af_pending_error = error;
+    af->af_pending_error = error ?: -1;
     pthread_cond_signal(&af->af_sendq_cond);
     pthread_mutex_unlock(&af->af_sendq_mutex);
   }
@@ -635,7 +635,7 @@ do_read(asyncio_fd_t *af)
     if(r == 0) {
       if(af->af_recvq.mq_size)
         af->af_bytes_avail(af->af_opaque, &af->af_recvq);
-      do_error(af, ECONNRESET);
+      do_error(af, 0);
       return;
     }
 
