@@ -390,8 +390,9 @@ mod_poll_flags(asyncio_fd_t *af, int set, int clr)
   int r = epoll_ctl(epfd, op, af->af_fd, &e);
 
   if(r) {
-    fprintf(stderr, "epoll_ctl(%d, %d, %x) -- %s\n",
-	    op, af->af_fd, e.events, strerror(errno));
+    fprintf(stderr, "epoll_ctl(%d, %d, %x) for %s -- %s\n",
+	    op, af->af_fd, e.events, af->af_title ?: "<noname>",
+            strerror(errno));
   }
 
   af->af_epoll_flags = f;
