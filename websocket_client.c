@@ -484,6 +484,14 @@ ws_client_connect_url(const char *url,
 
   scoped_char *hostname = get_field(&p, url, UF_HOST);
   scoped_char *path     = get_field(&p, url, UF_PATH);
+  scoped_char *query    = get_field(&p, url, UF_QUERY);
+
+  if(query != NULL) {
+    char *r = fmt("%s?%s", path, query);
+    free(path);
+    path = r;
+  }
+
   const int is_tls = !strcmp(schema, "wss");
 
   const int port = p.port ?: (is_tls ? 443 : 80);
