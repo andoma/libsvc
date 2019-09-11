@@ -418,6 +418,20 @@ mbuf_appendq(mbuf_t *mq, mbuf_t *src)
  *
  */
 void
+mbuf_copyq(mbuf_t *mq, const mbuf_t *src)
+{
+  const mbuf_data_t *md;
+  TAILQ_FOREACH(md, &src->mq_buffers, md_link) {
+    mbuf_append(mq, md->md_data + md->md_data_off,
+                md->md_data_len - md->md_data_off);
+  }
+}
+
+
+/**
+ *
+ */
+void
 mbuf_prependq(mbuf_t *mq, mbuf_t *src)
 {
   mbuf_data_t *md;

@@ -99,6 +99,8 @@ void mbuf_appendq(mbuf_t *m, mbuf_t *src);
 
 void mbuf_prependq(mbuf_t *mq, mbuf_t *src);
 
+void mbuf_copyq(mbuf_t *mq, const mbuf_t *src);
+
 void mbuf_append_and_escape_xml(mbuf_t *m, const char *str);
 
 void mbuf_append_and_escape_url(mbuf_t *m, const char *s);
