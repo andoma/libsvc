@@ -240,7 +240,7 @@ typedef struct http_streamed_file {
 
 
 static void *
-http_stream_file_thread(void *aux)
+http_read_file_thread(void *aux)
 {
   http_streamed_file_t *hsf = aux;
 
@@ -280,7 +280,7 @@ http_read_file(const char *url, void *opaque,
   pthread_attr_t attr;
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-  pthread_create(&hsf->hsf_thread, &attr, http_stream_file_thread, hsf);
+  pthread_create(&hsf->hsf_thread, &attr, http_read_file_thread, hsf);
   pthread_attr_destroy(&attr);
 
   return fp;
