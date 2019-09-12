@@ -31,6 +31,8 @@ libsvc_SRCS += \
 	err.c \
 	aws.c \
 	acme.c \
+	fpipe.c \
+
 
 libsvc_INCS += \
 	libsvc.h \

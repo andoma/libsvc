@@ -44,7 +44,7 @@
 #include "dbl.h"
 #include "mbuf.h"
 #include "err.h"
-
+#include "fpipe.h"
 
 char *
 http_client_ntv_to_args(const ntv_t *ntv)
@@ -227,143 +227,38 @@ typedef struct http_streamed_file {
   pthread_cond_t hsf_cond;
   char *hsf_url;
 
-  mbuf_t hsf_buffer;
-  int hsf_open;
-  int hsf_eof;
-  int hsf_need;
-
-  int hsf_read_status;
-  char hsf_errmsg[512];
-
-  int hsf_written;
-  int hsf_read;
-
   http_client_auth_cb_t *hsf_auth_cb;
   void *hsf_opaque;
   int hsf_flags;
 
-  void *hsf_handle;
+  FILE *hsf_writer;
+
+  fpipe_t *hsf_pipe; // Valid as long as we keep hsf_writer open
 
 } http_streamed_file_t;
 
 
-static int
-hsf_write(void *aux, const char *data, int size)
-{
-  http_streamed_file_t *hsf = aux;
-
-  pthread_mutex_lock(&hsf->hsf_mutex);
-  while(hsf->hsf_buffer.mq_size > hsf->hsf_need && hsf->hsf_open)
-    pthread_cond_wait(&hsf->hsf_cond, &hsf->hsf_mutex);
-  mbuf_append(&hsf->hsf_buffer, data, size);
-  hsf->hsf_written += size;
-  pthread_cond_signal(&hsf->hsf_cond);
-  pthread_mutex_unlock(&hsf->hsf_mutex);
-
-  if(!hsf->hsf_open)
-    return 0;
-  return size;
-}
-
-#ifndef __APPLE__
-static ssize_t
-hsf_write2(void *cookie, const char *buf, size_t size)
-{
-  return hsf_write(cookie, buf, size);
-}
-
-
-static cookie_io_functions_t hsf_write_functions = {
-  .write  = hsf_write2,
-};
-#endif
 
 static void *
 http_stream_file_thread(void *aux)
 {
   http_streamed_file_t *hsf = aux;
 
-  FILE *fp;
-#ifdef __APPLE__
-  fp = funopen(hsf, NULL, hsf_write, NULL, NULL);
-#else
-  fp = fopencookie(hsf, "wb", hsf_write_functions);
-#endif
-
   scoped_http_result(hcr);
-  hsf->hsf_read_status =
+  int r =
     http_client_request(&hcr, hsf->hsf_url,
-                        HCR_OUTPUTFILE(fp),
-                        HCR_ERRBUF(hsf->hsf_errmsg, sizeof(hsf->hsf_errmsg)),
+                        HCR_OUTPUTFILE(hsf->hsf_writer),
                         HCR_FLAGS(hsf->hsf_flags),
                         HCR_AUTHCB(hsf->hsf_auth_cb, hsf->hsf_opaque),
                         NULL);
+  if(r)
+    fpipe_set_error(hsf->hsf_pipe);
 
-  fclose(fp);
-
-  pthread_mutex_lock(&hsf->hsf_mutex);
-  hsf->hsf_eof = 1;
-  pthread_cond_signal(&hsf->hsf_cond);
-  pthread_mutex_unlock(&hsf->hsf_mutex);
-
-  return NULL;
-}
-
-
-
-static int
-hsf_read(void *aux, char *data, int size)
-{
-  http_streamed_file_t *hsf = aux;
-  pthread_mutex_lock(&hsf->hsf_mutex);
-  hsf->hsf_need = MIN(size, 65536);
-  pthread_cond_signal(&hsf->hsf_cond);
-  while(!hsf->hsf_eof && hsf->hsf_buffer.mq_size < hsf->hsf_need) {
-    pthread_cond_wait(&hsf->hsf_cond, &hsf->hsf_mutex);
-  }
-
-  int r = mbuf_read(&hsf->hsf_buffer, data, size);
-  hsf->hsf_read += r;
-  pthread_cond_signal(&hsf->hsf_cond);
-  pthread_mutex_unlock(&hsf->hsf_mutex);
-  return r;
-}
-
-
-static int
-hsf_close(void *aux)
-{
-  http_streamed_file_t *hsf = aux;
-
-  pthread_mutex_lock(&hsf->hsf_mutex);
-  hsf->hsf_open = 0;
-  pthread_cond_signal(&hsf->hsf_cond);
-  pthread_mutex_unlock(&hsf->hsf_mutex);
-
-
-  pthread_join(hsf->hsf_thread, NULL);
-
-  mbuf_clear(&hsf->hsf_buffer);
+  fclose(hsf->hsf_writer);
   free(hsf->hsf_url);
   free(hsf);
-  return 0;
+  return NULL;
 }
-
-
-#ifndef __APPLE__
-
-static ssize_t
-hsf_read2(void *fh, char *buf, size_t size)
-{
-  return hsf_read(fh, buf, size);
-}
-
-
-static cookie_io_functions_t hsf_read_functions = {
-  .read  = hsf_read2,
-  .close = hsf_close,
-};
-#endif
 
 /**
  *
@@ -378,19 +273,15 @@ http_read_file(const char *url, void *opaque,
   hsf->hsf_auth_cb = auth_cb;
   hsf->hsf_flags = flags;
 
-  pthread_mutex_init(&hsf->hsf_mutex, NULL);
-  pthread_cond_init(&hsf->hsf_cond, NULL);
-  hsf->hsf_open = 1;
-  mbuf_init(&hsf->hsf_buffer);
   FILE *fp;
-#ifdef __APPLE__
-  fp = funopen(hsf, hsf_read, NULL, NULL, hsf_close);
-#else
-  fp = fopencookie(hsf, "rb", hsf_read_functions);
-#endif
-  if(fp != NULL) {
-    setvbuf(fp, NULL, _IOFBF, 65536);
-  }
-  pthread_create(&hsf->hsf_thread, NULL, http_stream_file_thread, hsf);
+
+  hsf->hsf_pipe = fpipe(&fp, &hsf->hsf_writer);
+
+  pthread_attr_t attr;
+  pthread_attr_init(&attr);
+  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+  pthread_create(&hsf->hsf_thread, &attr, http_stream_file_thread, hsf);
+  pthread_attr_destroy(&attr);
+
   return fp;
 }
