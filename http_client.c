@@ -317,6 +317,7 @@ hsf_read(void *aux, char *data, int size)
   http_streamed_file_t *hsf = aux;
   pthread_mutex_lock(&hsf->hsf_mutex);
   hsf->hsf_need = MIN(size, 65536);
+  pthread_cond_signal(&hsf->hsf_cond);
   while(!hsf->hsf_eof && hsf->hsf_buffer.mq_size < hsf->hsf_need) {
     pthread_cond_wait(&hsf->hsf_cond, &hsf->hsf_mutex);
   }
