@@ -369,8 +369,8 @@ static cookie_io_functions_t hsf_read_functions = {
  *
  */
 FILE *
-http_stream_file(const char *url, void *opaque,
-                 http_client_auth_cb_t *auth_cb, int flags)
+http_read_file(const char *url, void *opaque,
+               http_client_auth_cb_t *auth_cb, int flags)
 {
   http_streamed_file_t *hsf = calloc(1, sizeof(http_streamed_file_t));
   hsf->hsf_url = strdup(url);
