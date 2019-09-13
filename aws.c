@@ -10,6 +10,7 @@
 #include "misc.h"
 #include "strvec.h"
 #include "dbl.h"
+#include "http_client.h"
 
 #include "aws.h"
 
@@ -223,6 +224,164 @@ aws_sig4_gen_auth_header(const char *http_method,
              signed_headers,
              signature);
 }
+
+
+char *
+aws_s3_make_url(const char *method,
+                const char *region,
+                const char *bucket,
+                const char *path,
+                const char *key_id,
+                const char *key_secret)
+{
+  if(*path == '/')
+    path++;
+  scoped_char *canonical_path = fmt("/%s/%s", bucket, path);
+  scoped_char *host = fmt("s3-%s.amazonaws.com", region);
+  time_t timestamp = time(NULL);
+
+  scoped_char *isodate = aws_isodate(timestamp);
+
+  scoped_char *credential = fmt("%s/%8.8s/%s/s3/aws4_request",
+                                key_id, isodate, region);
+
+  scoped_ntv_t *query_args =
+    ntv_map("X-Amz-Algorithm", ntv_str("AWS4-HMAC-SHA256"),
+            "X-Amz-Credential", ntv_str(credential),
+            "X-Amz-Date", ntv_str(isodate),
+            "X-Amz-Expires", ntv_int(86400),
+            "X-Amz-SignedHeaders", ntv_str("host"),
+            NULL);
+
+  scoped_ntv_t *headers = ntv_map("host", ntv_str(host),
+                                  NULL);
+  time_t now = time(NULL);
+  scoped_char *signature =
+    aws_sig4_gen_signature(method,
+                           canonical_path,
+                           query_args,
+                           headers,
+                           "UNSIGNED-PAYLOAD",
+                           now,
+                           key_id,
+                           key_secret,
+                           "s3",
+                           region);
+
+  ntv_set(query_args, "X-Amz-Signature", signature);
+
+  scoped_char *args = http_client_ntv_to_args(query_args);
+
+  return fmt("https://%s%s?%s", host, canonical_path, args);
+}
+
+
+const char *
+aws_invoked_transient_error(const ntv_t *response)
+{
+  const ntv_t *error = ntv_get_map(response, "error");
+  if(error == NULL)
+    return NULL;
+  const char *type = ntv_get_str(error, "__type");
+  if(type == NULL || strcmp(type, "Transient"))
+    return NULL;
+  return ntv_get_str(error, "Message") ?: "Unspecified Transient Error";
+}
+
+const char *
+aws_invoked_error(const ntv_t *response)
+{
+  const ntv_t *error = ntv_get_map(response, "error");
+  if(error == NULL)
+    return NULL;
+  return ntv_get_str(error, "Message") ?: "Unspecified Error";
+}
+
+const ntv_t *
+aws_invoked_result(const ntv_t *response)
+{
+  return ntv_get_map(response, "result");
+}
+
+
+ntv_t *
+aws_invoke(const char *region,
+           const char *service,
+           const char *target,
+           const char *aws_key_id,
+           const char *aws_key_secret,
+           const char *security_token,
+           ntv_t *req)
+{
+  char errbuf[512];
+  scoped_char *body = ntv_json_serialize_to_str(req, 0);
+  ntv_release(req);
+  scoped_char *bodyhash = aws_SHA256_hex(body, strlen(body));
+
+  scoped_char *host = fmt("%s.%s.amazonaws.com", service, region);
+
+  time_t now = time(NULL);
+  scoped_char *isodate = aws_isodate(now);
+
+  scoped_ntv_t *headers =
+    ntv_map("host", ntv_str(host),
+            "x-amz-target", ntv_str(target),
+            "x-amz-date", ntv_str(isodate),
+            "x-amz-security-token", ntv_str(security_token),
+            NULL);
+
+  scoped_char *auth_header =
+    aws_sig4_gen_auth_header("POST", "/", NULL, headers, bodyhash, now,
+                             aws_key_id, aws_key_secret, service, region);
+
+  scoped_char *url = fmt("https://%s", host);
+
+  scoped_http_result(hcr);
+  if(http_client_request(&hcr, url,
+                         HCR_TIMEOUT(20),
+                         HCR_FLAGS(HCR_DECODE_BODY_AS_JSON |
+                                   HCR_NO_FAIL_ON_ERROR),
+                         HCR_ERRBUF(errbuf, sizeof(errbuf)),
+                         HCR_HEADER("x-amz-target", target),
+                         HCR_HEADER("x-amz-date", isodate),
+                         HCR_HEADER("x-amz-security-token", security_token),
+                         HCR_HEADER("x-amz-content-sha256", bodyhash),
+                         HCR_HEADER("authorization", auth_header),
+                         HCR_POSTDATA(body, strlen(body),
+                                     "application/x-amz-json-1.1"),
+                         NULL)) {
+    return ntv_map("error", ntv_map("__type", ntv_str("Transient"),
+                                    "Message", ntv_str(errbuf),
+                                    NULL),
+                   NULL);
+  }
+
+  if(hcr.hcr_json_result != NULL) {
+
+    ntv_t *result = hcr.hcr_json_result;
+    hcr.hcr_json_result = NULL;
+
+    if(hcr.hcr_http_status >= 500) {
+      ntv_set(result, "__type", "Transient");
+    }
+
+    if(hcr.hcr_http_status >= 400) {
+      return ntv_map("error", result,
+                     NULL);
+    }
+    return ntv_map("result", result,
+                   NULL);
+  }
+
+  return ntv_map("error", ntv_map("__type", hcr.hcr_http_status >= 500 ?
+                                  ntv_str("Transient") : NULL,
+                                  "Message", ntv_str(hcr.hcr_body),
+                                  NULL),
+                 NULL);
+}
+
+
+
 
 
 void

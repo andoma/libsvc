@@ -33,7 +33,7 @@
 #include <sys/param.h>
 #include "ntv.h"
 #include "misc.h"
-
+#include "dbl.h"
 
 ntv_t *
 ntv_create(ntv_type type)
@@ -299,10 +299,6 @@ ntv_ret_double(const ntv_t *f, double default_value)
     return f->ntv_double;
   case NTV_BOOLEAN:
     return f->ntv_boolean;
-#if 0
-  case NTV_STRING:
-    return strtoll(f->ntv_str, NULL, 0);
-#endif
   default:
     return default_value;
   }
