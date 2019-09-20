@@ -23,6 +23,7 @@ libsvc_SRCS += \
 	ntv_binary.c \
 	ntv_msgpack.c \
 	ntv_cbor.c \
+	ntv_xml.c \
 	intvec.c \
 	strvec.c \
 	murmur3.c \

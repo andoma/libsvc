@@ -264,6 +264,8 @@ ntv_t *ntv_cbor_deserialize(const void *data, size_t length,
 ntv_t *ntv_cbor_deserialize_nocopy(const void *data, size_t length,
                                    char *errmsg, size_t errlen);
 
+ntv_t *ntv_xml_deserialize(const char *src, char *errmsg, size_t errlen);
+
 
 #if __STDC_VERSION__ >= 201112L
 
