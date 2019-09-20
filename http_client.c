@@ -222,9 +222,6 @@ http_open_file(const char *url)
 
 typedef struct http_streamed_file {
 
-  pthread_t hsf_thread;
-  pthread_mutex_t hsf_mutex;
-  pthread_cond_t hsf_cond;
   char *hsf_url;
 
   http_client_auth_cb_t *hsf_auth_cb;
@@ -280,7 +277,8 @@ http_read_file(const char *url, void *opaque,
   pthread_attr_t attr;
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-  pthread_create(&hsf->hsf_thread, &attr, http_read_file_thread, hsf);
+  pthread_t tid;
+  pthread_create(&tid, &attr, http_read_file_thread, hsf);
   pthread_attr_destroy(&attr);
 
   return fp;
