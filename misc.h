@@ -73,6 +73,11 @@ void prng_init(prng_t *x);
   char *my_b = alloca(my_l + 1); \
   memcpy(my_b, n, my_l + 1); })
 
+#define mystrndupa(n, len) ({ \
+ char *my_b = alloca(len + 1); \
+ my_b[len] = 0; \
+ memcpy(my_b, n, len); \
+})
 
 // Check if s1 begins with s2
 static inline const char *mystrbegins(const char *s1, const char *s2)
