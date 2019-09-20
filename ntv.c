@@ -126,6 +126,8 @@ ntv_destroy(ntv_t *n)
   ntv_t *c;
   while((c = TAILQ_FIRST(&n->ntv_children)) != NULL)
     ntv_destroy(c);
+
+  ntv_ns_release(n->ntv_namespace);
   free(n);
 }
 
@@ -999,6 +1001,40 @@ ntv_num_children(const ntv_t *ntv)
     r++;
   return r;
 }
+
+
+ntv_ns_t *
+ntv_ns_create(const char *str)
+{
+  ntv_ns_t *ns = malloc(sizeof(ntv_ns_t));
+  ns->refcount = 1;
+  ns->str = strdup(str);
+  return ns;
+}
+
+
+ntv_ns_t *
+ntv_ns_retain(ntv_ns_t *ns)
+{
+  ns->refcount++;
+  return ns;
+}
+
+
+void
+ntv_ns_release(ntv_ns_t *ns)
+{
+  if(ns == NULL)
+    return;
+
+  ns->refcount--;
+  if(ns->refcount == 0) {
+    free(ns->str);
+    free(ns);
+  }
+}
+
+
 
 #ifdef TEST
 

@@ -30,10 +30,10 @@
 
 TAILQ_HEAD(ntv_queue, ntv);
 
-typedef struct ntv_namespace {
+typedef struct ntv_ns {
   int refcount;
   char *str;
-} ntv_namespace;
+} ntv_ns_t;
 
 
 typedef enum {
@@ -69,7 +69,7 @@ typedef struct ntv {
   ntv_flags ntv_flags;
   ntv_type ntv_type;
 
-  ntv_namespace *ntv_namespace;
+  ntv_ns_t *ntv_namespace;
 
   union {
     int64_t ntv_s64;
@@ -131,6 +131,11 @@ const ntv_t *ntv_field_from_path(const ntv_t *n, const char **path);
 
 ntv_t *ntv_detach_field(ntv_t *n, const char *key);
 
+// Namespaces
+
+ntv_ns_t *ntv_ns_create(const char *str);
+ntv_ns_t *ntv_ns_retain(ntv_ns_t *ns)  __attribute__ ((warn_unused_result));
+void ntv_ns_release(ntv_ns_t *ns);
 
 // Return non-zero if 'src' and 'dst' are not equal
 int ntv_cmp(const ntv_t *src, const ntv_t *dst);
