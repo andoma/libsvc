@@ -21,16 +21,22 @@
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 #define _GNU_SOURCE
+
+#include <pthread.h>
+
 #include <stdarg.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 
+#include "queue.h"
 #include "trace.h"
 #include "misc.h"
 #include "mbuf.h"
+#include "stream.h"
 
 static int dosyslog;
 static int dostdout;
@@ -269,3 +275,302 @@ xlog(int level, const xlog_kv_t *kv, const char *fmt, ...)
   trace(level, "%s%.*s", primary_msg, (int)mq.mq_size, json);
 }
 
+
+
+
+SIMPLEQ_HEAD(traceline_queue, traceline);
+
+struct traceline {
+  SIMPLEQ_ENTRY(traceline) link;
+  char *procname;
+  char *msg;
+  int pid;
+  int pri;
+  struct timeval tv;
+};
+
+#define MAX_TRACELINES_IN_RAM 10000
+
+static LIST_HEAD(, tracesink) tracesinks;
+
+typedef struct tracesink {
+  LIST_ENTRY(tracesink) ts_link;
+  struct traceline_queue ts_lines;
+  int ts_num_tracelines;
+  int ts_num_tracelines_dropped;
+  int ts_level;
+  pthread_cond_t ts_cond;
+  int ts_mark;
+  pthread_t ts_tid;
+  int ts_running;
+
+  char *ts_host;
+  int ts_port;
+  char *ts_format;
+  int ts_tls;
+} tracesink_t;
+
+
+
+static pthread_mutex_t trace_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+
+
+
+static const char months[12][4] = {
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+};
+
+static const char *facilities[] = {
+  "kernel",
+  "user",
+  "mail",
+  "daemon",
+  "security",
+  "syslog",
+  "lps",
+  "news",
+  "uucp",
+  "clock",
+  "security",
+  "ftp",
+  "ntp",
+  "audit",
+  "alert",
+  "clock",
+  "local0",
+  "local1",
+  "local2",
+  "local3",
+  "local4",
+  "local5",
+  "local6",
+  "local7",
+};
+
+
+
+
+static void
+send_traceline(struct timeval *tv, int pid, int pri,
+             const char *procname, const char *msg)
+{
+  tracesink_t *ls;
+  const int level = pri & 7;
+  LIST_FOREACH(ls, &tracesinks, ts_link) {
+    if(level > ls->ts_level)
+      continue; // Skip levels that are higher than the configured limit
+    if(ls->ts_num_tracelines >= MAX_TRACELINES_IN_RAM) {
+      ls->ts_num_tracelines_dropped++;
+    } else {
+      struct traceline *l = malloc(sizeof(struct traceline));
+      l->tv = *tv;
+      l->pid = pid;
+      l->pri = pri;
+      l->procname = strdup(procname);
+      l->msg = strdup(msg);
+      SIMPLEQ_INSERT_TAIL(&ls->ts_lines, l, link);
+      ls->ts_num_tracelines++;
+      pthread_cond_signal(&ls->ts_cond);
+    }
+  }
+}
+
+
+
+static void
+writetrace(int pri, const char *procname, int pid, const char *msg)
+{
+  //  const int level = pri & 7;
+  scoped_char *line = NULL;
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  struct tm tm;
+  localtime_r(&tv.tv_sec, &tm);
+
+  if(procname == NULL) {
+    const int fac = pri >> 3;
+    if(fac > 23) {
+      procname = "unknown";
+    } else {
+      procname = facilities[fac];
+    }
+  }
+
+  if(pid == 0) {
+    line = fmt("%s %2d %02d:%02d:%02d %s: %s\n",
+               months[tm.tm_mon], tm.tm_mday,
+               tm.tm_hour, tm.tm_min, tm.tm_sec,
+               procname, msg);
+  } else {
+    line = fmt("%s %2d %02d:%02d:%02d %s[%d]: %s\n",
+               months[tm.tm_mon], tm.tm_mday,
+               tm.tm_hour, tm.tm_min, tm.tm_sec,
+               procname, pid, msg);
+  }
+
+  pthread_mutex_lock(&trace_mutex);
+
+  send_traceline(&tv, pid, pri, procname, msg);
+
+  pthread_mutex_unlock(&trace_mutex);
+}
+
+
+
+static void *
+remote_syslog_thread(void *aux)
+{
+  tracesink_t *ts = aux;
+
+  char hostname[128] = {};
+  char errbuf[512];
+  struct traceline *l;
+
+  while(ts->ts_running) {
+    stream_t *s =
+      stream_connect(ts->ts_host, ts->ts_port, 5000,
+                     errbuf, sizeof(errbuf),
+                     ts->ts_tls ? (STREAM_CONNECT_F_SSL |
+                                   STREAM_CONNECT_F_SSL_DONT_VERIFY) : 0);
+    if(s == NULL) {
+      trace(LOG_WARNING, "syslog: Unable to connect to %s:%d -- %s",
+            ts->ts_host, ts->ts_port, errbuf);
+      sleep(10);
+      continue;
+    }
+    trace(LOG_DEBUG, "syslog: Connected to %s:%d", ts->ts_host, ts->ts_port);
+
+    if(gethostname(hostname, sizeof(hostname) - 1))
+      strcpy(hostname, "badhostname");
+
+    pthread_mutex_lock(&trace_mutex);
+
+    const char *errmsg = NULL;
+    while(s != NULL) {
+      l = SIMPLEQ_FIRST(&ts->ts_lines);
+      if(l == NULL) {
+        if(!ts->ts_running)
+          break;
+        pthread_cond_wait(&ts->ts_cond, &trace_mutex);
+        continue;
+      }
+      SIMPLEQ_REMOVE_HEAD(&ts->ts_lines, link);
+      ts->ts_num_tracelines--;
+      pthread_mutex_unlock(&trace_mutex);
+
+      struct tm tm;
+      localtime_r(&l->tv.tv_sec, &tm); // We are always in UTC
+
+      char pri_str[16];
+      snprintf(pri_str, sizeof(pri_str), "%d", l->pri);
+
+      char pid_str[16];
+      snprintf(pid_str, sizeof(pid_str), "%d", l->pid);
+
+      char rfc3339_date[64];
+      snprintf(rfc3339_date, sizeof(rfc3339_date),
+               "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+               tm.tm_year + 1900,
+               tm.tm_mon + 1,
+               tm.tm_mday,
+               tm.tm_hour,
+               tm.tm_min,
+               tm.tm_sec,
+               (int)(l->tv.tv_usec / 1000));
+
+      const char *tokens[] = {
+        "PRI", pri_str,
+        "RFC3339DATE", rfc3339_date,
+        "HOSTNAME", hostname,
+        "PROCESS", l->procname,
+        "PID", pid_str,
+        "MSG", l->msg,
+        NULL
+      };
+
+      char *output = str_replace_tokens(fmt("%s\n", ts->ts_format),
+                                        "${", "}", tokens);
+
+      int len = strlen(output);
+      printf("%.*s", len, output);
+      int ret = stream_write(s, output, len);
+      free(output);
+      if(ret != len) {
+        errmsg = ret < 0 ? strerror(errno) : "Write failed";
+        stream_close(s);
+        s = NULL;
+      }
+      pthread_mutex_lock(&trace_mutex);
+      if(ret != len) {
+        SIMPLEQ_INSERT_HEAD(&ts->ts_lines, l, link);
+        ts->ts_num_tracelines++;
+        break;
+      }
+      free(l->msg);
+      free(l->procname);
+      free(l);
+    }
+
+    if(s != NULL) {
+      stream_close(s);
+    }
+
+    pthread_mutex_unlock(&trace_mutex);
+
+    trace(LOG_DEBUG, "syslog: Disconnected from %s:%d -- %s",
+          ts->ts_host, ts->ts_port, errmsg ?: "No error");
+  }
+  return NULL;
+}
+
+
+static void
+trace_syslog_cb(int level, const char *msg)
+{
+  writetrace(level | LOG_LOCAL0, PROGNAME, getpid(), msg);
+}
+
+static tracesink_t *syslog_logsink;
+
+static void
+flush_log(void)
+{
+  pthread_mutex_lock(&trace_mutex);
+  syslog_logsink->ts_running = 0;
+  pthread_cond_signal(&syslog_logsink->ts_cond);
+  pthread_mutex_unlock(&trace_mutex);
+  pthread_join(syslog_logsink->ts_tid, NULL);
+}
+
+void
+trace_enable_builtin_syslog(const char *host, int port,
+                            const char *format, int tls)
+{
+  if(syslog_logsink)
+    return;
+
+  tracesink_t *ts = calloc(1, sizeof(tracesink_t));
+  SIMPLEQ_INIT(&ts->ts_lines);
+  pthread_cond_init(&ts->ts_cond, NULL);
+
+  ts->ts_host = strdup(host);
+  ts->ts_port = port;
+  ts->ts_format = strdup(format);
+  ts->ts_tls = tls;
+
+  ts->ts_running = 1;
+  ts->ts_level = LOG_DEBUG;
+
+  pthread_mutex_lock(&trace_mutex);
+  LIST_INSERT_HEAD(&tracesinks, ts, ts_link);
+  pthread_mutex_unlock(&trace_mutex);
+
+  pthread_create(&ts->ts_tid, NULL, remote_syslog_thread, ts);
+
+  tracecb = trace_syslog_cb;
+
+  syslog_logsink = ts;
+  atexit(flush_log);
+}

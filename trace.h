@@ -92,3 +92,6 @@ XLOG_LINK(const xlog_kv_t *kv)
 
 void xlog(int level, const xlog_kv_t *kv, const char *fmt, ...)
   __attribute__ ((format (printf, 3, 4)));
+
+void trace_enable_builtin_syslog(const char *host, int port,
+                                 const char *format, int tls);
