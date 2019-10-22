@@ -1,3 +1,4 @@
+#include <pthread.h>
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
@@ -11,8 +12,105 @@
 #include "strvec.h"
 #include "dbl.h"
 #include "http_client.h"
+#include "trace.h"
 
 #include "aws.h"
+
+
+
+static void
+aws_creds_thread_key_dtor(void *x)
+{
+  ntv_release(x);
+}
+
+
+aws_creds_t
+aws_get_creds(void)
+{
+  static pthread_mutex_t aws_creds_mutex = PTHREAD_MUTEX_INITIALIZER;
+  static ntv_t *aws_creds;
+  static pthread_key_t aws_creds_thread_key;
+  static int aws_creds_thread_key_initialized;
+
+  aws_creds_t r = {
+    .id     = getenv("AWS_ACCESS_KEY_ID"),
+    .secret = getenv("AWS_SECRET_ACCESS_KEY")
+  };
+
+  if(r.id != NULL && r.secret != NULL)
+    return r;
+
+  pthread_mutex_lock(&aws_creds_mutex);
+
+  if(!aws_creds_thread_key_initialized) {
+    aws_creds_thread_key_initialized = 1;
+    pthread_key_create(&aws_creds_thread_key, aws_creds_thread_key_dtor);
+  }
+
+  const char *ecs = getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+  scoped_http_result(hcr);
+
+  if(ecs != NULL) {
+    char errbuf[512];
+    // We run on ECS
+    // https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html
+
+    scoped_char *url = fmt("http://169.254.170.2%s", ecs);
+
+    if(http_client_request(&hcr, url,
+                           HCR_TIMEOUT(20),
+                           HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
+                           HCR_ERRBUF(errbuf, sizeof(errbuf)),
+                           NULL)) {
+      trace(LOG_ERR, "Unable to load AWS credentials from %s -- %s",
+            url, errbuf);
+      return r;
+    }
+
+    if(getenv("AWS_DEBUG_ECS_CREDENTIALS")) {
+      scoped_char *json = ntv_json_serialize_to_str(hcr.hcr_json_result, 0);
+      trace(LOG_DEBUG, "AWS_DEBUG_ECS_CREDENTIALS: %s", json);
+    }
+  }
+
+
+  ntv_release(aws_creds);
+  aws_creds = ntv_retain(hcr.hcr_json_result);
+
+  ntv_release(pthread_getspecific(aws_creds_thread_key));
+  pthread_setspecific(aws_creds_thread_key, ntv_retain(aws_creds));
+
+  pthread_mutex_unlock(&aws_creds_mutex);
+
+  return (aws_creds_t) {
+    .id     = ntv_get_str(aws_creds, "AccessKeyId"),
+    .secret = ntv_get_str(aws_creds, "SecretAccessKey"),
+    .token  = ntv_get_str(aws_creds, "Token"),
+  };
+}
+
+
+aws_creds_t
+aws_get_creds_or_fail(void)
+{
+  aws_creds_t r = aws_get_creds();
+
+  if(r.id == NULL || r.secret == NULL) {
+    trace(LOG_ERR, "Unable to get AWS credentials from environment, "
+          "AWS_ACCESS_KEY_ID:%s "
+          "AWS_SECRET_ACCESS_KEY:%s "
+          "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI:%s ",
+          getenv("AWS_ACCESS_KEY_ID") ? "set" : "not-set",
+          getenv("AWS_ACCESS_ACCESS_KEY") ? "set" : "not-set",
+          getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") ? "set" : "not-set"
+          );
+    exit(2);
+  }
+  return r;
+}
+
+
 
 /*
  * https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
@@ -143,8 +241,7 @@ aws_sig4_gen_signature(const char *http_method,
                        const ntv_t *headers,
                        const char *payload_hash,
                        time_t timestamp,
-                       const char *aws_key_id,
-                       const char *aws_key_secret,
+                       aws_creds_t creds,
                        const char *service,
                        const char *region)
 {
@@ -167,7 +264,7 @@ aws_sig4_gen_signature(const char *http_method,
         crhex);
 
   char tmp[128];
-  snprintf(tmp, sizeof(tmp), "AWS4%s", aws_key_secret);
+  snprintf(tmp, sizeof(tmp), "AWS4%s", creds.secret);
   HMAC(EVP_sha256(), tmp, strlen(tmp), (void *)timestamp_str, 8, key, NULL);
   HMAC(EVP_sha256(), key, 32, (void *)region, strlen(region), key, NULL);
   HMAC(EVP_sha256(), key, 32, (void *)service, strlen(service), key, NULL);
@@ -190,15 +287,13 @@ aws_sig4_gen_auth_header(const char *http_method,
                          const ntv_t *headers,
                          const char *payload_hash,
                          time_t timestamp,
-                         const char *aws_key_id,
-                         const char *aws_key_secret,
+                         aws_creds_t creds,
                          const char *service,
                          const char *region)
 {
   scoped_char *signature =
     aws_sig4_gen_signature(http_method, uri, query_args, headers, payload_hash,
-                           timestamp, aws_key_id, aws_key_secret, service,
-                           region);
+                           timestamp, creds, service, region);
 
   scoped_char *isodate = aws_isodate(timestamp);
 
@@ -217,7 +312,7 @@ aws_sig4_gen_auth_header(const char *http_method,
   return fmt("AWS4-HMAC-SHA256 Credential=%s/%8.8s/%s/%s/aws4_request,"
              "SignedHeaders=%s,"
              "Signature=%s",
-             aws_key_id,
+             creds.id,
              isodate,
              region,
              service,
@@ -231,8 +326,7 @@ aws_s3_make_url(const char *method,
                 const char *region,
                 const char *bucket,
                 const char *path,
-                const char *key_id,
-                const char *key_secret)
+                aws_creds_t creds)
 {
   if(*path == '/')
     path++;
@@ -243,7 +337,7 @@ aws_s3_make_url(const char *method,
   scoped_char *isodate = aws_isodate(timestamp);
 
   scoped_char *credential = fmt("%s/%8.8s/%s/s3/aws4_request",
-                                key_id, isodate, region);
+                                creds.id, isodate, region);
 
   scoped_ntv_t *query_args =
     ntv_map("X-Amz-Algorithm", ntv_str("AWS4-HMAC-SHA256"),
@@ -251,6 +345,7 @@ aws_s3_make_url(const char *method,
             "X-Amz-Date", ntv_str(isodate),
             "X-Amz-Expires", ntv_int(86400),
             "X-Amz-SignedHeaders", ntv_str("host"),
+            "X-Amz-Security-Token", ntv_str(creds.token),
             NULL);
 
   scoped_ntv_t *headers = ntv_map("host", ntv_str(host),
@@ -263,8 +358,7 @@ aws_s3_make_url(const char *method,
                            headers,
                            "UNSIGNED-PAYLOAD",
                            now,
-                           key_id,
-                           key_secret,
+                           creds,
                            "s3",
                            region);
 
@@ -308,9 +402,7 @@ ntv_t *
 aws_invoke(const char *region,
            const char *service,
            const char *target,
-           const char *aws_key_id,
-           const char *aws_key_secret,
-           const char *security_token,
+           aws_creds_t creds,
            ntv_t *req)
 {
   char errbuf[512];
@@ -327,12 +419,12 @@ aws_invoke(const char *region,
     ntv_map("host", ntv_str(host),
             "x-amz-target", ntv_str(target),
             "x-amz-date", ntv_str(isodate),
-            "x-amz-security-token", ntv_str(security_token),
+            "x-amz-security-token", ntv_str(creds.token),
             NULL);
 
   scoped_char *auth_header =
     aws_sig4_gen_auth_header("POST", "/", NULL, headers, bodyhash, now,
-                             aws_key_id, aws_key_secret, service, region);
+                             creds, service, region);
 
   scoped_char *url = fmt("https://%s", host);
 
@@ -344,7 +436,7 @@ aws_invoke(const char *region,
                          HCR_ERRBUF(errbuf, sizeof(errbuf)),
                          HCR_HEADER("x-amz-target", target),
                          HCR_HEADER("x-amz-date", isodate),
-                         HCR_HEADER("x-amz-security-token", security_token),
+                         HCR_HEADER("x-amz-security-token", creds.token),
                          HCR_HEADER("x-amz-content-sha256", bodyhash),
                          HCR_HEADER("authorization", auth_header),
                          HCR_POSTDATA(body, strlen(body),
@@ -387,8 +479,13 @@ aws_invoke(const char *region,
 void
 aws_test(void)
 {
-  const char *key_id = "AKIAIOSFODNN7EXAMPLE"; // Test from documentation article
-  const char *secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+
+   // Test from documentation article
+  aws_creds_t creds = {
+    .id = "AKIAIOSFODNN7EXAMPLE",
+    .secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  };
+
   const time_t t = 1369353600; // 20130524T000000Z
   const char *region = "us-east-1";
 
@@ -419,8 +516,7 @@ aws_test(void)
                              headers,
                              content_hash,
                              t,
-                             key_id,
-                             secret,
+                             creds,
                              "s3",
                              region);
 

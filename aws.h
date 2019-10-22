@@ -2,6 +2,17 @@
 
 struct ntv;
 
+
+typedef struct {
+  const char *id;
+  const char *secret;
+  const char *token;
+} aws_creds_t;
+
+aws_creds_t aws_get_creds(void);
+
+aws_creds_t aws_get_creds_or_fail(void);
+
 char *aws_sig4_canonical_request_hash(const char *http_method,
                                       const char *canonical_uri,
                                       const struct ntv *query_args,
@@ -14,8 +25,7 @@ char *aws_sig4_gen_signature(const char *http_method,
                              const ntv_t *headers,
                              const char *payload_hash,
                              time_t timestamp,
-                             const char *aws_key_id,
-                             const char *aws_key_secret,
+                             aws_creds_t creds,
                              const char *service,
                              const char *region);
 
@@ -25,8 +35,7 @@ char *aws_sig4_gen_auth_header(const char *http_method,
                                const ntv_t *headers,
                                const char *payload_hash,
                                time_t timestamp,
-                               const char *aws_key_id,
-                               const char *aws_key_secret,
+                               aws_creds_t creds,
                                const char *service,
                                const char *region);
 
@@ -39,15 +48,12 @@ char *aws_s3_make_url(const char *method,
                       const char *region,
                       const char *bucket,
                       const char *path,
-                      const char *key_id,
-                      const char *key_secret);
+                      aws_creds_t creds);
 
 struct ntv *aws_invoke(const char *region,
                        const char *service,
                        const char *target,
-                       const char *aws_key_id,
-                       const char *aws_key_secret,
-                       const char *security_token,
+                       aws_creds_t creds,
                        struct ntv *req);
 
 const char *aws_invoked_transient_error(const ntv_t *response);
