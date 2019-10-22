@@ -54,6 +54,7 @@
 #include "talloc.h"
 #include "sock.h"
 #include "misc.h"
+#include "libsvc.h"
 
 LIST_HEAD(asyncio_timer_list, asyncio_timer);
 LIST_HEAD(asyncio_worker_list, asyncio_worker);
@@ -166,7 +167,7 @@ static int                timerwheel_read_pos;
 
 static int asyncio_pipe[2];
 static asyncio_fd_t *pipe_af;
-static int epfd;
+static int epfd = -1;
 
 static int asyncio_task_worker;
 static struct asyncio_worker_list asyncio_workers;
@@ -387,6 +388,7 @@ mod_poll_flags(asyncio_fd_t *af, int set, int clr)
     op =  EPOLL_CTL_MOD;
   }
 
+  assert(epfd != -1);
   int r = epoll_ctl(epfd, op, af->af_fd, &e);
 
   if(r) {
@@ -1715,6 +1717,18 @@ task_cb(void)
 }
 
 
+static void __attribute__((constructor))
+asyncio_early_init(void)
+{
+#ifdef __linux__
+  epfd = epoll_create1(EPOLL_CLOEXEC);
+#endif
+
+#ifdef __APPLE__
+  epfd = kqueue();
+#endif
+}
+
 /**
  *
  */
@@ -1729,14 +1743,6 @@ asyncio_init(void)
   fcntl(asyncio_pipe[1], F_SETFD, fcntl(asyncio_pipe[1], F_GETFD) | FD_CLOEXEC);
 
   TAILQ_INIT(&asyncio_tasks);
-
-#ifdef __linux__
-  epfd = epoll_create1(EPOLL_CLOEXEC);
-#endif
-
-#ifdef __APPLE__
-  epfd = kqueue();
-#endif
 
   pthread_mutex_init(&asyncio_worker_mutex, NULL);
   pthread_mutex_init(&asyncio_task_mutex, NULL);
