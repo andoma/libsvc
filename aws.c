@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <unistd.h>
 
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
@@ -105,6 +106,7 @@ aws_get_creds_or_fail(void)
           getenv("AWS_ACCESS_ACCESS_KEY") ? "set" : "not-set",
           getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") ? "set" : "not-set"
           );
+    sleep(2);
     exit(2);
   }
   return r;
