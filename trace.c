@@ -37,6 +37,14 @@
 #include "misc.h"
 #include "mbuf.h"
 #include "stream.h"
+#include "libsvc.h"
+
+#ifdef WITH_OPENSSL
+#include <openssl/rand.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
+
 
 static int dosyslog;
 static int dostdout;
@@ -308,6 +316,11 @@ typedef struct tracesink {
   int ts_port;
   char *ts_format;
   int ts_tls;
+
+
+  int ts_started;
+  pthread_cond_t ts_started_cond;
+
 } tracesink_t;
 
 
@@ -434,6 +447,13 @@ remote_syslog_thread(void *aux)
                      errbuf, sizeof(errbuf),
                      ts->ts_tls ? (STREAM_CONNECT_F_SSL |
                                    STREAM_CONNECT_F_SSL_DONT_VERIFY) : 0);
+    pthread_mutex_lock(&trace_mutex);
+    if(!ts->ts_started) {
+      ts->ts_started = 1;
+      pthread_cond_signal(&ts->ts_started_cond);
+    }
+    pthread_mutex_unlock(&trace_mutex);
+
     if(s == NULL) {
       trace(LOG_WARNING, "syslog: Unable to connect to %s:%d -- %s",
             ts->ts_host, ts->ts_port, errbuf);
@@ -494,7 +514,6 @@ remote_syslog_thread(void *aux)
                                         "${", "}", tokens);
 
       int len = strlen(output);
-      printf("%.*s", len, output);
       int ret = stream_write(s, output, len);
       free(output);
       if(ret != len) {
@@ -513,11 +532,12 @@ remote_syslog_thread(void *aux)
       free(l);
     }
 
+    pthread_mutex_unlock(&trace_mutex);
+
     if(s != NULL) {
       stream_close(s);
     }
 
-    pthread_mutex_unlock(&trace_mutex);
 
     trace(LOG_DEBUG, "syslog: Disconnected from %s:%d -- %s",
           ts->ts_host, ts->ts_port, errmsg ?: "No error");
@@ -535,7 +555,7 @@ trace_syslog_cb(int level, const char *msg)
 static tracesink_t *syslog_logsink;
 
 static void
-flush_log(void)
+stop_log(void)
 {
   pthread_mutex_lock(&trace_mutex);
   syslog_logsink->ts_running = 0;
@@ -554,11 +574,13 @@ trace_enable_builtin_syslog(const char *host, int port,
   tracesink_t *ts = calloc(1, sizeof(tracesink_t));
   SIMPLEQ_INIT(&ts->ts_lines);
   pthread_cond_init(&ts->ts_cond, NULL);
+  pthread_cond_init(&ts->ts_started_cond, NULL);
 
   ts->ts_host = strdup(host);
   ts->ts_port = port;
   ts->ts_format = strdup(format);
   ts->ts_tls = tls;
+
 
   ts->ts_running = 1;
   ts->ts_level = LOG_DEBUG;
@@ -572,5 +594,18 @@ trace_enable_builtin_syslog(const char *host, int port,
   tracecb = trace_syslog_cb;
 
   syslog_logsink = ts;
-  atexit(flush_log);
+
+  pthread_mutex_lock(&trace_mutex);
+  while(!ts->ts_started) {
+    pthread_cond_wait(&ts->ts_started_cond, &trace_mutex);
+  }
+  pthread_mutex_unlock(&trace_mutex);
+
+  if(tls) {
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+    OPENSSL_atexit(stop_log);
+    return;
+#endif
+  }
+  atexit(stop_log);
 }
