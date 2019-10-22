@@ -30,3 +30,5 @@ void libsvc_fini(void);
 void libsvc_set_fdlimit(int num_fd);
 
 void libsvc_set_app_version(const char *version);
+
+void libsvc_openssl_init(void);

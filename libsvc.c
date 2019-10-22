@@ -20,6 +20,7 @@
 * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
+#include <pthread.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
@@ -34,6 +35,8 @@
 
 #ifdef WITH_OPENSSL
 #include <openssl/rand.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #endif
 
 #ifdef WITH_MYSQL
@@ -94,12 +97,6 @@ libsvc_set_app_version(const char *version)
 void
 libsvc_init(void)
 {
-#ifdef WITH_OPENSSL
-  uint8_t randomness[32];
-  get_random_bytes(randomness, sizeof(randomness));
-  RAND_seed(randomness, sizeof(randomness));
-#endif
-
 #ifdef WITH_MYSQL
   db_init();
 #endif
@@ -108,7 +105,7 @@ libsvc_init(void)
   asyncio_init();
 #endif
 
-  tcp_init();
+  tcp_init(NULL);
 
 #ifdef WITH_CURL
   curl_global_init(CURL_GLOBAL_ALL);
@@ -170,3 +167,68 @@ libsvc_set_fdlimit(int num_fd)
         (long)lim.rlim_cur, (long)lim.rlim_max);
 
 }
+
+#if defined(WITH_OPENSSL)
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+static pthread_mutex_t *ssl_locks;
+
+/**
+ *
+ */
+static unsigned long  __attribute__((unused))
+ssl_tid_fn(void)
+{
+  return (unsigned long)pthread_self();
+}
+
+static void __attribute__((unused))
+ssl_lock_fn(int mode, int n, const char *file, int line)
+{
+  if(mode & CRYPTO_LOCK)
+    pthread_mutex_lock(&ssl_locks[n]);
+  else if(mode & CRYPTO_UNLOCK)
+    pthread_mutex_unlock(&ssl_locks[n]);
+}
+#endif
+
+static pthread_once_t once_openssl = PTHREAD_ONCE_INIT;
+
+
+static void
+init_openssl(void)
+{
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+
+  SSL_library_init();
+  SSL_load_error_strings();
+
+  int i, n = CRYPTO_num_locks();
+  ssl_locks = malloc_mul(sizeof(pthread_mutex_t), n);
+  for(i = 0; i < n; i++)
+    pthread_mutex_init(&ssl_locks[i], NULL);
+
+  CRYPTO_set_locking_callback(ssl_lock_fn);
+  CRYPTO_set_id_callback(ssl_tid_fn);
+#endif
+
+  uint8_t randomness[32];
+  get_random_bytes(randomness, sizeof(randomness));
+  RAND_seed(randomness, sizeof(randomness));
+}
+
+
+void
+libsvc_openssl_init(void)
+{
+  pthread_once(&once_openssl, init_openssl);
+}
+
+#else
+
+void
+libsvc_openssl_init(void)
+{
+}
+#endif
+

@@ -52,7 +52,6 @@
 
 #if defined(WITH_OPENSSL)
 static SSL_CTX *ssl_ctx;
-static pthread_mutex_t *ssl_locks;
 #endif
 
 
@@ -755,47 +754,15 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
   return NULL;
 }
 
-
-
-
-/**
- *
- */
-static unsigned long  __attribute__((unused))
-ssl_tid_fn(void)
-{
-  return (unsigned long)pthread_self();
-}
-
-static void __attribute__((unused))
-ssl_lock_fn(int mode, int n, const char *file, int line)
-{
-  if(mode & CRYPTO_LOCK)
-    pthread_mutex_lock(&ssl_locks[n]);
-  else if(mode & CRYPTO_UNLOCK)
-    pthread_mutex_unlock(&ssl_locks[n]);
-}
 #endif
 
 /**
  *
  */
 void
-tcp_init1(const char *extra_ca, int init_ssl)
+tcp_init(const char *extra_ca)
 {
 #if defined(WITH_OPENSSL)
-  if(init_ssl) {
-    SSL_library_init();
-    SSL_load_error_strings();
-
-    int i, n = CRYPTO_num_locks();
-    ssl_locks = malloc_mul(sizeof(pthread_mutex_t), n);
-    for(i = 0; i < n; i++)
-      pthread_mutex_init(&ssl_locks[i], NULL);
-
-    CRYPTO_set_locking_callback(ssl_lock_fn);
-    CRYPTO_set_id_callback(ssl_tid_fn);
-  }
 
   ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
 
@@ -831,14 +798,4 @@ tcp_init1(const char *extra_ca, int init_ssl)
 
   SSL_CTX_set_verify_depth(ssl_ctx, 3);
 #endif
-}
-
-
-/**
- *
- */
-void
-tcp_init(void)
-{
-  tcp_init1(NULL, 1);
 }

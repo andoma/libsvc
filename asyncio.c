@@ -1990,6 +1990,8 @@ asyncio_sslctx_server_hosts(const asyncio_sslhost_t *hosts, size_t num_hosts)
 asyncio_sslctx_t *
 asyncio_sslctx_client(void)
 {
+  libsvc_openssl_init();
+
   SSL_CTX *ctx = SSL_CTX_new(TLSv1_2_client_method());
 
 #if defined(__APPLE__)

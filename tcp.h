@@ -30,9 +30,7 @@
 
 typedef struct tcp_stream tcp_stream_t;
 
-void tcp_init(void);
-
-void tcp_init1(const char *extra_ca, int init_ssl);
+void tcp_init(const char *extra_ca);
 
 void tcp_server_init(void);
 
