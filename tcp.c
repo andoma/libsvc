@@ -49,6 +49,7 @@
 
 #include "tcp.h"
 #include "misc.h"
+#include "libsvc.h"
 
 #if defined(WITH_OPENSSL)
 static SSL_CTX *ssl_ctx;
@@ -763,6 +764,8 @@ void
 tcp_init(const char *extra_ca)
 {
 #if defined(WITH_OPENSSL)
+
+  libsvc_openssl_init();
 
   ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
 
