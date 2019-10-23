@@ -53,7 +53,7 @@ aws_get_creds(void)
   scoped_http_result(hcr);
   const int64_t now = get_ts();
 
-  if(now - 60 * 1000000 > aws_creds_expire) {
+  if(now + 60 * 1000000 > aws_creds_expire) {
 
     ntv_release(aws_creds);
     aws_creds_expire = 0;
