@@ -1943,16 +1943,26 @@ static int
 select_vhost_cb(SSL *s, int *ad, void *arg)
 {
   const char *servername = SSL_get_servername(s, TLSEXT_NAMETYPE_host_name);
-  if(servername == NULL)
-    return SSL_TLSEXT_ERR_ALERT_FATAL;
-
   asyncio_sslctx_t *as = arg;
+
+  if(servername != NULL) {
+    for(size_t i = 0; i < as->num_hosts; i++) {
+      if(as->hosts[i].hostname != NULL &&
+         !strcasecmp(servername, as->hosts[i].hostname)) {
+        SSL_set_SSL_CTX(s, as->hosts[i].ctx);
+        return SSL_TLSEXT_ERR_OK;
+      }
+    }
+  }
+
+  // Nothing found, select default if one is available
   for(size_t i = 0; i < as->num_hosts; i++) {
-    if(!strcasecmp(servername, as->hosts[i].hostname)) {
+    if(as->hosts[i].hostname == NULL) {
       SSL_set_SSL_CTX(s, as->hosts[i].ctx);
       return SSL_TLSEXT_ERR_OK;
     }
   }
+
   return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
@@ -1972,7 +1982,7 @@ asyncio_sslctx_server_hosts(const asyncio_sslhost_t *hosts, size_t num_hosts)
       return NULL;
     }
     as->hosts[i].ctx = ctx;
-    as->hosts[i].hostname = strdup(hosts[i].hostname);
+    as->hosts[i].hostname = hosts[i].hostname ? strdup(hosts[i].hostname) :NULL;
 
     if(i == 0) {
       SSL_CTX_set_tlsext_servername_arg(ctx, as);
