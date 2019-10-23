@@ -1003,3 +1003,112 @@ malloc_mul(size_t a, size_t b)
   return malloc(c);
 #endif
 }
+
+
+static int digit(char s)
+{
+  return s >= '0' && s <= '9';
+}
+
+static int
+parse_tz_offset(const char *s)
+{
+  if(strlen(s) == 4 &&
+     digit(s[0]) &&
+     digit(s[1]) &&
+     digit(s[2]) &&
+     digit(s[3])) {
+    const int x = atoi(s);
+    return (x / 100) * 3600 + (x % 100) * 60;
+  }
+
+  if(strlen(s) == 2 &&
+     digit(s[0]) &&
+     digit(s[1])) {
+    return atoi(s) * 3600;
+  }
+
+  if(strlen(s) == 5 &&
+     digit(s[0]) &&
+     digit(s[1]) &&
+     s[2] == ':' &&
+     digit(s[3]) &&
+     digit(s[4])) {
+
+    const int h = atoi(s);
+    const int m = atoi(s + 3);
+    return h * 3600 + m * 60;
+  }
+  return 0;
+}
+
+
+int64_t
+rfc3339_date_parse(const char *s, int roundup)
+{
+  struct tm tm = {};
+
+  if(strlen(s) < 10)
+    return INT64_MIN;
+
+  if(s[4] != '-'  || s[7] != '-')
+    return INT64_MIN;
+
+  tm.tm_isdst = -1;
+  tm.tm_year = atoi(s + 0) - 1900;
+  tm.tm_mon  = atoi(s + 5) - 1;
+  tm.tm_mday = atoi(s + 8);
+
+  uint64_t us = 0;
+
+  if(roundup) {
+    tm.tm_hour = 23;
+    tm.tm_min  = 59;
+    tm.tm_sec  = 59;
+    us = 999999;
+  }
+
+  int tz_offset = 0;
+
+  if(s[10] == 0) {
+    // Date only
+
+  } else if(s[10] == 'T') {
+    s += 11;
+    tm.tm_hour = atoi(s);
+    if(strlen(s) > 3 && s[2] == ':') {
+      tm.tm_min  = atoi(s + 3);
+
+      if(strlen(s) > 6 && s[5] == ':') {
+        tm.tm_sec  = atoi(s + 6);
+
+        if(strlen(s) > 8 && s[8] == '.') {
+          s += 9;
+          uint64_t fractions = atoi(s);
+          int divisor = 1;
+          while(*s >= '0' && *s <= '9') {
+            divisor *= 10;
+            s++;
+          }
+          us = fractions * 1000000 / divisor;
+        }
+      }
+    }
+    const char *plus = strchr(s, '+');
+    if(plus != NULL) {
+      tz_offset = parse_tz_offset(plus + 1);
+    } else {
+      const char *minus = strchr(s, '-');
+      if(minus != NULL)
+        tz_offset = -parse_tz_offset(minus + 1);
+    }
+
+  } else {
+    return INT64_MIN;
+  }
+
+  const time_t datetime_1970 = timegm(&tm) - tz_offset;
+
+  return datetime_1970 * (int64_t)1000000 + us;
+}
+

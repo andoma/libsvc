@@ -153,3 +153,5 @@ char *fmt(const char *fmt, ...)  __attribute__ ((format (printf, 1, 2)));
 void *malloc_add(size_t a, size_t b);
 
 void *malloc_mul(size_t a, size_t b);
+
+int64_t rfc3339_date_parse(const char *s, int roundup);
