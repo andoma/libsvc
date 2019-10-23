@@ -59,6 +59,7 @@ enum {
 #define HCR_NO_FOLLOW_REDIRECT          0x4
 #define HCR_VERBOSE                     0x8
 #define HCR_ACCEPT_GZIP                 0x10
+#define HCR_READ_FILE_LOG_ERRORS        0x20
 
 #define HCR_ERRBUF(a, b)      HCR_TAG_ERRBUF, a, (size_t)(b)
 #define HCR_ERR(a)            HCR_TAG_ERR, a

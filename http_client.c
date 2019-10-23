@@ -45,6 +45,7 @@
 #include "mbuf.h"
 #include "err.h"
 #include "fpipe.h"
+#include "trace.h"
 
 char *
 http_client_ntv_to_args(const ntv_t *ntv)
@@ -240,16 +241,24 @@ static void *
 http_read_file_thread(void *aux)
 {
   http_streamed_file_t *hsf = aux;
+  char errbuf[512];
 
   scoped_http_result(hcr);
   int r =
     http_client_request(&hcr, hsf->hsf_url,
                         HCR_OUTPUTFILE(hsf->hsf_writer),
                         HCR_FLAGS(hsf->hsf_flags),
+                        HCR_ERRBUF(errbuf, sizeof(errbuf)),
                         HCR_AUTHCB(hsf->hsf_auth_cb, hsf->hsf_opaque),
                         NULL);
-  if(r)
+
+
+  if(r) {
+    if(hsf->hsf_flags & HCR_READ_FILE_LOG_ERRORS) {
+      trace(LOG_DEBUG, "%s: %s: %s", __FUNCTION__, hsf->hsf_url, errbuf);
+    }
     fpipe_set_error(hsf->hsf_pipe);
+  }
 
   fclose(hsf->hsf_writer);
   free(hsf->hsf_url);
