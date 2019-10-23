@@ -33,6 +33,7 @@ aws_get_creds(void)
   static ntv_t *aws_creds;
   static pthread_key_t aws_creds_thread_key;
   static int aws_creds_thread_key_initialized;
+  static int64_t aws_creds_expire;
 
   aws_creds_t r = {
     .id     = getenv("AWS_ACCESS_KEY_ID"),
@@ -49,70 +50,83 @@ aws_get_creds(void)
     pthread_key_create(&aws_creds_thread_key, aws_creds_thread_key_dtor);
   }
 
-  const char *ecs = getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
   scoped_http_result(hcr);
+  const int64_t now = get_ts();
 
-  if(ecs != NULL) {
-    char errbuf[512];
-    // We run on ECS
-    // https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html
+  if(now - 60 * 1000000 > aws_creds_expire) {
 
-    scoped_char *url = fmt("http://169.254.170.2%s", ecs);
+    ntv_release(aws_creds);
+    aws_creds_expire = 0;
+    aws_creds = NULL;
 
-    if(http_client_request(&hcr, url,
-                           HCR_TIMEOUT(2),
-                           HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
-                           HCR_ERRBUF(errbuf, sizeof(errbuf)),
-                           NULL)) {
-      trace(LOG_ERR, "Unable to load AWS credentials from %s -- %s",
-            url, errbuf);
-      return r;
+    const char *ecs = getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+
+    if(ecs != NULL) {
+      char errbuf[512];
+      // We run on ECS
+      // https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html
+
+      scoped_char *url = fmt("http://169.254.170.2%s", ecs);
+
+      if(http_client_request(&hcr, url,
+                             HCR_TIMEOUT(2),
+                             HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
+                             HCR_ERRBUF(errbuf, sizeof(errbuf)),
+                             NULL)) {
+        trace(LOG_ERR, "Unable to load AWS credentials from %s -- %s",
+              url, errbuf);
+        return r;
+      }
+
+    } else {
+      char errbuf[512];
+
+      scoped_strvec(iamroles);
+
+      const char *listcredsurl =
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials";
+
+      scoped_http_result(rolesreq);
+
+      if(http_client_request(&rolesreq, listcredsurl,
+                             HCR_TIMEOUT(2),
+                             HCR_ERRBUF(errbuf, sizeof(errbuf)),
+                             NULL)) {
+        trace(LOG_ERR, "Unable to list ec2 machine roles %s -- %s",
+              listcredsurl, errbuf);
+        return r;
+      }
+
+      strvec_split(&iamroles, rolesreq.hcr_body, "\n", 0);
+      const char *iamrole = strvec_get(&iamroles, 0);
+
+      scoped_char *url =
+        fmt("http://169.254.169.254/latest/meta-data/iam/security-credentials/%s",
+            iamrole);
+
+      trace(LOG_DEBUG, "Loading IAM machine credentials from %s", url);
+
+      if(http_client_request(&hcr, url,
+                             HCR_TIMEOUT(2),
+                             HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
+                             HCR_ERRBUF(errbuf, sizeof(errbuf)),
+                             NULL)) {
+        trace(LOG_ERR, "Unable to load AWS credentials from %s -- %s",
+              url, errbuf);
+        return r;
+      }
     }
 
-  } else {
-    char errbuf[512];
+    aws_creds = ntv_retain(hcr.hcr_json_result);
 
-    scoped_strvec(iamroles);
+    ntv_release(pthread_getspecific(aws_creds_thread_key));
+    pthread_setspecific(aws_creds_thread_key, ntv_retain(aws_creds));
 
-    const char *listcredsurl =
-      "http://169.254.169.254/latest/meta-data/iam/security-credentials";
-
-    scoped_http_result(rolesreq);
-
-    if(http_client_request(&rolesreq, listcredsurl,
-                           HCR_TIMEOUT(2),
-                           HCR_ERRBUF(errbuf, sizeof(errbuf)),
-                           NULL)) {
-      trace(LOG_ERR, "Unable to list ec2 machine roles %s -- %s",
-            listcredsurl, errbuf);
-      return r;
-    }
-
-    strvec_split(&iamroles, rolesreq.hcr_body, "\n", 0);
-    const char *iamrole = strvec_get(&iamroles, 0);
-
-    scoped_char *url =
-      fmt("http://169.254.169.254/latest/meta-data/iam/security-credentials/%s",
-          iamrole);
-
-    trace(LOG_DEBUG, "Loading IAM machine credentials from %s", url);
-
-    if(http_client_request(&hcr, url,
-                           HCR_TIMEOUT(2),
-                           HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
-                           HCR_ERRBUF(errbuf, sizeof(errbuf)),
-                           NULL)) {
-      trace(LOG_ERR, "Unable to load AWS credentials from %s -- %s",
-            url, errbuf);
-      return r;
+    const char *expiration  = ntv_get_str(aws_creds, "Expiration");
+    if(expiration != NULL) {
+      aws_creds_expire = rfc3339_date_parse(expiration, 0);
     }
   }
-
-  ntv_release(aws_creds);
-  aws_creds = ntv_retain(hcr.hcr_json_result);
-
-  ntv_release(pthread_getspecific(aws_creds_thread_key));
-  pthread_setspecific(aws_creds_thread_key, ntv_retain(aws_creds));
 
   pthread_mutex_unlock(&aws_creds_mutex);
 
