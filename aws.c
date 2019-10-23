@@ -70,8 +70,7 @@ aws_get_creds(void)
     }
 
     if(getenv("AWS_DEBUG_ECS_CREDENTIALS")) {
-      scoped_char *json = ntv_json_serialize_to_str(hcr.hcr_json_result, 0);
-      trace(LOG_DEBUG, "AWS_DEBUG_ECS_CREDENTIALS: %s", json);
+      hexdump("AWS_DEBUG_ECS_CREDENTIALS", hcr.hcr_body, hcr.hcr_bodysize);
     }
   }
 
