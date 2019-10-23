@@ -316,7 +316,7 @@ typedef struct tracesink {
   int ts_port;
   char *ts_format;
   int ts_tls;
-
+  char *ts_hostname;
 
   int ts_started;
   pthread_cond_t ts_started_cond;
@@ -437,9 +437,11 @@ remote_syslog_thread(void *aux)
 {
   tracesink_t *ts = aux;
 
-  char hostname[128] = {};
+  char hostnamebuf[128] = {};
   char errbuf[512];
   struct traceline *l;
+
+  const char *hostname = ts->ts_hostname;
 
   while(ts->ts_running) {
     stream_t *s =
@@ -462,8 +464,11 @@ remote_syslog_thread(void *aux)
     }
     trace(LOG_DEBUG, "syslog: Connected to %s:%d", ts->ts_host, ts->ts_port);
 
-    if(gethostname(hostname, sizeof(hostname) - 1))
-      strcpy(hostname, "badhostname");
+    if(hostname == NULL) {
+      hostname = hostnamebuf;
+      if(gethostname(hostnamebuf, sizeof(hostnamebuf) - 1))
+        hostname = "none";
+    }
 
     pthread_mutex_lock(&trace_mutex);
 
@@ -566,7 +571,8 @@ stop_log(void)
 
 void
 trace_enable_builtin_syslog(const char *host, int port,
-                            const char *format, int tls)
+                            const char *format, int tls,
+                            const char *hostname)
 {
   if(syslog_logsink)
     return;
@@ -580,7 +586,7 @@ trace_enable_builtin_syslog(const char *host, int port,
   ts->ts_port = port;
   ts->ts_format = strdup(format);
   ts->ts_tls = tls;
-
+  ts->ts_hostname = hostname ? strdup(hostname) : NULL;
 
   ts->ts_running = 1;
   ts->ts_level = LOG_DEBUG;
