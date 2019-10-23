@@ -60,7 +60,7 @@ aws_get_creds(void)
     scoped_char *url = fmt("http://169.254.170.2%s", ecs);
 
     if(http_client_request(&hcr, url,
-                           HCR_TIMEOUT(20),
+                           HCR_TIMEOUT(2),
                            HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
                            HCR_ERRBUF(errbuf, sizeof(errbuf)),
                            NULL)) {
@@ -69,11 +69,44 @@ aws_get_creds(void)
       return r;
     }
 
-    if(getenv("AWS_DEBUG_ECS_CREDENTIALS")) {
-      hexdump("AWS_DEBUG_ECS_CREDENTIALS", hcr.hcr_body, hcr.hcr_bodysize);
+  } else {
+    char errbuf[512];
+
+    scoped_strvec(iamroles);
+
+    const char *listcredsurl =
+      "http://169.254.169.254/latest/meta-data/iam/security-credentials";
+
+    scoped_http_result(rolesreq);
+
+    if(http_client_request(&rolesreq, listcredsurl,
+                           HCR_TIMEOUT(2),
+                           HCR_ERRBUF(errbuf, sizeof(errbuf)),
+                           NULL)) {
+      trace(LOG_ERR, "Unable to list ec2 machine roles %s -- %s",
+            listcredsurl, errbuf);
+      return r;
+    }
+
+    strvec_split(&iamroles, rolesreq.hcr_body, "\n", 0);
+    const char *iamrole = strvec_get(&iamroles, 0);
+
+    scoped_char *url =
+      fmt("http://169.254.169.254/latest/meta-data/iam/security-credentials/%s",
+          iamrole);
+
+    trace(LOG_DEBUG, "Loading IAM machine credentials from %s", url);
+
+    if(http_client_request(&hcr, url,
+                           HCR_TIMEOUT(2),
+                           HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
+                           HCR_ERRBUF(errbuf, sizeof(errbuf)),
+                           NULL)) {
+      trace(LOG_ERR, "Unable to load AWS credentials from %s -- %s",
+            url, errbuf);
+      return r;
     }
   }
-
 
   ntv_release(aws_creds);
   aws_creds = ntv_retain(hcr.hcr_json_result);
