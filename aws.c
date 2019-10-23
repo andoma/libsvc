@@ -26,10 +26,64 @@ aws_creds_thread_key_dtor(void *x)
 }
 
 
+static aws_creds_t
+aws_get_default_creds_from_HOME(void)
+{
+  static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+  static int loaded;
+  static char *aws_access_key_id;
+  static char *aws_secret_access_key;
+
+  aws_creds_t r = {};
+
+  const char *home = getenv("HOME");
+  if(home == NULL)
+    return r;
+
+  pthread_mutex_lock(&mutex);
+
+  if(!loaded) {
+    loaded = 1;
+    scoped_char *path = fmt("%s/.aws/credentials", home);
+
+    scoped_char *creds = readfile(path, NULL);
+    if(creds == NULL)
+      return r;
+
+
+    int correct_section = 0;
+
+    LINEPARSE(l, creds) {
+      if(l[0] == '[')
+        correct_section = !strcmp(l, "[default]");
+
+      if(!correct_section)
+        continue;
+
+      scoped_strvec(args);
+      strvec_split(&args, l, " ", 0);
+
+      if(args.count != 3 || strcmp(strvec_get(&args, 1), "="))
+        continue;
+
+      if(!strcmp(strvec_get(&args, 0), "aws_access_key_id"))
+        strset(&aws_access_key_id, strvec_get(&args, 2));
+      if(!strcmp(strvec_get(&args, 0), "aws_secret_access_key"))
+        strset(&aws_secret_access_key, strvec_get(&args, 2));
+    }
+  }
+  r.id = aws_access_key_id;
+  r.secret = aws_secret_access_key;
+
+  pthread_mutex_unlock(&mutex);
+  return r;
+}
+
+
 aws_creds_t
 aws_get_creds(void)
 {
-  static pthread_mutex_t aws_creds_mutex = PTHREAD_MUTEX_INITIALIZER;
+  static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
   static ntv_t *aws_creds;
   static pthread_key_t aws_creds_thread_key;
   static int aws_creds_thread_key_initialized;
@@ -43,7 +97,12 @@ aws_get_creds(void)
   if(r.id != NULL && r.secret != NULL)
     return r;
 
-  pthread_mutex_lock(&aws_creds_mutex);
+  r = aws_get_default_creds_from_HOME();
+  if(r.id != NULL && r.secret != NULL)
+    return r;
+
+
+  pthread_mutex_lock(&mutex);
 
   if(!aws_creds_thread_key_initialized) {
     aws_creds_thread_key_initialized = 1;
@@ -128,7 +187,7 @@ aws_get_creds(void)
     }
   }
 
-  pthread_mutex_unlock(&aws_creds_mutex);
+  pthread_mutex_unlock(&mutex);
 
   return (aws_creds_t) {
     .id     = ntv_get_str(aws_creds, "AccessKeyId"),
