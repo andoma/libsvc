@@ -47,9 +47,10 @@ aws_get_default_creds_from_HOME(void)
     scoped_char *path = fmt("%s/.aws/credentials", home);
 
     scoped_char *creds = readfile(path, NULL);
-    if(creds == NULL)
+    if(creds == NULL) {
+      pthread_mutex_unlock(&mutex);
       return r;
-
+    }
 
     int correct_section = 0;
 
