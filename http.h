@@ -167,7 +167,8 @@ struct http_server *http_server_create(int port, const char *bind_address,
                                        void *sslctx,
                                        http_sniffer_t *sniffer,
                                        int flags,
-                                       const char *hs_congestion_algo);
+                                       const char *hs_congestion_algo,
+                                       const char *real_ip_header);
 
 void http_server_destroy(struct http_server *hs);
 

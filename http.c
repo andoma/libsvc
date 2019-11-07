@@ -1694,7 +1694,8 @@ http_server_init(const char *config_prefix)
 struct http_server *
 http_server_create(int port, const char *bind_address, void *sslctx,
                    http_sniffer_t *sniffer, int flags,
-                   const char *congestion_algo)
+                   const char *congestion_algo,
+                   const char *real_ip_header)
 {
   http_server_t *hs = calloc(1, sizeof(http_server_t));
   atomic_set(&hs->hs_refcount, 1);
@@ -1704,6 +1705,7 @@ http_server_create(int port, const char *bind_address, void *sslctx,
   hs->hs_sniffer = sniffer;
   hs->hs_flags = flags;
   hs->hs_congestion_algo = congestion_algo ? strdup(congestion_algo) : NULL;
+  hs->hs_real_ip_header = real_ip_header ? strdup(real_ip_header) : NULL;
   asyncio_run_task(http_server_start, hs);
   return hs;
 }
