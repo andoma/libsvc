@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -39,6 +40,16 @@ intvec_insert(intvec_t *vec, int position, int value)
 
   vec->v[position] = value;
   vec->count++;
+}
+
+
+void
+intvec_delete(intvec_t *vec, unsigned int position)
+{
+  assert(position < vec->count);
+  memmove(vec->v + position, vec->v + position + 1,
+          (vec->count - position - 1) * sizeof(vec->v[0]));
+  vec->count--;
 }
 
 
