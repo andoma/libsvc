@@ -21,7 +21,7 @@ SRCS += ${libsvc_SRCS:%.c=libsvc/%.c}
 # Final linker stuff
 ##############################################################
 
-LDFLAGS += -lssl -lcrypto -lbz2 -lpthread -lm
+LDFLAGS += -lssl -lcrypto -lpthread -lm
 
 ifeq ($(shell uname),Linux)
 LDFLAGS += -lrt
