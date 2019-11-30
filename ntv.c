@@ -962,7 +962,7 @@ ntv_print0(FILE *fp, const ntv_t *f, int indent)
     for(i = 0; i < MIN(16, f->ntv_binsize - 1); i++)
       fprintf(fp, "%02x.", ((uint8_t *)f->ntv_bin)[i]);
     fprintf(fp, "%s%02x>\n", i != f->ntv_binsize - 1 ? ".." : "",
-            ((uint8_t *)f->ntv_bin)[i]);
+            ((uint8_t *)f->ntv_bin)[f->ntv_binsize - 1]);
     break;
 
   case NTV_INT:
