@@ -298,11 +298,10 @@ cbor_read_string(const uint8_t *data, const uint8_t *dataend, char **str,
   if(length > dataend - data)
     return cbor_err(data, ec, "EOF, trying to read %zd bytes", (size_t)length);
 
-  char *x = malloc_add(length, 1);
-  if(x == NULL) {
-    return cbor_err(data, ec, "Out of memrory when reading string field");
+  char *s = malloc_add(length, 1);
+  if(s == NULL) {
+    return cbor_err(data, ec, "Out of memory when reading string field");
   }
-  char *s = malloc(length);
   memcpy(s, data, length);
   s[length] = 0;
   *str = s;
