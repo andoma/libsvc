@@ -284,6 +284,7 @@ xlog(int level, const xlog_kv_t *kv, const char *fmt, ...)
 }
 
 
+#ifdef WITH_ASYNCIO
 
 
 SIMPLEQ_HEAD(traceline_queue, traceline);
@@ -615,3 +616,4 @@ trace_enable_builtin_syslog(const char *host, int port,
   }
   atexit(stop_log);
 }
+#endif
