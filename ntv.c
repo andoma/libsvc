@@ -759,6 +759,30 @@ ntv_copy(const ntv_t *src)
   ntv_t *dst = ntv_create(src->ntv_type);
   dst->ntv_flags |= src->ntv_flags & (NTV_NOCASE);
 
+  switch(src->ntv_type) {
+  case NTV_BOOLEAN:
+    dst->ntv_boolean = src->ntv_boolean;
+    break;
+  case NTV_INT:
+    dst->ntv_s64 = src->ntv_s64;
+    break;
+  case NTV_DOUBLE:
+    dst->ntv_double = src->ntv_double;
+    break;
+  case NTV_NULL:
+  case NTV_MAP:
+  case NTV_LIST:
+    break;
+  case NTV_STRING:
+    dst->ntv_string = strdup(src->ntv_string);
+    break;
+  case NTV_BINARY:
+    dst->ntv_bin = malloc(src->ntv_binsize);
+    memcpy(dst->ntv_bin, src->ntv_bin, src->ntv_binsize);
+    dst->ntv_binsize = src->ntv_binsize;
+    break;
+  }
+
   const ntv_t *f;
   TAILQ_FOREACH(f, &src->ntv_children, ntv_link) {
     ntv_add_from_field(dst, f->ntv_name, f);
