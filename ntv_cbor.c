@@ -277,9 +277,9 @@ cbor_read_bin(const uint8_t *data, const uint8_t *dataend, ntv_t *f,
   }
   char *x = malloc(length);
   if(x == NULL) {
-    return cbor_err(data, ec, "Out of memrory when reading binary field");
+    return cbor_err(data, ec, "Out of memory when reading binary field");
   }
-  f->ntv_bin = malloc(length);
+  f->ntv_bin = x;
   f->ntv_binsize = length;
   memcpy(f->ntv_bin, data, length);
   return data + length;
