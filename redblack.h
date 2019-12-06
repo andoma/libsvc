@@ -179,14 +179,14 @@ do {							\
 /**
  * Insert a new node, if a collision occures the colliding node is returned
  */
-#define RB_INSERT_SORTED(head, skel, field, cmpfunc)			 \
+#define RB_INSERT_SORTED(head, skel, field, cmpfunc, ...)                \
 ({									 \
   int res, fromleft = 0;						 \
   typeof(skel) x = skel, c, parent = NULL;				 \
 									 \
   c = (head)->root;							 \
   while(c != NULL) {							 \
-    res = cmpfunc(x, c);						 \
+    res = cmpfunc(x, c, ##__VA_ARGS__);                                  \
     if(res < 0) {							 \
       parent = c;							 \
       c = c->field.left;						 \
@@ -492,12 +492,12 @@ do {									 \
 /**
  * Finds a node
  */
-#define RB_FIND(head, skel, field, cmpfunc)	\
+#define RB_FIND(head, skel, field, cmpfunc, ...)\
 ({						\
-  int res;                                        \
+  int res;                                      \
   typeof(skel) c = (head)->root;		\
   while(c != NULL) {				\
-    res = cmpfunc(skel, c);			\
+    res = cmpfunc(skel, c, ##__VA_ARGS__);	\
     if(res < 0) {				\
       c = c->field.left;			\
     } else if(res > 0) {			\
@@ -514,12 +514,12 @@ do {									 \
 /**
  * Finds first node greater than 'skel'
  */
-#define RB_FIND_GT(head, skel, field, cmpfunc)	  \
+#define RB_FIND_GT(head, skel, field, cmpfunc,...)\
 ({						  \
   int res;                                        \
   typeof(skel) c = (head)->root, x = NULL;	  \
   while(c != NULL) {				  \
-    res = cmpfunc(skel, c);			  \
+    res = cmpfunc(skel, c, ##__VA_ARGS__);	  \
     if(res < 0) {				  \
       x = c;					  \
       c = c->field.left;			  \
@@ -536,12 +536,12 @@ do {									 \
 /**
  * Finds a node greater or equal to 'skel'
  */
-#define RB_FIND_GE(head, skel, field, cmpfunc)	  \
+#define RB_FIND_GE(head, skel, field, cmpfunc,...)\
 ({						  \
   int res;                                        \
   typeof(skel) c = (head)->root, x = NULL;	  \
   while(c != NULL) {				  \
-    res = cmpfunc(skel, c);			  \
+    res = cmpfunc(skel, c, ##__VA_ARGS__);	  \
     if(res < 0) {				  \
       x = c;					  \
       c = c->field.left;			  \
@@ -559,12 +559,12 @@ do {									 \
 /**
  * Finds first node lesser than 'skel'
  */
-#define RB_FIND_LT(head, skel, field, cmpfunc)	  \
+#define RB_FIND_LT(head, skel, field, cmpfunc,...)\
 ({						  \
   int res;                                        \
   typeof(skel) c = (head)->root, x = NULL;	  \
   while(c != NULL) {				  \
-    res = cmpfunc(skel, c);			  \
+    res = cmpfunc(skel, c, ##__VA_ARGS__);	  \
     if(res < 0) {				  \
       c = c->field.left;			  \
     } else if(res > 0) {			  \
@@ -581,12 +581,12 @@ do {									 \
 /**
  * Finds a node lesser or equal to 'skel'
  */
-#define RB_FIND_LE(head, skel, field, cmpfunc)	  \
+#define RB_FIND_LE(head, skel, field, cmpfunc,...)\
 ({						  \
   int res;                                        \
   typeof(skel) c = (head)->root, x = NULL;	  \
   while(c != NULL) {				  \
-    res = cmpfunc(skel, c);			  \
+    res = cmpfunc(skel, c, ##__VA_ARGS__);        \
     if(res < 0) {				  \
       c = c->field.left;			  \
     } else if(res > 0) {			  \
