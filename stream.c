@@ -140,3 +140,10 @@ stream_close(stream_t *s)
   asyncio_shutdown(s->s_af);
   stream_release(s);
 }
+
+
+void
+stream_shutdown(stream_t *s)
+{
+  asyncio_shutdown(s->s_af);
+}

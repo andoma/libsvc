@@ -21,3 +21,4 @@ ssize_t stream_read(stream_t *s, void *data, size_t len, int flags);
 
 void stream_close(stream_t *s);
 
+void stream_shutdown(stream_t *s);
