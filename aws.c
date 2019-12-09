@@ -499,7 +499,11 @@ aws_invoked_error(const ntv_t *response)
   const ntv_t *error = ntv_get_map(response, "error");
   if(error == NULL)
     return NULL;
-  return ntv_get_str(error, "Message") ?: "Unspecified Error";
+
+  return
+    ntv_get_str(error, "Message") ?:
+    ntv_get_str(error, "message") ?:
+    "Unspecified Error";
 }
 
 const ntv_t *
