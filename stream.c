@@ -13,6 +13,7 @@
 struct stream {
   asyncio_fd_t *s_af;
   atomic_t s_refcount;
+  int s_eos;
   int s_error;
   mbuf_t s_recv_buf;
   pthread_mutex_t s_recv_mutex;
@@ -39,6 +40,7 @@ stream_error(void *opaque, int error)
 {
   stream_t *s = opaque;
   pthread_mutex_lock(&s->s_recv_mutex);
+  s->s_eos = 1;
   s->s_error = error;
   pthread_cond_signal(&s->s_recv_cond);
   pthread_mutex_unlock(&s->s_recv_mutex);
@@ -103,8 +105,8 @@ stream_read(stream_t *s, void *data, size_t len, int flags)
 {
   pthread_mutex_lock(&s->s_recv_mutex);
   while(1) {
-    if(s->s_recv_buf.mq_size == 0 && s->s_error) {
-      if(s->s_error == ECONNRESET && flags == 0) {
+    if(s->s_recv_buf.mq_size == 0 && s->s_eos) {
+      if(flags == 0) {
         pthread_mutex_unlock(&s->s_recv_mutex);
         return 0;
       }
