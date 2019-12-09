@@ -135,6 +135,7 @@ aws_get_creds(void)
                              NULL)) {
         trace(LOG_ERR, "Unable to load AWS credentials from %s -- %s",
               url, errbuf);
+        pthread_mutex_unlock(&mutex);
         return r;
       }
 
@@ -154,6 +155,7 @@ aws_get_creds(void)
                              NULL)) {
         trace(LOG_ERR, "Unable to list ec2 machine roles %s -- %s",
               listcredsurl, errbuf);
+        pthread_mutex_unlock(&mutex);
         return r;
       }
 
@@ -173,6 +175,7 @@ aws_get_creds(void)
                              NULL)) {
         trace(LOG_ERR, "Unable to load AWS credentials from %s -- %s",
               url, errbuf);
+        pthread_mutex_unlock(&mutex);
         return r;
       }
     }
