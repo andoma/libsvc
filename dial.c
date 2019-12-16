@@ -207,7 +207,8 @@ tcp_stream_t *
 dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
      char *errbuf, size_t errlen)
 {
-  int fd = dialfd(hostname, port, timeout, errbuf, errlen, tsi->debug);
+  int fd = dialfd(hostname, port, timeout, errbuf, errlen,
+                  tsi != NULL ? tsi->debug : 0);
   if(fd == -1)
     return NULL;
 
