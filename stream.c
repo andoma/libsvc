@@ -67,7 +67,8 @@ stream_connect(const char *hostname, int port, int timeout_ms,
 {
   if(flags & STREAM_DEBUG)
     trace(LOG_DEBUG, "stream: Connecting to %s:%d", hostname, port);
-  int fd = dialfd(hostname, port, timeout_ms, errbuf, errlen);
+  int fd = dialfd(hostname, port, timeout_ms, errbuf, errlen,
+                  flags & STREAM_DEBUG);
   if(flags & STREAM_DEBUG)
     trace(LOG_DEBUG, "stream: Connect %s:%d : %s",
           hostname, port, fd == -1 ? strerror(errno) : "OK");

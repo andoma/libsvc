@@ -66,7 +66,8 @@ getstreamsocket(int family)
 
 static int
 dial_one(const struct sockaddr *sa, socklen_t slen, int timeout,
-         const char *hostname, char *errbuf, size_t errlen)
+         const char *hostname, char *errbuf, size_t errlen,
+         int debug)
 {
   char addrtxt[512];
   int err;
@@ -89,6 +90,8 @@ dial_one(const struct sockaddr *sa, socklen_t slen, int timeout,
   int fd = getstreamsocket(sa->sa_family);
   int r = connect(fd, sa, slen);
   if(r == -1) {
+    if(debug)
+      trace(LOG_DEBUG, "dialfd: connect() = %s", strerror(errno));
     if(errno == EINPROGRESS) {
       struct pollfd pfd;
 
@@ -97,6 +100,8 @@ dial_one(const struct sockaddr *sa, socklen_t slen, int timeout,
       pfd.revents = 0;
 
       r = poll(&pfd, 1, timeout);
+      if(debug)
+        trace(LOG_DEBUG, "dialfd: poll returned %d", r);
       if(r == 0) {
         /* Timeout */
         close(fd);
@@ -159,23 +164,33 @@ dial_one(const struct sockaddr *sa, socklen_t slen, int timeout,
  */
 int
 dialfd(const char *hostname, int port, int timeout,
-       char *errbuf, size_t errlen)
+       char *errbuf, size_t errlen, int debug)
 {
   char service[10];
   snprintf(service, sizeof(service), "%u", port);
   struct addrinfo *res = NULL;
+  if(debug)
+    trace(LOG_DEBUG, "dialfd: Resolveing %s:%s", hostname, service);
   const int gai_err = getaddrinfo(hostname, service, NULL, &res);
   if(gai_err) {
     snprintf(errbuf, errlen, "Unable to resolve %s -- %s", hostname,
              gai_strerror(gai_err));
     return -1;
   }
+  if(debug)
+    trace(LOG_DEBUG, "dialfd: Resolved %s:%s", hostname, service);
 
   const struct addrinfo *ai = res;
   int fd = -1;
   while(ai) {
+    if(debug)
+      trace(LOG_DEBUG, "dialfd: %s:%s Attempting to connect",
+            hostname, service);
     fd = dial_one(ai->ai_addr, ai->ai_addrlen, timeout, hostname,
-                  errbuf, errlen);
+                  errbuf, errlen, debug);
+    if(debug)
+      trace(LOG_DEBUG, "dialfd: %s:%s Attempting to connect, fd=%d",
+            hostname, service, fd);
     if(fd >= 0)
       break;
     ai = ai->ai_next;
@@ -192,7 +207,7 @@ tcp_stream_t *
 dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
      char *errbuf, size_t errlen)
 {
-  int fd = dialfd(hostname, port, timeout, errbuf, errlen);
+  int fd = dialfd(hostname, port, timeout, errbuf, errlen, tsi->debug);
   if(fd == -1)
     return NULL;
 
