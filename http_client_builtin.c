@@ -272,6 +272,7 @@ http_do_request(const char *url,
   } else if(!strcmp(schema, "https")) {
     tcp_ssl_info_t tsi = {};
     port = pu.port ?: 443;
+    tsi.debug = trace;
     ctxtrace(&ctx, "Connecting to %s:%d (TLS)", hostname, port);
     ts = dial(hostname, port, timeout, &tsi, errbuf, sizeof(errbuf));
   } else {

@@ -9,6 +9,7 @@
 #include "dial.h"
 #include "asyncio.h"
 #include "atomic.h"
+#include "trace.h"
 
 struct stream {
   asyncio_fd_t *s_af;
@@ -64,7 +65,12 @@ stream_t *
 stream_connect(const char *hostname, int port, int timeout_ms,
                char *errbuf, size_t errlen, int flags)
 {
+  if(flags & STREAM_DEBUG)
+    trace(LOG_DEBUG, "stream: Connecting to %s:%d", hostname, port);
   int fd = dialfd(hostname, port, timeout_ms, errbuf, errlen);
+  if(flags & STREAM_DEBUG)
+    trace(LOG_DEBUG, "stream: Connect %s:%d : %s",
+          hostname, port, fd == -1 ? strerror(errno) : "OK");
   if(fd == -1)
     return NULL;
   stream_t *s = calloc(1, sizeof(stream_t));
@@ -74,8 +80,15 @@ stream_connect(const char *hostname, int port, int timeout_ms,
   pthread_cond_init(&s->s_recv_cond, NULL);
   pthread_mutex_init(&s->s_recv_mutex, NULL);
 
-  asyncio_sslctx_t *sslctx = flags & STREAM_CONNECT_F_SSL ?
-    asyncio_sslctx_client() : NULL;
+  asyncio_sslctx_t *sslctx = NULL;
+
+  if(flags & STREAM_CONNECT_F_SSL) {
+    if(flags & STREAM_DEBUG)
+      trace(LOG_DEBUG, "stream: Initializing TLS context for %s:%d", hostname, port);
+    sslctx = asyncio_sslctx_client();
+    if(flags & STREAM_DEBUG)
+      trace(LOG_DEBUG, "stream: Initialized TLS context for %s:%d", hostname, port);
+  }
 
   int asyncio_flags = ASYNCIO_FLAG_THREAD_SAFE;
   if(!(flags & STREAM_CONNECT_F_SSL_DONT_VERIFY))
@@ -85,6 +98,10 @@ stream_connect(const char *hostname, int port, int timeout_ms,
                            s, asyncio_flags, sslctx, hostname, hostname);
   if(sslctx != NULL)
     asyncio_sslctx_free(sslctx);
+
+  if(flags & STREAM_DEBUG)
+    trace(LOG_DEBUG, "stream: Stream for %s:%d initialized", hostname, port);
+
   return s;
 }
 

@@ -50,6 +50,7 @@
 #include "tcp.h"
 #include "misc.h"
 #include "libsvc.h"
+#include "trace.h"
 
 #if defined(WITH_OPENSSL)
 static SSL_CTX *ssl_ctx;
@@ -674,6 +675,9 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
   tcp_stream_t *ts = calloc(1, sizeof(tcp_stream_t));
   ts->ts_fd = fd;
 
+  if(tsi->debug)
+    trace(LOG_DEBUG, "TLS to %s: Creating context", hostname);
+
   if((ts->ts_ssl = SSL_new(ssl_ctx)) == NULL)
     goto bad_ssl;
 
@@ -710,13 +714,22 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
     X509_free(cert);
   }
 
+  if(tsi->debug)
+    trace(LOG_DEBUG, "TLS to %s: Starting SSL_connect()", hostname);
+
   if(SSL_connect(ts->ts_ssl) <= 0) {
     goto bad_ssl;
   }
 
+  if(tsi->debug)
+    trace(LOG_DEBUG, "TLS to %s: SSL_connect() done", hostname);
+
   SSL_set_mode(ts->ts_ssl, SSL_MODE_AUTO_RETRY);
 
   if(!tsi->no_verify) {
+
+    if(tsi->debug)
+      trace(LOG_DEBUG, "TLS to %s: Verifying certificate", hostname);
 
     X509 *peer = SSL_get_peer_certificate(ts->ts_ssl);
     if(peer == NULL) {
@@ -730,6 +743,9 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
       X509_free(peer);
       goto bad;
     }
+
+    if(tsi->debug)
+      trace(LOG_DEBUG, "TLS to %s: Verifying hostname", hostname);
 
     if(verify_hostname(hostname, peer, errbuf, errlen)) {
       X509_free(peer);
