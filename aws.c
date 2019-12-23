@@ -437,7 +437,8 @@ aws_s3_make_url(const char *method,
                 const char *region,
                 const char *bucket,
                 const char *path,
-                aws_creds_t creds)
+                aws_creds_t creds,
+                const ntv_t *extra_query_args)
 {
   if(*path == '/')
     path++;
@@ -458,6 +459,8 @@ aws_s3_make_url(const char *method,
             "X-Amz-SignedHeaders", ntv_str("host"),
             "X-Amz-Security-Token", ntv_str(creds.token),
             NULL);
+
+  ntv_merge(query_args, extra_query_args);
 
   scoped_ntv_t *headers = ntv_map("host", ntv_str(host),
                                   NULL);

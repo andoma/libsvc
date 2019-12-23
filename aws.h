@@ -48,7 +48,8 @@ char *aws_s3_make_url(const char *method,
                       const char *region,
                       const char *bucket,
                       const char *path,
-                      aws_creds_t creds);
+                      aws_creds_t creds,
+                      const ntv_t *extra_query_args);
 
 struct ntv *aws_invoke(const char *region,
                        const char *service,
