@@ -79,6 +79,8 @@ typedef struct http_server {
 
   char *hs_congestion_algo;
 
+  http_log_cb_t *hs_log_cb;
+
 } http_server_t;
 
 
@@ -353,19 +355,26 @@ void
 http_log(http_request_t *hr, int status, const char *str)
 {
   int logua = 0;
+
+  const int64_t d1 = hr->hr_req_process - hr->hr_req_received;
+  const int64_t d2 = asyncio_now() - hr->hr_req_process;
+
+  const http_server_t *hs =
+    hr->hr_connection ? hr->hr_connection->hc_server : NULL;
+
+  if(hs != NULL && hs->hs_log_cb != NULL) {
+    hs->hs_log_cb(hr->hr_connection, hr, status,
+                  hr->hr_path, d1, d2, str);
+    return;
+  }
+
   if(hr->hr_route_flags & HTTP_ROUTE_DISABLE_LOG)
     return;
 
-  if(hr->hr_connection != NULL) {
-    const http_server_t *hs = hr->hr_connection->hc_server;
-    if(hs->hs_config_prefix != NULL) {
-      cfg_root(cr);
-      logua = cfg_get_int(cr, CFG(hs->hs_config_prefix, "logua"), 0);
-    }
+  if(hs != NULL && hs->hs_config_prefix != NULL) {
+    cfg_root(cr);
+    logua = cfg_get_int(cr, CFG(hs->hs_config_prefix, "logua"), 0);
   }
-
-  int64_t d1 = hr->hr_req_process - hr->hr_req_received;
-  int64_t d2 = asyncio_now() - hr->hr_req_process;
 
   int level = LOG_INFO;
   if(status >= 500)
@@ -1423,6 +1432,12 @@ http_connection_get_peer(struct http_connection *hc)
   return (const struct sockaddr *)&hc->hc_peer_sockaddr;
 }
 
+const char *
+http_connection_get_peeraddr(struct http_connection *hc)
+{
+  return hc->hc_peer_addr;
+}
+
 struct asyncio_fd *
 http_connection_get_af(struct http_connection *hc)
 {
@@ -1522,6 +1537,22 @@ http_server_timeout(void *aux, int64_t now)
 }
 
 
+
+/**
+ *
+ */
+static void
+http_server_socket_trace(void *opaque, const char *str)
+{
+  http_connection_t *hc = opaque;
+  http_server_t *hs = hc->hc_server;
+
+  if(hs->hs_log_cb) {
+    hs->hs_log_cb(hc, NULL, 0, NULL, 0, 0, str);
+  }
+}
+
+
 /**
  *
  */
@@ -1598,7 +1629,8 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
   atomic_inc(&hs->hs_refcount);
   hc->hc_af = asyncio_stream(fd, http_server_read, http_server_error, hc,
                              asyncio_flags,
-                             hs->hs_sslctx, NULL, hc->hc_peer_addr);
+                             hs->hs_sslctx, NULL, hc->hc_peer_addr,
+                             hs->hs_log_cb ? http_server_socket_trace : NULL);
 
   asyncio_timer_init(&hc->hc_timer, http_server_timeout, hc);
   asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
@@ -1695,7 +1727,8 @@ struct http_server *
 http_server_create(int port, const char *bind_address, void *sslctx,
                    http_sniffer_t *sniffer, int flags,
                    const char *congestion_algo,
-                   const char *real_ip_header)
+                   const char *real_ip_header,
+                   http_log_cb_t log_cb)
 {
   http_server_t *hs = calloc(1, sizeof(http_server_t));
   atomic_set(&hs->hs_refcount, 1);
@@ -1706,6 +1739,7 @@ http_server_create(int port, const char *bind_address, void *sslctx,
   hs->hs_flags = flags;
   hs->hs_congestion_algo = congestion_algo ? strdup(congestion_algo) : NULL;
   hs->hs_real_ip_header = real_ip_header ? strdup(real_ip_header) : NULL;
+  hs->hs_log_cb = log_cb;
   asyncio_run_task(http_server_start, hs);
   return hs;
 }

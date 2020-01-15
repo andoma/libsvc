@@ -74,6 +74,8 @@ typedef void (asyncio_read_cb_t)(void *opaque, struct mbuf *hq);
 
 typedef void (asyncio_poll_cb_t)(struct asyncio_fd *);
 
+typedef void (asyncio_socket_trace_cb_t)(void *opaque, const char *str);
+
 asyncio_fd_t *asyncio_bind(const char *bindaddr,
                            int port,
                            asyncio_accept_cb_t *cb,
@@ -91,7 +93,8 @@ asyncio_fd_t *asyncio_stream(int fd,
                              int flags,
                              asyncio_sslctx_t *sslctx,
                              const char *hostname,
-                             const char *title);
+                             const char *title,
+                             asyncio_socket_trace_cb_t *trace);
 
 int asyncio_detach(asyncio_fd_t *af);
 

@@ -139,6 +139,8 @@ void http_send_raw(http_request_t *hc, const void *data, size_t len);
 
 const struct sockaddr *http_connection_get_peer(struct http_connection *hc);
 
+const char *http_connection_get_peeraddr(struct http_connection *hc);
+
 struct asyncio_fd *http_connection_get_af(struct http_connection *hc);
 
 int http_send_chunk(http_request_t *hc, const void *data, size_t len);
@@ -160,6 +162,12 @@ void http_route_add(const char *path, http_callback2_t *callback, int flags);
 
 struct http_server *http_server_init(const char *config);
 
+typedef void (http_log_cb_t)(struct http_connection *hc, http_request_t *hr,
+                             int status,
+                             const char *path,
+                             int64_t t1, int64_t t2,
+                             const char *str);
+
 #define HTTP_SERVER_NO_DELAY        0x1
 #define HTTP_SERVER_LOW_SEND_BUFFER 0x2
 
@@ -168,7 +176,8 @@ struct http_server *http_server_create(int port, const char *bind_address,
                                        http_sniffer_t *sniffer,
                                        int flags,
                                        const char *hs_congestion_algo,
-                                       const char *real_ip_header);
+                                       const char *real_ip_header,
+                                       http_log_cb_t *log_cb);
 
 void http_server_destroy(struct http_server *hs);
 

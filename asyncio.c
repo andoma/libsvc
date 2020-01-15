@@ -119,6 +119,7 @@ struct asyncio_fd {
   asyncio_poll_cb_t *af_pollin;
   asyncio_poll_cb_t *af_pollout;
   asyncio_read_cb_t *af_bytes_avail;
+  asyncio_socket_trace_cb_t *af_trace;
 
   int (*af_locked_write)(struct asyncio_fd *af, int canwrite);
 
@@ -151,6 +152,10 @@ struct asyncio_fd {
   int af_ssl_write_status;
   SSL *af_ssl;
   asyncio_sslctx_t *af_sslctx;
+
+  uint8_t af_handshake_inspect_buf[32];
+  size_t af_handshake_inspect_buf_used;
+
 #endif
   LIST_ENTRY(asyncio_fd) af_deferred_processing_link;
 };
@@ -764,6 +769,15 @@ asyncio_ssl_verify(asyncio_fd_t *af)
 static int
 asyncio_ssl_handshake(asyncio_fd_t *af)
 {
+  if(af->af_trace && af->af_handshake_inspect_buf_used == 0) {
+
+    int x = recv(af->af_fd, af->af_handshake_inspect_buf,
+                 sizeof(af->af_handshake_inspect_buf), MSG_PEEK);
+    if(x > 0) {
+      af->af_handshake_inspect_buf_used = x;
+    }
+  }
+
   int r = SSL_do_handshake(af->af_ssl);
   int err = SSL_get_error(af->af_ssl, r);
   switch(err) {
@@ -789,11 +803,24 @@ asyncio_ssl_handshake(asyncio_fd_t *af)
     return 0;
 
   default:
-#if 1
-    trace(LOG_INFO, "SSL: %s: Unable to handshake, err:%d r:%d errno:%d",
-          af->af_title, err, r, errno);
-    ssldump(af);
-#endif
+
+    if(af->af_trace) {
+      char hex[sizeof(af->af_handshake_inspect_buf) * 3 + 1];
+      char *dst = hex;
+      size_t i;
+      for(i = 0; i < af->af_handshake_inspect_buf_used; i++) {
+        if(i)
+          *dst++ = ' ';
+        uint8_t v = af->af_handshake_inspect_buf[i];
+        *dst++ = "0123456789abcdef"[v >> 4];
+        *dst++ = "0123456789abcdef"[v & 15];
+      }
+      *dst = 0;
+
+      scoped_char *msg = fmt("SSL Handshake failed err:%d r:%d recv:[%s]",
+                             err, r, hex);
+      af->af_trace(af->af_opaque, msg);
+    }
     return ENOLINK;
   }
   return 0;
@@ -1568,7 +1595,8 @@ asyncio_stream(int fd,
                int flags,
                asyncio_sslctx_t *sslctx,
                const char *hostname,
-               const char *title)
+               const char *title,
+               asyncio_socket_trace_cb_t *tracecb)
 {
   int poll_flags = EPOLLIN;
   setup_tcp_socket(fd, flags & ASYNCIO_FLAG_NO_DELAY);
@@ -1576,6 +1604,7 @@ asyncio_stream(int fd,
 
   af->af_flags = flags;
   af->af_hostname = hostname ? strdup(hostname) : NULL;
+  af->af_trace = tracecb;
 
   if(flags & ASYNCIO_FLAG_THREAD_SAFE) {
     pthread_mutex_init(&af->af_sendq_mutex, NULL);
