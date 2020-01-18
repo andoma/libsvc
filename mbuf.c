@@ -889,7 +889,7 @@ mbuf_grp_drop(mbuf_grp_t *mg, size_t size)
     return;
   }
 
-  if(md->md_flags & MBUF_SOM) {
+  if(md->md_flags & MBUF_SOM && md->md_data_off == 0) {
     mg->mg_current = NULL;
   }
 }
