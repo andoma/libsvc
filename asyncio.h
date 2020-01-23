@@ -21,6 +21,7 @@
 * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ******************************************************************************/
 
+#pragma once
 
 #include <sys/socket.h>
 #include "mbuf.h"
