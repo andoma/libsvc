@@ -33,6 +33,7 @@ libsvc_SRCS += \
 	aws.c \
 	acme.c \
 	fpipe.c \
+	tbm.c \
 
 
 libsvc_INCS += \
