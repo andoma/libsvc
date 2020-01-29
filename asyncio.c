@@ -874,7 +874,7 @@ do_ssl_read_locked(asyncio_fd_t *af)
   char buf[4096];
   af->af_ssl_read_status = 0;
 
-  while(af->af_ssl != NULL) {
+  for(int i = 0; i < 10 && af->af_ssl != NULL; i++) {
     if(af->af_ssl_write_status == SSL_ERROR_WANT_READ) {
       return 0;
     }
