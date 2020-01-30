@@ -930,6 +930,7 @@ do_ssl_read(asyncio_fd_t *af)
 
   if(af->af_ssl_write_status == SSL_ERROR_WANT_READ) {
     do_ssl_write_locked(af, 1);
+    af_unlock(af);
     return;
   }
 
