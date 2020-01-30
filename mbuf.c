@@ -60,7 +60,15 @@ void
 mbuf_data_free(mbuf_t *mq, mbuf_data_t *md)
 {
   TAILQ_REMOVE(&mq->mq_buffers, md, md_link);
-  free(md->md_data);
+  switch(md->md_type) {
+  case MBUF_MALLOC:
+    free(md->md_data);
+    break;
+
+  case MBUF_CALLBACK:
+    md->md_callback(md->md_opaque);
+    break;
+  }
   free(md);
 }
 
@@ -89,6 +97,7 @@ mbuf_append_som(mbuf_t *mq, const void *buf, size_t len)
 {
   mq->mq_size += len;
   mbuf_data_t *md = malloc(sizeof(mbuf_data_t));
+  md->md_type = MBUF_MALLOC;
   TAILQ_INSERT_TAIL(&mq->mq_buffers, md, md_link);
   size_t c = MAX(len, mq->mq_alloc_size);
   md->md_data = malloc(c);
@@ -110,7 +119,7 @@ mbuf_append(mbuf_t *mq, const void *buf, size_t len)
   int c;
   mq->mq_size += len;
 
-  if(md != NULL) {
+  if(md != NULL && md->md_type == MBUF_MALLOC) {
     /* Fill out any previous buffer */
     c = MIN(md->md_data_size - md->md_data_len, len);
     memcpy(md->md_data + md->md_data_len, buf, c);
@@ -122,6 +131,7 @@ mbuf_append(mbuf_t *mq, const void *buf, size_t len)
     return;
 
   md = malloc(sizeof(mbuf_data_t));
+  md->md_type = MBUF_MALLOC;
   TAILQ_INSERT_TAIL(&mq->mq_buffers, md, md_link);
 
   c = MAX(len, mq->mq_alloc_size);
@@ -146,6 +156,7 @@ mbuf_prepend(mbuf_t *mq, const void *buf, size_t len)
 
   TAILQ_INSERT_HEAD(&mq->mq_buffers, md, md_link);
   md->md_data = malloc(len);
+  md->md_type = MBUF_MALLOC;
   md->md_data_size = len;
   md->md_data_len = len;
   md->md_data_off = 0;
@@ -171,6 +182,7 @@ mbuf_append_prealloc(mbuf_t *mq, void *buf, size_t len)
   mq->mq_size += len;
 
   md = malloc(sizeof(mbuf_data_t));
+  md->md_type = MBUF_MALLOC;
   TAILQ_INSERT_TAIL(&mq->mq_buffers, md, md_link);
 
   md->md_data = buf;
@@ -179,6 +191,22 @@ mbuf_append_prealloc(mbuf_t *mq, void *buf, size_t len)
   md->md_data_off = 0;
   md->md_flags = 0;
 }
+
+
+void
+mbuf_append_callback(mbuf_t *mq, void (*cb)(void *opaque), void *opaque)
+{
+  mbuf_data_t *md = md = malloc(sizeof(mbuf_data_t));
+  md->md_type = MBUF_CALLBACK;
+  TAILQ_INSERT_TAIL(&mq->mq_buffers, md, md_link);
+  md->md_data_len = 0;
+  md->md_data_off = 0;
+  md->md_flags = 0;
+  md->md_callback = cb;
+  md->md_opaque = opaque;
+}
+
+
 
 /**
  *
@@ -264,6 +292,10 @@ mbuf_peek_no_copy(mbuf_t *mq, const void **buf)
 {
   const mbuf_data_t *md = TAILQ_FIRST(&mq->mq_buffers);
 
+  while(md != NULL && md->md_type == MBUF_CALLBACK) {
+    md = TAILQ_NEXT(md, md_link);
+  }
+
   if(md == NULL)
     return 0;
   *buf = md->md_data + md->md_data_off;
@@ -341,6 +373,12 @@ mbuf_drop(mbuf_t *mq, size_t len)
     if(md->md_data_off == md->md_data_len)
       mbuf_data_free(mq, md);
   }
+
+  while((md = TAILQ_FIRST(&mq->mq_buffers)) != NULL &&
+        md->md_type == MBUF_CALLBACK) {
+    mbuf_data_free(mq, md);
+  }
+
   return r;
 }
 
@@ -422,6 +460,8 @@ mbuf_copyq(mbuf_t *mq, const mbuf_t *src)
 {
   const mbuf_data_t *md;
   TAILQ_FOREACH(md, &src->mq_buffers, md_link) {
+    // Unclear how this behaves with callbacks
+    assert(md->md_type != MBUF_CALLBACK);
     mbuf_append(mq, md->md_data + md->md_data_off,
                 md->md_data_len - md->md_data_off);
   }
@@ -882,7 +922,6 @@ mbuf_grp_drop(mbuf_grp_t *mg, size_t size)
   mbuf_drop(&mgq->mgq_q, size);
   mg->mg_total_size -= size;
   const mbuf_data_t *md = TAILQ_FIRST(&mgq->mgq_q.mq_buffers);
-
   if(md == NULL) {
     mg->mg_current = NULL;
     mgq_deactivate(mg, mgq);

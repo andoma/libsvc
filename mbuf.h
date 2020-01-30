@@ -33,14 +33,42 @@
 
 TAILQ_HEAD(mbuf_data_queue, mbuf_data);
 
+
+typedef enum {
+  // mbuf_data represents malloced memeory
+  MBUF_MALLOC,
+
+  // mbuf_data doesn't represent any data at all but rather when
+  // this buffer is consumed the callback is invoked instead
+  MBUF_CALLBACK
+} mbuf_data_type_t;
+
+
 typedef struct mbuf_data {
   TAILQ_ENTRY(mbuf_data) md_link;
-  uint8_t *md_data;
-  size_t md_data_size; /* Size of allocation hb_data */
-  size_t md_data_len;  /* Number of valid bytes from hd_data */
+
+  size_t md_data_len;  /* Number of valid bytes from md_data */
   size_t md_data_off;  /* Offset in data, used for partial reads */
-  int    md_flags;
+
+  int md_flags;
+  mbuf_data_type_t md_type;
+
+  union {
+
+    struct {
+      uint8_t *md_data;
+      size_t md_data_size; /* Size of allocation hb_data */
+    };
+
+    struct {
+      void (*md_callback)(void *opaque);
+      void *md_opaque;
+    };
+  };
+
 } mbuf_data_t;
+
+
 
 #define MBUF_SOM 0x1   /* Start-of-message */
 
@@ -76,6 +104,8 @@ void mbuf_append_som(mbuf_t *mq, const void *buf, size_t len);
 void mbuf_append_str(mbuf_t *m, const char *buf);
 
 void mbuf_append_prealloc(mbuf_t *m, void *buf, size_t len);
+
+void mbuf_append_callback(mbuf_t *mq, void (*cb)(void *opaque), void *opaque);
 
 void mbuf_append_FILE(mbuf_t *m, FILE *fp);
 
