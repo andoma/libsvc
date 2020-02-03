@@ -530,9 +530,11 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     case HCR_TAG_USERNPASS: {
       const char *u = va_arg(ap, const char *);
       const char *p = va_arg(ap, const char *);
-      scoped_char *c = fmt("%s:%s", u, p);
-      scoped_char *b64 = base64_encode_a(c, strlen(c), BASE64_STANDARD);
-      strvec_pushf(&request_headers, "Authorization: Basic %s", b64);
+      if(u != NULL && p != NULL) {
+        scoped_char *c = fmt("%s:%s", u, p);
+        scoped_char *b64 = base64_encode_a(c, strlen(c), BASE64_STANDARD);
+        strvec_pushf(&request_headers, "Authorization: Basic %s", b64);
+      }
       break;
     }
 

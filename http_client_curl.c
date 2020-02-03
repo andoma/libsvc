@@ -314,8 +314,12 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
         va_arg(ap, const char *);
         va_arg(ap, const char *);
       } else {
-        curl_easy_setopt(curl, CURLOPT_USERNAME, va_arg(ap, const char *));
-        curl_easy_setopt(curl, CURLOPT_PASSWORD, va_arg(ap, const char *));
+        const char *username = va_arg(ap, const char *);
+        const char *password = va_arg(ap, const char *);
+        if(username != NULL && password != NULL) {
+          curl_easy_setopt(curl, CURLOPT_USERNAME, username);
+          curl_easy_setopt(curl, CURLOPT_PASSWORD, password);
+        }
       }
       break;
 
