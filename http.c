@@ -128,7 +128,9 @@ typedef struct http_connection {
   struct http_arg_list hc_request_headers;
 
   char *hc_peer_addr;
+  char *hc_self_addr;
   struct sockaddr_in6 hc_peer_sockaddr;
+  struct sockaddr_in6 hc_self_sockaddr;
 
   uint8_t *hc_body;
   size_t hc_body_size;
@@ -872,6 +874,7 @@ http_request_destroy(http_request_t *hr)
   http_arg_flush(&hr->hr_query_args);
   free(hr->hr_body);
   free(hr->hr_peer_addr);
+  free(hr->hr_self_addr);
 
   ntv_release(hr->hr_post_message);
   ntv_release(hr->hr_session_received);
@@ -1217,6 +1220,8 @@ http_create_request(http_connection_t *hc, int continue_check)
     hr->hr_peer_addr = strdup(hc->hc_peer_addr);
   }
 
+  hr->hr_self_addr = strdup(hc->hc_self_addr);
+
   if(task_system_overload()) {
     if(http_arg_get(&hr->hr_request_headers, "x-ignore-overload-check") == NULL) {
       hr->hr_keep_alive = 0;
@@ -1359,6 +1364,7 @@ http_connection_destroy(http_connection_t *hc)
 
   websocket_free(&hc->hc_ws_state);
   free(hc->hc_peer_addr);
+  free(hc->hc_self_addr);
 
   if(hc->hc_z_out != NULL) {
     deflateEnd(hc->hc_z_out);
@@ -1556,11 +1562,47 @@ http_server_socket_trace(void *opaque, const char *str)
 /**
  *
  */
+static char *
+parse_sockaddr(void *dst, const struct sockaddr *src)
+{
+  char tmpbuf[128];
+  char *r = NULL;
+
+  switch(src->sa_family) {
+  case AF_INET:
+    if(inet_ntop(AF_INET, &((struct sockaddr_in *)src)->sin_addr,
+                 tmpbuf, sizeof(tmpbuf)) != NULL)
+      r = strdup(tmpbuf);
+
+    memcpy(dst, src, sizeof(struct sockaddr_in));
+    break;
+  case AF_INET6:
+    if(inet_ntop(AF_INET6, &((struct sockaddr_in6 *)src)->sin6_addr,
+                 tmpbuf, sizeof(tmpbuf)) != NULL) {
+      if(!memcmp(tmpbuf, "::ffff:", 7)) {
+        r = strdup(tmpbuf + 7);
+      } else {
+        r = strdup(tmpbuf);
+      }
+    }
+    memcpy(dst, src, sizeof(struct sockaddr_in6));
+    break;
+  }
+
+  if(r == NULL)
+    r = strdup("0.0.0.0");
+
+  return r;
+}
+
+
+/**
+ *
+ */
 static int
 http_server_accept(void *opaque, int fd, struct sockaddr *peer,
                    struct sockaddr *self)
 {
-  char tmpbuf[128];
   http_server_t *hs = opaque;
   http_connection_t *hc = calloc(1, sizeof(http_connection_t));
 
@@ -1571,32 +1613,10 @@ http_server_accept(void *opaque, int fd, struct sockaddr *peer,
 
   hc->hc_task_group = task_group_create();
 
-  switch(peer->sa_family) {
-  case AF_INET:
-    if(inet_ntop(AF_INET, &((struct sockaddr_in *)peer)->sin_addr,
-                 tmpbuf, sizeof(tmpbuf)) != NULL)
-      hc->hc_peer_addr = strdup(tmpbuf);
-
-    memcpy(&hc->hc_peer_sockaddr, peer, sizeof(struct sockaddr_in));
-    break;
-  case AF_INET6:
-    if(inet_ntop(AF_INET6, &((struct sockaddr_in6 *)peer)->sin6_addr,
-                 tmpbuf, sizeof(tmpbuf)) != NULL) {
-      if(!memcmp(tmpbuf, "::ffff:", 7)) {
-        hc->hc_peer_addr = strdup(tmpbuf + 7);
-      } else {
-        hc->hc_peer_addr = strdup(tmpbuf);
-      }
-    }
-    memcpy(&hc->hc_peer_sockaddr, peer, sizeof(struct sockaddr_in6));
-    break;
-  }
+  hc->hc_peer_addr = parse_sockaddr(&hc->hc_peer_sockaddr, peer);
+  hc->hc_self_addr = parse_sockaddr(&hc->hc_self_sockaddr, self);
 
   hc->hc_sniffer = hs->hs_sniffer;
-
-  if(hc->hc_peer_addr == NULL)
-    hc->hc_peer_addr = strdup("0.0.0.0");
-
 
   // We want a small outbound socket buffer so WE are able to control
   // what's in the queue instead of getting a lot of stuff buffered

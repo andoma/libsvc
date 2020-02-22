@@ -73,6 +73,7 @@ typedef struct http_request {
   struct ntv *hr_session_received;
   struct ntv *hr_session;
 
+  char *hr_self_addr;
   char *hr_peer_addr;
   char *hr_username;
   char *hr_password;
