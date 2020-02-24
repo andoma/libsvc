@@ -180,6 +180,22 @@ struct http_server *http_server_create(int port, const char *bind_address,
                                        const char *real_ip_header,
                                        http_log_cb_t *log_cb);
 
+typedef enum {
+  HTTP_SERVER_END_OF_TAGS = 0,
+  HTTP_SERVER_BIND_ADDRESS,
+  HTTP_SERVER_SSLCTX,
+  HTTP_SERVER_SNIFFER,
+  HTTP_SERVER_FLAGS,
+  HTTP_SERVER_CONG_ALGO,
+  HTTP_SERVER_REAL_IP_HEADER,
+  HTTP_SERVER_LOG_CB,
+  HTTP_SERVER_SECURE_COOKIES,
+  HTTP_SERVER_COOKIE_DOMAIN,
+} http_server_create_tag_t;
+
+struct http_server *http_server_createv(int port, ...)
+  __attribute__((__sentinel__(0)));
+
 void http_server_destroy(struct http_server *hs);
 
 void http_server_update_sslctx(struct http_server *hs, void *sslctx);

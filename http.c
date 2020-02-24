@@ -64,8 +64,6 @@ typedef struct http_server {
 
   char *hs_real_ip_header;
 
-  int hs_secure_cookies;
-
   int hs_port;
   char *hs_bind_address;
 
@@ -80,6 +78,8 @@ typedef struct http_server {
   char *hs_congestion_algo;
 
   http_log_cb_t *hs_log_cb;
+
+  char *hs_cookies_config;
 
 } http_server_t;
 
@@ -216,6 +216,7 @@ http_server_release(http_server_t *hs)
   free(hs->hs_real_ip_header);
   free(hs->hs_bind_address);
   free(hs->hs_congestion_algo);
+  free(hs->hs_cookies_config);
   free(hs);
 }
 
@@ -478,7 +479,9 @@ http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
   extern const char *libsvc_app_version;
   mbuf_qprintf(hdrs, "Server: %s\r\n", libsvc_app_version ?: PROGNAME);
 
-  if(ntv_cmp(hr->hr_session, hr->hr_session_received)) {
+  const http_server_t *hs =
+    hr->hr_connection ? hr->hr_connection->hc_server : NULL;
+  if(hs != NULL && ntv_cmp(hr->hr_session, hr->hr_session_received)) {
     const char *cookie = generate_session_cookie(hr);
     if(cookie != NULL) {
       mbuf_qprintf(hdrs,
@@ -486,13 +489,13 @@ http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
                    "expires=%s; HttpOnly%s\r\n",
                    PROGNAME, cookie,
                    http_mktime(now, 365 * 86400),
-                   hr->hr_secure_cookies ? "; secure" : "");
+                   hs->hs_cookies_config ?: "");
     } else {
       mbuf_qprintf(hdrs,
                    "Set-Cookie: %s.session=deleted; Path=/; "
                    "expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly%s\r\n",
                    PROGNAME,
-                   hr->hr_secure_cookies ? "; secure" : "");
+                   hs->hs_cookies_config ?: "");
     }
   }
 }
@@ -1167,8 +1170,6 @@ http_create_request(http_connection_t *hc, int continue_check)
   hr->hr_connection = hc;
   atomic_inc(&hc->hc_refcount);
 
-  hr->hr_secure_cookies = hc->hc_server->hs_secure_cookies;
-
   mbuf_init(&hr->hr_reply);
 
   TAILQ_INIT(&hr->hr_query_args);
@@ -1725,7 +1726,9 @@ http_server_init(const char *config_prefix)
     cfg_get_str(cr, CFG(config_prefix, "realIpHeader"), NULL);
   hs->hs_real_ip_header = real_ip_header ? strdup(real_ip_header) : NULL;
 
-  hs->hs_secure_cookies = cfg_get_int(cr, CFG(config_prefix, "secureCookies"), 0);
+  if(cfg_get_int(cr, CFG(config_prefix, "secureCookies"), 0)) {
+    hs->hs_cookies_config = strdup("; secure");
+  }
 
   const char *priv_key_file =
     cfg_get_str(cr, CFG(config_prefix, "privateKeyFile"), NULL);
@@ -1760,6 +1763,65 @@ http_server_create(int port, const char *bind_address, void *sslctx,
   hs->hs_congestion_algo = congestion_algo ? strdup(congestion_algo) : NULL;
   hs->hs_real_ip_header = real_ip_header ? strdup(real_ip_header) : NULL;
   hs->hs_log_cb = log_cb;
+  asyncio_run_task(http_server_start, hs);
+  return hs;
+}
+
+
+
+struct http_server *
+http_server_createv(int port, ...)
+{
+  va_list ap;
+
+  http_server_t *hs = calloc(1, sizeof(http_server_t));
+  atomic_set(&hs->hs_refcount, 1);
+  hs->hs_port = port;
+
+  int secure_cookies = 0;
+  const char *cookie_domain = NULL;
+
+  va_start(ap, port);
+  http_server_create_tag_t tag;
+  while((tag = va_arg(ap, int)) != 0) {
+    switch(tag) {
+    case HTTP_SERVER_END_OF_TAGS:
+      break;
+    case HTTP_SERVER_BIND_ADDRESS:
+      strset(&hs->hs_bind_address, va_arg(ap, const char *));
+      break;
+    case HTTP_SERVER_SSLCTX:
+      hs->hs_sslctx = va_arg(ap, void *);
+      break;
+    case HTTP_SERVER_SNIFFER:
+      hs->hs_sniffer = va_arg(ap, void *);
+      break;
+    case HTTP_SERVER_FLAGS:
+      hs->hs_flags = va_arg(ap, int);
+      break;
+    case HTTP_SERVER_CONG_ALGO:
+      strset(&hs->hs_congestion_algo, va_arg(ap, const char *));
+      break;
+    case HTTP_SERVER_REAL_IP_HEADER:
+      strset(&hs->hs_real_ip_header, va_arg(ap, const char *));
+      break;
+    case HTTP_SERVER_LOG_CB:
+      hs->hs_log_cb = va_arg(ap, void *);
+      break;
+    case HTTP_SERVER_SECURE_COOKIES:
+      secure_cookies = va_arg(ap, int);
+      break;
+    case HTTP_SERVER_COOKIE_DOMAIN:
+      cookie_domain = va_arg(ap, const char *);
+      break;
+    }
+  }
+
+  hs->hs_cookies_config =
+    fmt("%s%s%s", secure_cookies ? ";secure" : "",
+        cookie_domain ? ";domain=" : "",
+        cookie_domain ?: "");
+
   asyncio_run_task(http_server_start, hs);
   return hs;
 }
