@@ -237,7 +237,7 @@ add_xml_field(xmlparser_t *xp, ntv_t *parent, const char *tagname,
       }
     }
   }
-  ntv_set_ntv(parent, tagname, f);
+  ntv_add_ntv(parent, tagname, f);
   return f;
 }
 
@@ -413,7 +413,7 @@ htsmsg_xml_parse_tag(xmlparser_t *xp, ntv_t *parent, const char *src)
     src = htsmsg_xml_parse_cd(xp, m, f, src);
 
 
-  ntv_merge(f, m);
+  ntv_merge_add(f, m);
   ntv_release(m);
 
   if(TAILQ_FIRST(&f->ntv_children) == NULL)

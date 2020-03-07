@@ -748,6 +748,18 @@ ntv_merge(ntv_t *dst, const ntv_t *src)
   }
 }
 
+void
+ntv_merge_add(ntv_t *dst, const ntv_t *src)
+{
+  if(src == NULL)
+    return;
+
+  const ntv_t *f;
+  TAILQ_FOREACH(f, &src->ntv_children, ntv_link) {
+    ntv_add_from_field(dst, f->ntv_name, f);
+  }
+}
+
 
 
 ntv_t *
