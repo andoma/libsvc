@@ -164,6 +164,7 @@ typedef struct {
   const char *hostname;
   const char *priv_key_pem;
   const char *cert_pem;
+  int is_wildcard;
 } asyncio_sslhost_t;
 
 asyncio_sslctx_t *asyncio_sslctx_server_hosts(const asyncio_sslhost_t *hosts,
