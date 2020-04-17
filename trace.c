@@ -573,7 +573,8 @@ stop_log(void)
 void
 trace_enable_builtin_syslog(const char *host, int port,
                             const char *format, int tls,
-                            const char *hostname)
+                            const char *hostname,
+                            int wait_for_connection)
 {
   if(syslog_logsink)
     return;
@@ -602,11 +603,14 @@ trace_enable_builtin_syslog(const char *host, int port,
 
   syslog_logsink = ts;
 
-  pthread_mutex_lock(&trace_mutex);
-  while(!ts->ts_started) {
-    pthread_cond_wait(&ts->ts_started_cond, &trace_mutex);
+  if(wait_for_connection) {
+
+    pthread_mutex_lock(&trace_mutex);
+    while(!ts->ts_started) {
+      pthread_cond_wait(&ts->ts_started_cond, &trace_mutex);
+    }
+    pthread_mutex_unlock(&trace_mutex);
   }
-  pthread_mutex_unlock(&trace_mutex);
 
   if(tls) {
 #if OPENSSL_VERSION_NUMBER >= 0x10100000

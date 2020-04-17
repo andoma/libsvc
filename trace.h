@@ -95,4 +95,5 @@ void xlog(int level, const xlog_kv_t *kv, const char *fmt, ...)
 
 void trace_enable_builtin_syslog(const char *host, int port,
                                  const char *format, int tls,
-                                 const char *hostname);
+                                 const char *hostname,
+                                 int wait_for_connection);
