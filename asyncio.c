@@ -897,6 +897,11 @@ do_ssl_read_locked(asyncio_fd_t *af)
 
     default:
       do_ssl_update_poll_flags(af);
+
+      if(af->af_trace) {
+        scoped_char *msg = fmt("SSL Error %d %d", r, err);
+        af->af_trace(af->af_opaque, msg);
+      }
       return ENOLINK;
 
     case SSL_ERROR_WANT_READ:
