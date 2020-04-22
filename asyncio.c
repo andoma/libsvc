@@ -55,6 +55,7 @@
 #include "sock.h"
 #include "misc.h"
 #include "libsvc.h"
+#include "strvec.h"
 
 LIST_HEAD(asyncio_timer_list, asyncio_timer);
 LIST_HEAD(asyncio_worker_list, asyncio_worker);
@@ -767,6 +768,25 @@ asyncio_ssl_verify(asyncio_fd_t *af)
 /**
  *
  */
+static char *
+ssl_poll_errstack()
+{
+  scoped_strvec(errors);
+
+  unsigned long e;
+  char errbuf[512];
+  while((e = ERR_get_error()) != 0) {
+    ERR_error_string_n(e, errbuf, sizeof(errbuf));
+    strvec_push(&errors, errbuf);
+  }
+  return strvec_join(&errors, ", ");
+}
+
+
+
+/**
+ *
+ */
 static int
 asyncio_ssl_handshake(asyncio_fd_t *af)
 {
@@ -802,29 +822,28 @@ asyncio_ssl_handshake(asyncio_fd_t *af)
       return asyncio_ssl_verify(af);
 
     return 0;
-
-  default:
-
-    if(af->af_trace) {
-      char hex[sizeof(af->af_handshake_inspect_buf) * 3 + 1];
-      char *dst = hex;
-      size_t i;
-      for(i = 0; i < af->af_handshake_inspect_buf_used; i++) {
-        if(i)
-          *dst++ = ' ';
-        uint8_t v = af->af_handshake_inspect_buf[i];
-        *dst++ = "0123456789abcdef"[v >> 4];
-        *dst++ = "0123456789abcdef"[v & 15];
-      }
-      *dst = 0;
-
-      scoped_char *msg = fmt("SSL Handshake failed err:%d r:%d recv:[%s]",
-                             err, r, hex);
-      af->af_trace(af->af_opaque, msg);
-    }
-    return ENOLINK;
   }
-  return 0;
+
+  scoped_char *sslerr = ssl_poll_errstack();
+
+  if(af->af_trace) {
+    char hex[sizeof(af->af_handshake_inspect_buf) * 3 + 1];
+    char *dst = hex;
+    size_t i;
+    for(i = 0; i < af->af_handshake_inspect_buf_used; i++) {
+      if(i)
+        *dst++ = ' ';
+      uint8_t v = af->af_handshake_inspect_buf[i];
+      *dst++ = "0123456789abcdef"[v >> 4];
+      *dst++ = "0123456789abcdef"[v & 15];
+      }
+    *dst = 0;
+
+    scoped_char *msg = fmt("SSL Handshake failed err:%d r:%d sslerr:%s recv:[%s]",
+                           err, r, sslerr, hex);
+    af->af_trace(af->af_opaque, msg);
+  }
+  return ENOLINK;
 }
 
 
@@ -898,9 +917,13 @@ do_ssl_read_locked(asyncio_fd_t *af)
     default:
       do_ssl_update_poll_flags(af);
 
-      if(af->af_trace) {
-        scoped_char *msg = fmt("SSL Error %d %d", r, err);
-        af->af_trace(af->af_opaque, msg);
+      {
+        scoped_char *sslerr = ssl_poll_errstack();
+
+        if(af->af_trace) {
+          scoped_char *msg = fmt("SSL Error err:%d r:%d sslerr:%s", err, r, sslerr);
+          af->af_trace(af->af_opaque, msg);
+        }
       }
       return ENOLINK;
 
@@ -992,6 +1015,15 @@ do_ssl_write_locked(asyncio_fd_t *af, int canwrite)
       // FALLTHRU
     default:
       do_ssl_update_poll_flags(af);
+
+      {
+        scoped_char *sslerr = ssl_poll_errstack();
+
+        if(af->af_trace) {
+          scoped_char *msg = fmt("SSL Error err:%d r:%d sslerr:%s", err, r, sslerr);
+          af->af_trace(af->af_opaque, msg);
+        }
+      }
       return 0;
     }
   }
