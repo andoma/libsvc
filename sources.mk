@@ -35,6 +35,7 @@ libsvc_SRCS += \
 	fpipe.c \
 	tbm.c \
 	cookie.c \
+	gcp.c \
 
 
 libsvc_INCS += \
