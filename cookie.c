@@ -145,12 +145,17 @@ cookie_decode(cookie_engine_t *ce, const char *str)
 
   uint8_t *plaintext = alloca(len);
   int outlen = 0;
-  int rv = EVP_DecryptUpdate(ce->dec, plaintext, &outlen,
-                             bin + COOKIE_NONCE_LEN + COOKIE_TAG_LEN,
-                             binlen - COOKIE_NONCE_LEN - COOKIE_TAG_LEN);
-  pthread_mutex_unlock(&ce->dec_mutex);
+  if(EVP_DecryptUpdate(ce->dec, plaintext, &outlen,
+                       bin + COOKIE_NONCE_LEN + COOKIE_TAG_LEN,
+                       binlen - COOKIE_NONCE_LEN - COOKIE_TAG_LEN) != 1) {
+    pthread_mutex_unlock(&ce->dec_mutex);
+    return NULL;
+  }
 
-  if(rv <= 0)
+  int tmplen;
+  const int ret = EVP_DecryptFinal_ex(ce->dec, plaintext + outlen, &tmplen);
+  pthread_mutex_unlock(&ce->dec_mutex);
+  if(ret <= 0)
     return NULL;
 
   return ntv_binary_deserialize(plaintext, outlen);
