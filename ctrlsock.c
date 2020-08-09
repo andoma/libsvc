@@ -24,6 +24,7 @@
 #define _GNU_SOURCE
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/un.h>
 #include <errno.h>
 #include <unistd.h>
