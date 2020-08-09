@@ -489,7 +489,7 @@ htsmsg_xml_parse_pi(xmlparser_t *xp, ntv_t *parent, const char *src)
   if(ntv_is_empty(attrs)) {
     ntv_release(attrs);
   } else {
-    ntv_set(parent, piname, attrs);
+    ntv_set_ntv(parent, piname, attrs);
   }
 
   return src;

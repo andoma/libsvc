@@ -476,7 +476,7 @@ aws_s3_make_url(const char *method,
                            "s3",
                            region);
 
-  ntv_set(query_args, "X-Amz-Signature", signature);
+  ntv_set_str(query_args, "X-Amz-Signature", signature);
 
   scoped_char *args = http_client_ntv_to_args(query_args);
 
@@ -572,7 +572,7 @@ aws_invoke(const char *region,
     hcr.hcr_json_result = NULL;
 
     if(hcr.hcr_http_status >= 500) {
-      ntv_set(result, "__type", "Transient");
+      ntv_set_str(result, "__type", "Transient");
     }
 
     if(hcr.hcr_http_status >= 400) {
