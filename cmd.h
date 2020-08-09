@@ -1,5 +1,7 @@
 #pragma once
 
+#include "strvec.h"
+
 int cmd_exec(const char *line, const char *user,
              void (*msg)(void *opaque, const char *fmt, ...),
              void *opaque);
@@ -17,7 +19,7 @@ int cmd_complete2(const char *line, const char *user,
 #define CMD_TOKEN_ROL     3  // Rest of line
 #define CMD_TOKEN_OPTSTR  4
 
-typedef char **(cmd_list_options_t)(const char *user);
+typedef strvec_t(cmd_list_options_t)(const char *user);
 
 typedef struct cmd_token {
   int type;

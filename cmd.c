@@ -41,16 +41,6 @@ typedef struct cmd_node {
 
 static cmd_node_t cmd_root;
 
-
-static void
-freeoptions(char **options)
-{
-  for(int k = 0; options[k] != NULL; k++)
-    free(options[k]);
-  free(options);
-}
-
-
 /**
  *
  */
@@ -215,7 +205,7 @@ cmd_complete2(const char *line, const char *user,
 
   cmd_node_t *cur = &cmd_root, *cn;
   int i;
-  char **options;
+  strvec_t options;
 
   for(i = 0; i < inputlen; i++) {
 
@@ -237,15 +227,13 @@ cmd_complete2(const char *line, const char *user,
 
       case CMD_TOKEN_OPTSTR:
         options = cn->cn_token->lister(user);
-        if(options != NULL) {
-          for(int j = 0; options[j] != NULL; j++) {
-            if(!strcmp(options[j], input[i])) {
-              freeoptions(options);
-              goto found;
-            }
+        for(int j = 0; j < options.count; j++) {
+          if(!strcmp(options.v[j], input[i])) {
+            strvec_reset(&options);
+            goto found;
           }
-          freeoptions(options);
         }
+        strvec_reset(&options);
         break;
       }
     }
@@ -266,14 +254,10 @@ cmd_complete2(const char *line, const char *user,
 
       case CMD_TOKEN_OPTSTR:
         options = cn->cn_token->lister(user);
-        if(options != NULL) {
-          for(int j = 0; options[j] != NULL; j++) {
-            if(!strncmp(options[j], input[i], l)) {
-              msg(opaque, "1 %d %s", input[i] - str, options[j] + l);
-            }
-          }
-          freeoptions(options);
+        for(int j = 0; j < options.count; j++) {
+          msg(opaque, "1 %d %s", input[i] - str, options.v[j] + l);
         }
+        strvec_reset(&options);
         break;
       }
     }
@@ -302,11 +286,10 @@ cmd_complete2(const char *line, const char *user,
 
     case CMD_TOKEN_OPTSTR:
       options = cn->cn_token->lister(user);
-      if(options != NULL) {
-        for(int j = 0; options[j] != NULL; j++)
-          msg(opaque, "1 %d %s", slen, options[j]);
-        freeoptions(options);
+      for(int j = 0; j < options.count; j++) {
+        msg(opaque, "1 %d %s", slen, options.v[j]);
       }
+      strvec_reset(&options);
       break;
     }
   }
