@@ -108,7 +108,7 @@ typedef struct http_connection {
   struct asyncio_fd *hc_af;
 
   int hc_read_disabled;
-  int hc_closed;
+  atomic_t hc_closed;
 
   http_parser hc_parser;
   task_group_t *hc_task_group;
@@ -1413,20 +1413,27 @@ http_connection_shutdown_task(void *aux)
 }
 
 
+int
+http_connection_open(http_connection_t *hc)
+{
+  return !atomic_get(&hc->hc_closed);
+}
+
+
 /**
  *
  */
 static void
 http_connection_close(http_connection_t *hc)
 {
-  assert(hc->hc_closed == 0);
+  assert(atomic_get(&hc->hc_closed) == 0);
   if(hc->hc_sniffer != NULL && hc->hc_sniffer_opaque != NULL) {
     hc->hc_sniffer(hc->hc_sniffer_opaque, hc, NULL);
     hc->hc_sniffer = NULL;
     hc->hc_sniffer_opaque = NULL;
   }
 
-  hc->hc_closed = 1;
+  atomic_set(&hc->hc_closed, 1);
   asyncio_close(hc->hc_af);
   asyncio_timer_disarm(&hc->hc_timer);
   task_run_in_group(http_connection_shutdown_task, hc, hc->hc_task_group);
@@ -1505,7 +1512,7 @@ http_connection_reenable(void *aux)
 {
   http_connection_t *hc = aux;
 
-  if(!hc->hc_closed) {
+  if(!atomic_get(&hc->hc_closed)) {
     asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
     // This will make the asyncio socket retry the read callback if there is
     // data pending

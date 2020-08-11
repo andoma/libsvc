@@ -103,6 +103,8 @@ typedef void *(http_sniffer_t)(void *opaque, struct http_connection *hc,
 
 int http_dispatch_local_request(http_request_t *hr);
 
+int http_connection_open(struct http_connection *hc);
+
 void http_arg_flush(struct http_arg_list *list);
 
 char *http_arg_get(struct http_arg_list *list, const char *name);
