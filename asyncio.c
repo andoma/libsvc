@@ -1013,7 +1013,7 @@ do_ssl_write_locked(asyncio_fd_t *af, int canwrite)
     case SSL_ERROR_WANT_WRITE:
       af->af_ssl_write_status = err;
       do_ssl_update_poll_flags(af);
-      break;
+      return 0;
 
     default:
       do_ssl_update_poll_flags(af);
