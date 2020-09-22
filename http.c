@@ -2101,6 +2101,7 @@ websocket_upgrade(http_connection_t *hc)
     if(remain != NULL) {
       hc->hc_remain = strdup(remain);
       hc->hc_ws_path = wsp;
+      hc->hc_ws_mode = 1;
       return 0;
 
     }
@@ -2254,7 +2255,6 @@ websocket_session_start(http_request_t *hr,
 
   atomic_set(&hc->hc_ws_ka_interval, ka_interval ?: 10);
 
-  hc->hc_ws_mode = 1;
   return 0;
 }
 
