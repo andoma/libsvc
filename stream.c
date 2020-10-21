@@ -10,6 +10,7 @@
 #include "asyncio.h"
 #include "atomic.h"
 #include "trace.h"
+#include "misc.h"
 
 struct stream {
   asyncio_fd_t *s_af;
@@ -120,8 +121,17 @@ stream_write(stream_t *s, const void *data, size_t len)
 
 
 ssize_t
-stream_read(stream_t *s, void *data, size_t len, int flags)
+stream_read_timeout(stream_t *s, void *data, size_t len, int flags,
+                    int64_t deadline)
 {
+  struct timespec ts, *tsp = NULL;
+
+  if(deadline) {
+    ts.tv_sec  =  deadline / 1000000;
+    ts.tv_nsec = (deadline % 1000000) * 1000;
+    tsp = &ts;
+  }
+
   pthread_mutex_lock(&s->s_recv_mutex);
   while(1) {
     if(s->s_recv_buf.mq_size == 0 && s->s_eos) {
@@ -135,16 +145,29 @@ stream_read(stream_t *s, void *data, size_t len, int flags)
       return -1;
     }
 
+    int do_wait = 0;
     if(flags & STREAM_READ_F_ALL) {
       if(s->s_recv_buf.mq_size < len) {
-        pthread_cond_wait(&s->s_recv_cond, &s->s_recv_mutex);
-        continue;
+        do_wait = 1;
       }
     } else {
       if(s->s_recv_buf.mq_size == 0) {
-        pthread_cond_wait(&s->s_recv_cond, &s->s_recv_mutex);
-        continue;
+        do_wait = 1;
       }
+    }
+
+    if(do_wait) {
+      if(tsp) {
+        int r = pthread_cond_timedwait(&s->s_recv_cond, &s->s_recv_mutex, tsp);
+        if(r) {
+          errno = r;
+          pthread_mutex_unlock(&s->s_recv_mutex);
+          return -1;
+        }
+      } else {
+        pthread_cond_wait(&s->s_recv_cond, &s->s_recv_mutex);
+      }
+      continue;
     }
 
     int r = MIN(s->s_recv_buf.mq_size, len);
@@ -154,6 +177,11 @@ stream_read(stream_t *s, void *data, size_t len, int flags)
   }
 }
 
+ssize_t
+stream_read(stream_t *s, void *data, size_t len, int flags)
+{
+  return stream_read_timeout(s, data, len, flags, 0);
+}
 
 void
 stream_close(stream_t *s)

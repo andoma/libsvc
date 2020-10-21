@@ -20,6 +20,10 @@ ssize_t stream_write(stream_t *s, const void *data, size_t len);
 // Return number of bytes read or -1 on error (which sets errno)
 ssize_t stream_read(stream_t *s, void *data, size_t len, int flags);
 
+// Same as above but with timeout (in µs since 1970)
+ssize_t stream_read_timeout(stream_t *s, void *data, size_t len, int flags,
+                            int64_t deadline);
+
 void stream_close(stream_t *s);
 
 void stream_shutdown(stream_t *s);
