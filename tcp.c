@@ -786,9 +786,17 @@ tcp_init(const char *extra_ca)
   ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
 
 #if defined(__APPLE__)
-  if(!SSL_CTX_load_verify_locations(ssl_ctx, "/usr/local/etc/openssl/cert.pem",
-                                    NULL))
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+  const char *path = "/usr/local/etc/openssl@1.1/cert.pem";
+#else
+  const char *path = "/usr/local/etc/openssl/cert.pem";
+#endif
+
+  if(!SSL_CTX_load_verify_locations(ssl_ctx, path, NULL)) {
+    fprintf(stderr, "Unable to load certificates from %s\n", path);
     exit(1);
+  }
 #else
 
   if(!access("/etc/ssl/certs/ca-bundle.crt", R_OK)) {

@@ -2100,7 +2100,13 @@ asyncio_sslctx_client(void)
   SSL_CTX *ctx = SSL_CTX_new(TLSv1_2_client_method());
 
 #if defined(__APPLE__)
-  int r = SSL_CTX_load_verify_locations(ctx, "/usr/local/etc/openssl/cert.pem", NULL);
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+  const char *path = "/usr/local/etc/openssl@1.1/cert.pem";
+#else
+  const char *path = "/usr/local/etc/openssl/cert.pem";
+#endif
+  int r = SSL_CTX_load_verify_locations(ctx, path, NULL);
 #else
   int r = SSL_CTX_load_verify_locations(ctx, NULL, "/etc/ssl/certs");
 #endif
