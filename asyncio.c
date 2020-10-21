@@ -734,9 +734,12 @@ verify_hostname(const char *hostname, X509 *cert, char *errbuf, size_t errlen)
     }
 
     OPENSSL_free(dns);
-    if(match)
+    if(match) {
+      GENERAL_NAMES_free(names);
       return 0;
+    }
   }
+  GENERAL_NAMES_free(names);
   snprintf(errbuf, errlen, "SSL: Hostname mismatch");
   return -1;
 }
