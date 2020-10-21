@@ -135,7 +135,7 @@ stream_read_timeout(stream_t *s, void *data, size_t len, int flags,
   pthread_mutex_lock(&s->s_recv_mutex);
   while(1) {
     if(s->s_recv_buf.mq_size == 0 && s->s_eos) {
-      if(flags == 0) {
+      if(flags == 0 || s->s_error == 0) {
         pthread_mutex_unlock(&s->s_recv_mutex);
         return 0;
       }
