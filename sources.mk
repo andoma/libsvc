@@ -119,7 +119,7 @@ endif
 ##############################################################
 
 ifeq (${WITH_WS_CLIENT},yes)
-libsvc_SRCS    +=  websocket_client.c
+libsvc_SRCS    +=  websocket_client.c http_parser.c
 libsvc_INCS    +=  websocket_client.h
 WITH_WEBSOCKET := yes
 CFLAGS += -DWITH_WS_CLIENT
