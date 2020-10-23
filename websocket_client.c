@@ -1,451 +1,464 @@
-#define _GNU_SOURCE
-#include <fcntl.h>
-#include <unistd.h>
-
-#include <unistd.h>
-#include <errno.h>
 #include <pthread.h>
-
+#include <assert.h>
+#include <unistd.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
-#include "dial.h"
 #include "websocket_client.h"
-#include "atomic.h"
-#include "sock.h"
-#include "misc.h"
-#include "bytestream.h"
-#include "websocket.h"
 #include "http_parser.h"
+#include "misc.h"
+#include "dial.h"
+#include "atomic.h"
+#include "asyncio.h"
+#include "task.h"
+#include "websocket.h"
+#include "trace.h"
 
-/**
- *
- */
 struct ws_client {
-  pthread_t wsc_tid;
-  tcp_stream_t *wsc_ts;
 
-  int wsc_pipe[2];
+  wsc_fn_t *wsc_fn;
+  void *wsc_opaque;
 
-  void (*wsc_input)(void *aux, int opcode, const void *buf, size_t len);
-  void *wsc_aux;
-
+  char *wsc_hostname;
+  char *wsc_path;
+  char *wsc_auth;
   atomic_t wsc_refcount;
+  int wsc_use_tls;
+  int wsc_port;
+  int wsc_timeout;
+  int wsc_debug;
+  int wsc_stopped;
 
-  pthread_mutex_t wsc_sendq_mutex;
-  mbuf_t wsc_sendq;
-  int wsc_zombie;
-  uint8_t wsc_pending_ping;
+  asyncio_fd_t *wsc_af;
+
+  http_parser wsc_http_parser;
+
+  enum {
+    WSC_STATE_HTTP,
+    WSC_STATE_WEBSOCKET,
+    WSC_STATE_CLOSED,
+  } wsc_state;
+
+  websocket_state_t wsc_ws_parser;
+
+  task_group_t *wsc_task_group;
+
+  pthread_mutex_t wsc_send_mutex;
+
+  struct mbuf wsc_holdq;
 
   prng_t wsc_maskgenerator;
 
-  union {
-    uint8_t u8[4];
-    uint32_t u32;
-  } wsc_mask;
+  asyncio_timer_t wsc_ka_timer;
+
+  int wsc_ka_misses;
 
 };
 
 
-/**
- *
- */
 static void
-wsc_append_header(ws_client_t *wsc, int opcode, size_t len)
+wsc_free(ws_client_t *wsc)
 {
-  uint8_t hdr[14]; // max header length
-  int hlen;
-  hdr[0] = 0x80 | (opcode & 0xf);
-  if(len <= 125) {
-    hdr[1] = len;
-    hlen = 2;
-  } else if(len < 65536) {
-    hdr[1] = 126;
-    hdr[2] = len >> 8;
-    hdr[3] = len;
-    hlen = 4;
-  } else {
-    hdr[1] = 127;
-    uint64_t u64 = len;
-#if defined(__LITTLE_ENDIAN__)
-    u64 = __builtin_bswap64(u64);
-#endif
-    memcpy(hdr + 2, &u64, sizeof(uint64_t));
-    hlen = 10;
-  }
+  if(wsc->wsc_af != NULL)
+    asyncio_fd_release(wsc->wsc_af);
 
-  hdr[1] |= 0x80; // Set mask-bit
-  mbuf_append(&wsc->wsc_sendq, hdr, hlen);
-
-  // Append mask (not included in payload length)
-  wsc->wsc_mask.u32 = prng_get(&wsc->wsc_maskgenerator);
-  mbuf_append(&wsc->wsc_sendq, &wsc->wsc_mask.u8, 4);
+  free(wsc->wsc_hostname);
+  free(wsc->wsc_path);
+  free(wsc->wsc_auth);
+  task_group_destroy(wsc->wsc_task_group);
+  websocket_free(&wsc->wsc_ws_parser);
+  mbuf_clear(&wsc->wsc_holdq);
+  free(wsc);
 }
 
 
-/**
- *
- */
-static void
-wsc_write_buf(ws_client_t *wsc, int opcode, const void *data, size_t len)
-{
-  uint8_t *buf = malloc(len);
-  memcpy(buf, data, len);
-
-  pthread_mutex_lock(&wsc->wsc_sendq_mutex);
-  if(!wsc->wsc_zombie) {
-    wsc_append_header(wsc, opcode, len);
-
-    for(int i = 0; i < len; i++)
-      buf[i] ^= wsc->wsc_mask.u8[i & 3];
-
-    mbuf_append_prealloc(&wsc->wsc_sendq, buf, len);
-  } else {
-    free(buf);
-  }
-  pthread_mutex_unlock(&wsc->wsc_sendq_mutex);
-}
-
-
-/**
- *
- */
-static void
-wsc_read(ws_client_t *wsc, struct htsbuf_queue *hq)
-{
-  uint8_t hdr[14]; // max header length
-  const uint8_t *m;
-  while(1) {
-    int p = htsbuf_peek(hq, &hdr, 14);
-
-    if(p < 2)
-      return;
-
-    int opcode  = hdr[0] & 0xf;
-    int64_t len = hdr[1] & 0x7f;
-    int hoff = 2;
-    if(len == 126) {
-      if(p < 4)
-        return;
-      len = hdr[2] << 8 | hdr[3];
-      hoff = 4;
-    } else if(len == 127) {
-      if(p < 10)
-        return;
-      len = rd64_be(hdr + 2);
-      hoff = 10;
-    }
-
-    if(hdr[1] & 0x80) {
-      if(p < hoff + 4)
-        return;
-      m = hdr + hoff;
-
-      hoff += 4;
-    } else {
-      m = NULL;
-    }
-
-    if(hq->hq_size < hoff + len)
-      return;
-    uint8_t *d = malloc_add(len, 1);
-    htsbuf_drop(hq, hoff);
-    htsbuf_read(hq, d, len);
-    d[len] = 0;
-
-    if(m != NULL) {
-      int i;
-      for(i = 0; i < len; i++)
-        d[i] ^= m[i&3];
-    }
-
-    if(opcode == 9) {
-      // PING
-      wsc_write_buf(wsc, 10, d, len);
-    } else if(opcode == 10) {
-      wsc->wsc_pending_ping = 0;
-
-    } else {
-      wsc->wsc_input(wsc->wsc_aux, opcode, d, len);
-    }
-    free(d);
-  }
-}
-
-
-/**
- *
- */
-static void
-wsc_sendq(ws_client_t *wsc)
-{
-  pthread_mutex_lock(&wsc->wsc_sendq_mutex);
-  tcp_write_queue(wsc->wsc_ts, &wsc->wsc_sendq);
-  pthread_mutex_unlock(&wsc->wsc_sendq_mutex);
-}
-
-
-/**
- *
- */
 static void
 wsc_release(ws_client_t *wsc)
 {
   if(atomic_dec(&wsc->wsc_refcount))
     return;
-  mbuf_clear(&wsc->wsc_sendq);
-  pthread_mutex_destroy(&wsc->wsc_sendq_mutex);
-  free(wsc);
+  wsc_free(wsc);
 }
 
 
 
-/**
- *
- */
+
+
+
 static void
-wsc_send_ping(ws_client_t *wsc)
+wsc_send_request(ws_client_t *wsc)
 {
-  uint8_t data = 0;
-  wsc->wsc_pending_ping = 1;
-  wsc_write_buf(wsc, 9 /* PING */, &data, 1); // Just some data
-}
-
-/**
- *
- */
-static void *
-wsc_thread(void *aux)
-{
-  ws_client_t *wsc = aux;
-  char errmsg[512];
-  struct pollfd fds[2];
-
-  fds[0].fd = wsc->wsc_pipe[0];
-  fds[0].events = POLLIN | POLLERR;
-
-  tcp_nonblock(wsc->wsc_ts, 1);
-
-  while(1) {
-
-    wsc_sendq(wsc);
-
-    tcp_prepare_poll(wsc->wsc_ts, &fds[1]);
-    int r = poll(fds, 2, 30000);
-    if(r == 0) {
-      if(wsc->wsc_pending_ping) {
-        snprintf(errmsg, sizeof(errmsg), "Ping timeout");
-        break;
-      }
-
-      wsc_send_ping(wsc);
-      continue;
-    }
-
-    if(r == -1) {
-      if(errno == EINTR)
-        continue;
-      snprintf(errmsg, sizeof(errmsg), "Poll error: %s", strerror(errno));
-      break;
-    }
-
-    if(fds[0].revents & (POLLERR | POLLHUP)) {
-      // Pipe closed, bye bye
-      snprintf(errmsg, sizeof(errmsg), "Write pipe closed");
-      break;
-    }
-
-    if(fds[0].revents & POLLIN) {
-      char c;
-      if(read(wsc->wsc_pipe[0], &c, 1) != 1) {
-        snprintf(errmsg, sizeof(errmsg), "Write pipe read failed");
-        break;
-      }
-      // Pipe input, something to send. We transfer from sendq to tcp_stream every
-      // poll round using wsc_sendq() so there's nothing special to do here.
-    }
-
-    if(fds[1].revents & POLLHUP) {
-      snprintf(errmsg, sizeof(errmsg), "Connection closed");
-      break;
-    }
-    if(fds[1].revents & POLLERR) {
-      int error = 0;
-      socklen_t errlen = sizeof(error);
-      getsockopt(fds[1].fd, SOL_SOCKET, SO_ERROR, (void *)&error, &errlen);
-      snprintf(errmsg, sizeof(errmsg),
-               "Connection failed: %s", strerror(error));
-      break;
-    }
-
-    if(tcp_can_read(wsc->wsc_ts, &fds[1])) {
-      htsbuf_queue_t *hq = tcp_read_buffered(wsc->wsc_ts);
-      if(hq == NULL) {
-        snprintf(errmsg, sizeof(errmsg), "Read error");
-        break;
-      }
-      wsc_read(wsc, hq);
-    }
-  }
-
-  pthread_mutex_lock(&wsc->wsc_sendq_mutex);
-  wsc->wsc_zombie = 1;
-  pthread_mutex_unlock(&wsc->wsc_sendq_mutex);
-
-  wsc->wsc_input(wsc->wsc_aux, 0, errmsg, strlen(errmsg));
-
-  close(wsc->wsc_pipe[0]);
-  tcp_close(wsc->wsc_ts);
-  wsc_release(wsc);
-  return NULL;
-}
-
-
-/**
- *
- */
-void
-ws_client_destroy(ws_client_t *wsc)
-{
-  close(wsc->wsc_pipe[1]);
-  wsc->wsc_pipe[1] = -1;
-  wsc_release(wsc);
-}
-
-
-/**
- *
- */
-int
-ws_client_send(ws_client_t *wsc, int opcode, const void *data, size_t len)
-{
-  char c = 1;
-  if(wsc->wsc_pipe[1] == -1)
-    return -1;
-
-  wsc_write_buf(wsc, opcode, data, len);
-
-  if(write(wsc->wsc_pipe[1], &c, 1) != 1) {
-    return -1;
-  }
-  return 0;
-}
-
-
-/**
- *
- */
-void
-ws_client_send_close(ws_client_t *wsc, int code, const char *msg)
-{
-  uint8_t *data = NULL;
-  int datasize = 0;
-
-  if(code) {
-    datasize = 2 + (msg ? strlen(msg) : 0);
-    data = alloca(datasize);
-    wr16_be(data, code);
-    if(msg) {
-      memcpy(data + 2, msg, strlen(msg));
-    }
-  }
-
-  ws_client_send(wsc, WS_OPCODE_CLOSE, data, datasize);
-}
-
-
-/**
- *
- */
-ws_client_t *
-ws_client_connect(const char *hostname, int port, const char *path,
-                  const tcp_ssl_info_t *tsi,
-                  void (*input)(void *aux, int opcode, const void *buf, size_t len),
-                  void *aux, int timeout, char *errbuf, size_t errlen,
-                  const char *username, const char *password,
-                  const char *auth)
-{
-  char buf[1024];
-  tcp_stream_t *ts = dial(hostname, port, timeout, tsi, errbuf, errlen);
-
-  if(ts == NULL)
-    return NULL;
+  const char *auth = wsc->wsc_auth;
 
   uint8_t nonce[16];
   get_random_bytes(nonce, sizeof(nonce));
   char key[32];
   base64_encode(key, sizeof(key), nonce, sizeof(nonce));
-  scoped_char *basic_auth = NULL;
 
-  if(username != NULL && password != NULL) {
-    scoped_char *cat = fmt("%s:%s", username, password);
-    int size = BASE64_SIZE(strlen(cat));
-    char *b64 = alloca(size);
-    base64_encode(b64, size, (void *)cat, strlen(cat));
-    auth = basic_auth = fmt("basic %s", b64);
+  scoped_char *req =
+    fmt("GET %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Connection: Upgrade\r\n"
+        "Upgrade: websocket\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: %s\r\n"
+        "%s%s%s"
+        "\r\n",
+        wsc->wsc_path, wsc->wsc_hostname, key,
+        auth ? "Authorization: " : "",
+        auth ?: "",
+        auth ? "\r\n" : "");
+
+  asyncio_send(wsc->wsc_af, req, strlen(req), 0);
+}
+
+
+
+typedef struct {
+  int opcode;
+  uint8_t *data;
+  int len;
+  ws_client_t *wsc;
+} msg_t;
+
+
+static void
+msg_dispatch(void *arg)
+{
+  msg_t *m = arg;
+  ws_client_t *wsc = m->wsc;
+  wsc->wsc_fn(wsc->wsc_opaque, m->opcode, m->data, m->len);
+  free(m->data);
+  wsc_release(m->wsc);
+  free(m);
+}
+
+
+static void
+websocket_dispatch(ws_client_t *wsc, msg_t *msg, int opcode)
+{
+  msg->opcode = opcode;
+  msg->wsc = wsc;
+  atomic_inc(&wsc->wsc_refcount);
+  task_run_in_group(msg_dispatch, msg, wsc->wsc_task_group);
+}
+
+
+static void
+websocket_dispatch_close(ws_client_t *wsc, const char *str)
+{
+  if(wsc->wsc_state == WSC_STATE_CLOSED)
+    return;
+
+  asyncio_timer_disarm(&wsc->wsc_ka_timer);
+
+  trace(LOG_DEBUG, "%s:%d closed: %s", wsc->wsc_hostname,
+        wsc->wsc_port, str);
+
+  wsc->wsc_state = WSC_STATE_CLOSED;
+
+  msg_t *msg = malloc(sizeof(msg_t));
+  msg->data = (void *)strdup(str);
+  msg->len = strlen(str);
+  websocket_dispatch(wsc, msg, 0);
+}
+
+
+static void
+websocket_send_ctrl(ws_client_t *wsc, int opcode, const void *data, int len)
+{
+  uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
+  int hlen = websocket_build_hdr(hdr, opcode, len, 0);
+  assert(hlen <= 10);
+  hdr[1] |= 0x80; // Masking
+
+  union {
+    uint8_t u8[4];
+    uint32_t u32;
+  } mask;
+
+  mask.u32 = prng_get(&wsc->wsc_maskgenerator);
+  memcpy(hdr + hlen, mask.u8, 4);
+  hlen += 4;
+
+  const uint8_t *s = data;
+  uint8_t *masked_data = malloc(len);
+  for(int i = 0; i < len; i++)
+    masked_data[i] = s[i] ^ mask.u8[i & 3];
+
+  asyncio_send_with_hdr(wsc->wsc_af, hdr, hlen, masked_data, len, 0, 0);
+}
+
+
+
+static int
+websocket_packet_input(void *arg, int opcode,
+                       uint8_t **data, int len, int flags)
+{
+  ws_client_t *wsc = arg;
+
+  if(opcode == WS_OPCODE_PONG) {
+    wsc->wsc_ka_misses = 0;
+    return 0;
   }
 
-  snprintf(buf, sizeof(buf),
-           "GET %s HTTP/1.1\r\n"
-           "Host: %s\r\n"
-           "Connection: Upgrade\r\n"
-           "Upgrade: websocket\r\n"
-           "Sec-WebSocket-Version: 13\r\n"
-           "Sec-WebSocket-Key: %s\r\n"
-           "%s%s%s"
-           "\r\n",
-           path, hostname, key,
-           auth ? "Authorization: " : "",
-           auth ?: "",
-           auth ? "\r\n" : "");
+  if(opcode == WS_OPCODE_PING) {
+    websocket_send_ctrl(wsc, WS_OPCODE_PONG, *data, len);
+    return 0;
+  }
 
-  tcp_write(ts, buf, strlen(buf));
+  assert(wsc->wsc_state == WSC_STATE_WEBSOCKET);
 
-  int code = -1;
+  msg_t *msg = malloc(sizeof(msg_t));
+  msg->data = *data;
+  *data = NULL; // Steal data
+  msg->len = len;
 
-  while(1) {
-    int l = tcp_read_line(ts, buf, sizeof(buf));
-    if(l < 0)
-      break;
-    if(code == -1) {
-      if(!strncmp(buf, "HTTP/1.1 ", 9)) {
-        code = atoi(buf + 9);
-      } else {
-        code = 0;
-      }
+  websocket_dispatch(wsc, msg, opcode);
+  return 0;
+}
+
+
+static int
+http_headers_complete(http_parser *p)
+{
+  ws_client_t *wsc = p->data;
+
+  if(p->status_code == 101) {
+    trace(LOG_DEBUG, "%s:%d websocket connection established",
+          wsc->wsc_hostname, wsc->wsc_port);
+
+    pthread_mutex_lock(&wsc->wsc_send_mutex);
+    asyncio_sendq(wsc->wsc_af, &wsc->wsc_holdq, 0, 0);
+    wsc->wsc_state = WSC_STATE_WEBSOCKET;
+    pthread_mutex_unlock(&wsc->wsc_send_mutex);
+    return 2;
+  } else {
+    websocket_dispatch_close(wsc, http_status_str(p->status_code));
+    return 1;
+  }
+  return 0;
+}
+
+static const http_parser_settings parser_settings = {
+  .on_headers_complete = http_headers_complete,
+};
+
+
+static void
+read_cb(void *arg, struct mbuf *mq)
+{
+  ws_client_t *wsc = arg;
+
+  if(wsc->wsc_state == WSC_STATE_CLOSED) {
+    mbuf_drop(mq, mq->mq_size);
+    return;
+  }
+
+  while(wsc->wsc_state == WSC_STATE_HTTP) {
+    mbuf_data_t *md = TAILQ_FIRST(&mq->mq_buffers);
+    if(md == NULL)
+      return;
+
+    size_t r = http_parser_execute(&wsc->wsc_http_parser, &parser_settings,
+                                   (const void *)md->md_data + md->md_data_off,
+                                   md->md_data_len - md->md_data_off);
+    mbuf_drop(mq, r);
+    if(wsc->wsc_http_parser.http_errno) {
+      websocket_dispatch_close(wsc, http_errno_name(wsc->wsc_http_parser.http_errno));
+      return;
     }
-
-    if(strlen(buf) == 0)
-      break;
   }
 
-  if(code != 101) {
-    tcp_close(ts);
-    snprintf(errbuf, errlen, "HTTP Error %d", code);
-    return NULL;
+  if(websocket_parse(mq, websocket_packet_input, wsc, &wsc->wsc_ws_parser)) {
+    websocket_dispatch_close(wsc, "Websocket protocol error");
+  }
+}
+
+
+static void
+err_cb(void *arg, int error)
+{
+  ws_client_t *wsc = arg;
+  websocket_dispatch_close(wsc, strerror(error));
+}
+
+
+
+
+
+
+
+
+
+typedef struct {
+  ws_client_t *wsc;
+  int fd;
+  char errbuf[128];
+} dial_result_t;
+
+
+
+static void
+wsc_dial_done(void *arg)
+{
+  dial_result_t *dr = arg;
+  ws_client_t *wsc = dr->wsc;
+  int fd = dr->fd;
+
+  if(fd == -1) {
+    // Dial failed
+    websocket_dispatch_close(wsc, dr->errbuf);
+    free(dr);
+    return;
+  }
+  free(dr);
+
+  if(wsc->wsc_stopped) {
+    close(fd);
+    wsc_release(wsc);
+    return;
   }
 
+  asyncio_sslctx_t *sslctx = asyncio_sslctx_client();
 
-  ws_client_t *wsc = calloc(1, sizeof(ws_client_t));
+  wsc->wsc_af = asyncio_stream(fd, read_cb, err_cb, wsc,
+                               ASYNCIO_FLAG_THREAD_SAFE |
+                               ASYNCIO_FLAG_SSL_VERIFY_CERT |
+                               ASYNCIO_FLAG_NO_DELAY,
+                               sslctx, wsc->wsc_hostname,
+                               "wsclient", NULL);
 
-  wsc->wsc_ts = ts;
-  wsc->wsc_input = input;
-  wsc->wsc_aux = aux;
+  wsc_send_request(wsc);
 
-  prng_init(&wsc->wsc_maskgenerator);
+  asyncio_sslctx_free(sslctx);
 
-  if(libsvc_pipe(wsc->wsc_pipe)) {
-    free(wsc);
-    tcp_close(ts);
-    return NULL;
+  asyncio_timer_arm_delta(&wsc->wsc_ka_timer, 10 * 1000 * 1000);
+}
+
+
+
+
+
+static void
+wsc_dial(void *arg)
+{
+  ws_client_t *wsc = arg;
+
+  dial_result_t *dr = malloc(sizeof(dial_result_t));
+  dr->wsc = wsc;
+  dr->fd = dialfd(wsc->wsc_hostname, wsc->wsc_port, wsc->wsc_timeout,
+                  dr->errbuf, sizeof(dr->errbuf), 1 || wsc->wsc_debug);
+  asyncio_run_task(wsc_dial_done, dr);
+}
+
+
+static void
+wsc_stop(void *arg)
+{
+  ws_client_t *wsc = arg;
+  wsc->wsc_stopped = 1;
+
+  asyncio_timer_disarm(&wsc->wsc_ka_timer);
+
+  if(wsc->wsc_af != NULL)
+    asyncio_close(wsc->wsc_af);
+  wsc_release(wsc);
+}
+
+
+void
+ws_client_destroy(ws_client_t *wsc)
+{
+  asyncio_run_task_blocking(wsc_stop, wsc);
+  wsc_release(wsc);
+}
+
+
+void
+ws_client_start(ws_client_t *wsc)
+{
+  atomic_inc(&wsc->wsc_refcount);
+  task_run(wsc_dial, wsc);
+}
+
+
+int
+ws_client_send(ws_client_t *wsc, int opcode,
+               const void *data, size_t len)
+{
+  uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
+  int hlen = websocket_build_hdr(hdr, opcode, len, 0);
+  assert(hlen <= 10);
+  hdr[1] |= 0x80; // Masking
+
+  union {
+    uint8_t u8[4];
+    uint32_t u32;
+  } mask;
+
+  mask.u32 = prng_get(&wsc->wsc_maskgenerator);
+  memcpy(hdr + hlen, mask.u8, 4);
+  hlen += 4;
+
+  const uint8_t *s = data;
+  uint8_t *masked_data = malloc(len);
+  for(int i = 0; i < len; i++)
+    masked_data[i] = s[i] ^ mask.u8[i & 3];
+
+  pthread_mutex_lock(&wsc->wsc_send_mutex);
+  if(wsc->wsc_state == WSC_STATE_WEBSOCKET) {
+    asyncio_send_with_hdr(wsc->wsc_af, hdr, hlen, masked_data, len, 0, 0);
+  } else {
+    mbuf_append(&wsc->wsc_holdq, hdr, hlen);
+    mbuf_append(&wsc->wsc_holdq, masked_data, len);
+  }
+  pthread_mutex_unlock(&wsc->wsc_send_mutex);
+  free(masked_data);
+  return 0;
+}
+
+
+void
+ws_client_send_close(ws_client_t *wsc, int code, const char *msg)
+{
+  size_t msglen = strlen(msg);
+  uint8_t buf[2 + msglen];
+  buf[0] = code >> 8;
+  buf[1] = code;
+  memcpy(buf + 2, msg, msglen);
+  ws_client_send(wsc, WS_OPCODE_CLOSE, buf, 2 + msglen);
+}
+
+
+
+static void
+wsc_timer(void *arg, int64_t now)
+{
+  uint32_t ping_payload = 0;
+  ws_client_t *wsc = arg;
+  wsc->wsc_ka_misses++;
+
+  switch(wsc->wsc_state) {
+  case WSC_STATE_HTTP:
+    websocket_dispatch_close(wsc, "HTTP negotiation timed out");
+    return;
+
+  case WSC_STATE_WEBSOCKET:
+    websocket_send_ctrl(wsc, WS_OPCODE_PING, &ping_payload, 4);
+    if(wsc->wsc_ka_misses == 3) {
+      // Connection timeout
+      websocket_dispatch_close(wsc, "Connection timeout");
+      return;
+    }
+    break;
+
+  default:
+    abort();
   }
 
-  pthread_mutex_init(&wsc->wsc_sendq_mutex, NULL);
-  mbuf_init(&wsc->wsc_sendq);
-
-  atomic_set(&wsc->wsc_refcount, 1);
-  return wsc;
+  asyncio_timer_arm_delta(&wsc->wsc_ka_timer, 10 * 1000 * 1000);
 }
 
 
@@ -462,64 +475,82 @@ get_field(const struct http_parser_url *p, const char *url,
 }
 
 
-
-/**
- *
- */
-ws_client_t *
-ws_client_connect_url(const char *url,
-                      void (*input)(void *aux, int opcode,
-                                    const void *buf, size_t len),
-                      void *aux, int timeout,
-                      char *errbuf, size_t errlen,
-                      const char *auth)
+static int
+parse_url(ws_client_t *wsc, const char *url)
 {
-  struct http_parser_url p;
+  struct http_parser_url p = {};
   http_parser_url_init(&p);
-  if(http_parser_parse_url(url, strlen(url), 0, &p)) {
-    snprintf(errbuf, errlen, "URL doesn't parse");
-    return NULL;
-  }
+  if(http_parser_parse_url(url, strlen(url), 0, &p))
+    return -1;
 
-  scoped_char *schema   = get_field(&p, url, UF_SCHEMA);
-  if(schema == NULL) {
-    snprintf(errbuf, errlen, "Missing schema");
-    return NULL;
-  }
+  scoped_char *schema = get_field(&p, url, UF_SCHEMA);
+  if(schema == NULL)
+    return -1;
 
-  scoped_char *hostname = get_field(&p, url, UF_HOST);
-  scoped_char *path     = get_field(&p, url, UF_PATH);
-  scoped_char *query    = get_field(&p, url, UF_QUERY);
+  free(wsc->wsc_hostname);
+  wsc->wsc_hostname = get_field(&p, url, UF_HOST);
 
+  free(wsc->wsc_path);
+
+  scoped_char *query = get_field(&p, url, UF_QUERY);
   if(query != NULL) {
-    char *r = fmt("%s?%s", path, query);
-    free(path);
-    path = r;
+    scoped_char *path = get_field(&p, url, UF_PATH);
+    wsc->wsc_path = fmt("%s?%s", path, query);
+  } else {
+    free(wsc->wsc_path);
+    wsc->wsc_path = get_field(&p, url, UF_PATH);
   }
 
-  const int is_tls = !strcmp(schema, "wss");
-
-  const int port = p.port ?: (is_tls ? 443 : 80);
-
-  tcp_ssl_info_t tsi = {};
-  return ws_client_connect(hostname, port, path,
-                           is_tls ? &tsi : NULL,
-                           input, aux, timeout, errbuf, errlen,
-                           NULL, NULL, auth);
+  wsc->wsc_use_tls = !strcmp(schema, "wss");
+  wsc->wsc_port = p.port ?: (wsc->wsc_use_tls ? 443 : 80);
+  return 0;
 }
 
 
-/**
- *
- */
-void
-ws_client_start(ws_client_t *wsc)
+ws_client_t *
+ws_client_create(wsc_fn_t *fn, void *opaque, ...)
 {
-  atomic_inc(&wsc->wsc_refcount);
+  va_list ap;
+  va_start(ap, opaque);
 
-  pthread_attr_t attr;
-  pthread_attr_init(&attr);
-  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-  pthread_create(&wsc->wsc_tid, &attr, wsc_thread, wsc);
-  pthread_attr_destroy(&attr);
+  int tag;
+  int err = 0;
+
+  ws_client_t *wsc = calloc(1, sizeof(ws_client_t));
+  wsc->wsc_fn = fn;
+  wsc->wsc_opaque = opaque;
+  wsc->wsc_task_group = task_group_create();
+  wsc->wsc_timeout = 5000;
+  asyncio_timer_init(&wsc->wsc_ka_timer, wsc_timer, wsc);
+
+  while((tag = va_arg(ap, int)) != 0) {
+    switch(tag) {
+    case WSC_TAG_AUTH:
+      strset(&wsc->wsc_auth, va_arg(ap, const char *));
+      break;
+    case WSC_TAG_TIMEOUT:
+      wsc->wsc_timeout = va_arg(ap, int);
+      break;
+    case WSC_TAG_URL:
+      err = parse_url(wsc, va_arg(ap, const char *));
+      break;
+    default:
+      fprintf(stderr, "%s can't handle tag %d\n", __FUNCTION__, tag);
+      abort();
+    }
+    if(err) {
+      va_end(ap);
+      wsc_free(wsc);
+      return NULL;
+    }
+  }
+
+  prng_init(&wsc->wsc_maskgenerator);
+  mbuf_init(&wsc->wsc_holdq);
+  http_parser_init(&wsc->wsc_http_parser, HTTP_RESPONSE);
+  wsc->wsc_http_parser.data = wsc;
+  atomic_set(&wsc->wsc_refcount, 1);
+  va_end(ap);
+  return wsc;
 }
+
