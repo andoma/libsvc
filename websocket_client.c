@@ -349,7 +349,7 @@ wsc_dial(void *arg)
   dial_result_t *dr = malloc(sizeof(dial_result_t));
   dr->wsc = wsc;
   dr->fd = dialfd(wsc->wsc_hostname, wsc->wsc_port, wsc->wsc_timeout,
-                  dr->errbuf, sizeof(dr->errbuf), 1 || wsc->wsc_debug);
+                  dr->errbuf, sizeof(dr->errbuf), wsc->wsc_debug);
   asyncio_run_task(wsc_dial_done, dr);
 }
 
