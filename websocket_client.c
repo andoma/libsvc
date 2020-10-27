@@ -188,6 +188,7 @@ websocket_send_ctrl(ws_client_t *wsc, int opcode, const void *data, int len)
     masked_data[i] = s[i] ^ mask.u8[i & 3];
 
   asyncio_send_with_hdr(wsc->wsc_af, hdr, hlen, masked_data, len, 0, 0);
+  free(masked_data);
 }
 
 
