@@ -233,6 +233,8 @@ typedef struct http_streamed_file {
 
   fpipe_t *hsf_pipe; // Valid as long as we keep hsf_writer open
 
+  int hsf_min_speed;
+
 } http_streamed_file_t;
 
 
@@ -250,12 +252,13 @@ http_read_file_thread(void *aux)
                         HCR_FLAGS(hsf->hsf_flags),
                         HCR_ERRBUF(errbuf, sizeof(errbuf)),
                         HCR_AUTHCB(hsf->hsf_auth_cb, hsf->hsf_opaque),
+                        HCR_MIN_SPEED(hsf->hsf_min_speed),
                         NULL);
 
 
   if(r) {
     if(hsf->hsf_flags & HCR_READ_FILE_LOG_ERRORS) {
-      trace(LOG_DEBUG, "%s: %s: %s", __FUNCTION__, hsf->hsf_url, errbuf);
+      trace(LOG_ERR, "%s: %s: %s", __FUNCTION__, hsf->hsf_url, errbuf);
     }
     fpipe_set_error(hsf->hsf_pipe);
   }
@@ -265,6 +268,52 @@ http_read_file_thread(void *aux)
   free(hsf);
   return NULL;
 }
+
+/**
+ *
+ */
+FILE *
+http_read_file_va(const char *url, ...)
+{
+  int tag;
+  va_list ap;
+  va_start(ap, url);
+
+  http_streamed_file_t *hsf = calloc(1, sizeof(http_streamed_file_t));
+  hsf->hsf_url = strdup(url);
+
+  while((tag = va_arg(ap, int)) != 0) {
+    switch(tag) {
+    case HCR_TAG_AUTHCB:
+      hsf->hsf_auth_cb = va_arg(ap, http_client_auth_cb_t *);
+      hsf->hsf_opaque = va_arg(ap, void *);
+      break;
+    case HCR_TAG_FLAGS:
+      hsf->hsf_flags = va_arg(ap, int);
+      break;
+    case HCR_TAG_MIN_SPEED:
+      hsf->hsf_min_speed = va_arg(ap, int);
+      break;
+    default:
+      abort();
+    }
+  }
+
+  FILE *fp;
+
+  hsf->hsf_pipe = fpipe(&fp, &hsf->hsf_writer);
+
+  pthread_attr_t attr;
+  pthread_attr_init(&attr);
+  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+  pthread_t tid;
+  pthread_create(&tid, &attr, http_read_file_thread, hsf);
+  pthread_attr_destroy(&attr);
+
+  return fp;
+}
+
+
 
 /**
  *

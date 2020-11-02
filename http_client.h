@@ -94,6 +94,10 @@ FILE *http_open_file(const char *url);
 FILE *http_read_file(const char *url, void *opaque,
                      http_client_auth_cb_t *auth_cb, int flags);
 
+FILE *http_read_file_va(const char *url, ...)
+  __attribute__((__sentinel__(0)));
+
+
 int http_client_get_http_code(void *handle);
 
 char *http_client_ntv_to_args(const struct ntv *ntv);
