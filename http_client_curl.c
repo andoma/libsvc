@@ -331,6 +331,15 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       outfile = NULL;
       break;
 
+    case HCR_TAG_MIN_SPEED: {
+      int min_speed = va_arg(ap, int);
+      if(min_speed) {
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 15L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, (long)min_speed);
+      }
+      break;
+    }
+
 #if CURL_AT_LEAST_VERSION(7,56,0)
     case HCR_TAG_MULTIPARTFILE: {
       const char *fieldname = va_arg(ap, const char *);

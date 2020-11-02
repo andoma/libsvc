@@ -51,6 +51,7 @@ enum {
   HCR_TAG_OUTPUTFILE,
   HCR_TAG_POSTFILE,
   HCR_TAG_MULTIPARTFILE,
+  HCR_TAG_MIN_SPEED,
 };
 
 
@@ -77,6 +78,7 @@ enum {
 #define HCR_USERNPASS(a, b) HCR_TAG_USERNPASS, a, b
 #define HCR_OUTPUTFILE(a) HCR_TAG_OUTPUTFILE, a
 #define HCR_MULTIPARTFILE(a,b,c) HCR_TAG_MULTIPARTFILE, a, b, c
+#define HCR_MIN_SPEED(a) HCR_TAG_MIN_SPEED, a
 
 int http_client_request(http_client_response_t *hcr, const char *url, ...)
   __attribute__((__sentinel__(0)));
