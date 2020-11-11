@@ -157,17 +157,15 @@ getdigit(double *val, int *cnt)
   return (char)digit;
 }
 
-#define xGENERIC 0
-#define xFLOAT 1
-#define xEXP 2
 
 
 int
-my_double2str(char *buf, size_t bufsize, double realvalue, int precision)
+my_double2str(char *buf, size_t bufsize, double realvalue, int precision,
+              int type)
 {
   char *bufpt;
   char prefix;
-  char xtype = xGENERIC;
+  char xtype = DBL_TYPE_GENERIC;
   int idx, exp, e2;
   double rounder;
   char flag_exp;
@@ -188,10 +186,10 @@ my_double2str(char *buf, size_t bufsize, double realvalue, int precision)
   }else{
     prefix = 0;
   }
-  if( xtype==xGENERIC && precision>0 ) precision--;
+  if( xtype==DBL_TYPE_GENERIC && precision>0 ) precision--;
   for(idx=precision, rounder=0.5; idx>0; idx--, rounder*=0.1){}
 
-  if( xtype==xFLOAT ) realvalue += rounder;
+  if( xtype==DBL_TYPE_FLOAT ) realvalue += rounder;
   /* Normalize realvalue to within 10.0 > realvalue >= 1.0 */
   exp = 0;
 
@@ -221,23 +219,23 @@ my_double2str(char *buf, size_t bufsize, double realvalue, int precision)
   ** If the field type is etGENERIC, then convert to either etEXP
   ** or etFLOAT, as appropriate.
   */
-  flag_exp = xtype==xEXP;
-  if( xtype != xFLOAT ){
+  flag_exp = xtype==DBL_TYPE_EXP;
+  if( xtype != DBL_TYPE_FLOAT ){
     realvalue += rounder;
     if( realvalue>=10.0 ){ realvalue *= 0.1; exp++; }
   }
-  if( xtype==xGENERIC ){
+  if( xtype==DBL_TYPE_GENERIC ){
     flag_rtz = !flag_alternateform;
     if( exp<-4 || exp>precision ){
-      xtype = xEXP;
+      xtype = DBL_TYPE_EXP;
     }else{
       precision = precision - exp;
-      xtype = xFLOAT;
+      xtype = DBL_TYPE_FLOAT;
     }
   }else{
     flag_rtz = 0;
   }
-  if( xtype==xEXP ){
+  if( xtype==DBL_TYPE_EXP ){
     e2 = 0;
   }else{
     e2 = exp;
@@ -284,7 +282,7 @@ my_double2str(char *buf, size_t bufsize, double realvalue, int precision)
     }
   }
   /* Add the "eNNN" suffix */
-  if( flag_exp || xtype==xEXP ){
+  if( flag_exp || xtype==DBL_TYPE_EXP ){
     *(bufpt++) = 'e';
     if( exp<0 ){
       *(bufpt++) = '-'; exp = -exp;

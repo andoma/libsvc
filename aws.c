@@ -236,7 +236,7 @@ ntv_to_escaped_str(const ntv_t *f)
   case NTV_STRING:
     return url_escape_alloc(f->ntv_string, URL_ESCAPE_PARAM);
   case NTV_DOUBLE:
-    my_double2str(dblbuf, sizeof(dblbuf), f->ntv_double, -1);
+    my_double2str(dblbuf, sizeof(dblbuf), f->ntv_double, -1, DBL_TYPE_GENERIC);
     return strdup(dblbuf);
   case NTV_INT:
     return fmt("%"PRId64, f->ntv_s64);

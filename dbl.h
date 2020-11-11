@@ -26,4 +26,8 @@
 double my_str2double(const char *str, const char **endp);
 
 int my_double2str(char *buf, size_t bufsize, double realvalue,
-                  int precision);
+                  int precision, int type);
+
+#define DBL_TYPE_GENERIC 0
+#define DBL_TYPE_FLOAT 1
+#define DBL_TYPE_EXP 2

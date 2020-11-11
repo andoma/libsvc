@@ -83,7 +83,8 @@ ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int flags,
       break;
 
     case NTV_DOUBLE:
-      my_double2str(buf, sizeof(buf), f->ntv_double, precision);
+      my_double2str(buf, sizeof(buf), f->ntv_double, precision,
+                    DBL_TYPE_FLOAT);
       mbuf_append(m, buf, strlen(buf));
       break;
 
