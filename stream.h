@@ -7,6 +7,7 @@ typedef struct stream stream_t;
 #define STREAM_CONNECT_F_SSL             0x1
 #define STREAM_CONNECT_F_SSL_DONT_VERIFY 0x2
 #define STREAM_DEBUG                     0x4
+#define STREAM_CLOCK_MONOTONIC           0x8
 
 stream_t *stream_connect(const char *hostname, int port,
                          int timeout_ms,

@@ -66,6 +66,17 @@ stream_t *
 stream_connect(const char *hostname, int port, int timeout_ms,
                char *errbuf, size_t errlen, int flags)
 {
+  pthread_condattr_t cond_attr;
+  pthread_condattr_init(&cond_attr);
+  if(flags & STREAM_CLOCK_MONOTONIC) {
+#ifdef __linux__
+    pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC);
+#else
+    trace(LOG_ERR, "stream: STREAM_CLOCK_MONOTIME not supported on this machine");
+    return NULL;
+#endif
+  }
+
   if(flags & STREAM_DEBUG)
     trace(LOG_DEBUG, "stream: Connecting to %s:%d", hostname, port);
   int fd = dialfd(hostname, port, timeout_ms, errbuf, errlen,
@@ -75,11 +86,13 @@ stream_connect(const char *hostname, int port, int timeout_ms,
           hostname, port, fd == -1 ? strerror(errno) : "OK");
   if(fd == -1)
     return NULL;
+
   stream_t *s = calloc(1, sizeof(stream_t));
   atomic_set(&s->s_refcount, 2);
 
   mbuf_init(&s->s_recv_buf);
-  pthread_cond_init(&s->s_recv_cond, NULL);
+  pthread_cond_init(&s->s_recv_cond, &cond_attr);
+  pthread_condattr_destroy(&cond_attr);
   pthread_mutex_init(&s->s_recv_mutex, NULL);
 
   asyncio_sslctx_t *sslctx = NULL;
