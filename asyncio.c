@@ -412,7 +412,6 @@ mod_poll_flags(asyncio_fd_t *af, int set, int clr)
 
 #define EPOLLIN  0x1
 #define EPOLLOUT 0x2
-#define MSG_NOSIGNAL 0
 #define MSG_MORE 0
 
 /**
