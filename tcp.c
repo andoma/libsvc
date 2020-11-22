@@ -662,30 +662,24 @@ verify_hostname(const char *hostname, X509 *cert, char *errbuf, size_t errlen)
 }
 
 
-/**
- *
- */
-tcp_stream_t *
-tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
-                              const tcp_ssl_info_t *tsi,
-                              char *errbuf, size_t errlen)
+int
+tcp_starttls(tcp_stream_t *ts, const char *hostname,
+             const tcp_ssl_info_t *tsi,
+             char *errbuf, size_t errlen)
 {
-  char errmsg[120];
-
-  tcp_stream_t *ts = calloc(1, sizeof(tcp_stream_t));
-  ts->ts_fd = fd;
-
   if(tsi->debug)
     trace(LOG_DEBUG, "TLS to %s: Creating context", hostname);
 
   if((ts->ts_ssl = SSL_new(ssl_ctx)) == NULL)
-    goto bad_ssl;
+    return -1;
 
   SSL_set_tlsext_host_name(ts->ts_ssl, hostname);
 
-
-  if(SSL_set_fd(ts->ts_ssl, fd) == 0)
-    goto bad_ssl;
+  if(SSL_set_fd(ts->ts_ssl, ts->ts_fd) == 0) {
+    SSL_free(ts->ts_ssl);
+    ts->ts_ssl = NULL;
+    return -1;
+  }
 
   if(tsi->key != NULL) {
     BIO *cbio = BIO_new_mem_buf((char *)tsi->key, -1);
@@ -706,7 +700,7 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
     BIO_free(cbio);
 
     if(cert == NULL) {
-      snprintf(errbuf, errlen, "Unable to load certificate");
+      snprintf(errbuf, errlen, "Unable to load cert");
       goto bad;
     }
 
@@ -718,7 +712,8 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
     trace(LOG_DEBUG, "TLS to %s: Starting SSL_connect()", hostname);
 
   if(SSL_connect(ts->ts_ssl) <= 0) {
-    goto bad_ssl;
+    snprintf(errbuf, errlen, "Unable to SSL_connect");
+    goto bad;
   }
 
   if(tsi->debug)
@@ -733,7 +728,8 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
 
     X509 *peer = SSL_get_peer_certificate(ts->ts_ssl);
     if(peer == NULL) {
-      goto bad_ssl;
+      snprintf(errbuf, errlen, "Unable to get peer certificate");
+      goto bad;
     }
 
     int err = SSL_get_verify_result(ts->ts_ssl);
@@ -755,23 +751,40 @@ tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
     X509_free(peer);
   }
 
-  ts->ts_fd = fd;
-  htsbuf_queue_init(&ts->ts_spill, INT32_MAX);
-  htsbuf_queue_init(&ts->ts_sendq, INT32_MAX);
-
   ts->ts_write = ssl_write;
   ts->ts_read  = ssl_read;
-  return ts;
+  return 0;
 
- bad_ssl:
-  ERR_error_string(ERR_get_error(), errmsg);
-  snprintf(errbuf, errlen, "SSL: %s", errmsg);
  bad:
-  tcp_close(ts);
-  return NULL;
+  SSL_free(ts->ts_ssl);
+  ts->ts_ssl = NULL;
+  return -1;
+}
+
+/**
+ *
+ */
+tcp_stream_t *
+tcp_stream_create_ssl_from_fd(int fd, const char *hostname,
+                              const tcp_ssl_info_t *tsi,
+                              char *errbuf, size_t errlen)
+{
+  tcp_stream_t *ts = calloc(1, sizeof(tcp_stream_t));
+  ts->ts_fd = fd;
+
+  if(tcp_starttls(ts, hostname, tsi, errbuf, errlen)) {
+    close(fd);
+    return NULL;
+  }
+
+  return ts;
 }
 
 #endif
+
+
+
+
 
 /**
  *

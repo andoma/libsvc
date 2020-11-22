@@ -85,3 +85,7 @@ int tcp_steal_fd(tcp_stream_t *ts);
 void tcp_shutdown(tcp_stream_t *ts);
 
 void tcp_server_stop(void);
+
+int tcp_starttls(tcp_stream_t *ts, const char *hostname,
+                 const tcp_ssl_info_t *tsi,
+                 char *errbuf, size_t errlen);
