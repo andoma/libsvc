@@ -205,7 +205,14 @@ stream_close(stream_t *s)
 
 
 void
-stream_shutdown(stream_t *s)
+stream_shutdown(stream_t *s, int stop_reader)
 {
+  if(stop_reader) {
+    pthread_mutex_lock(&s->s_recv_mutex);
+    s->s_eos = 1;
+    s->s_error = 0;
+    pthread_cond_signal(&s->s_recv_cond);
+    pthread_mutex_unlock(&s->s_recv_mutex);
+  }
   asyncio_shutdown(s->s_af);
 }
