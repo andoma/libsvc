@@ -36,6 +36,7 @@ libsvc_SRCS += \
 	tbm.c \
 	cookie.c \
 	gcp.c \
+	azure.c \
 
 
 libsvc_INCS += \
