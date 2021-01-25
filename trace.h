@@ -47,6 +47,8 @@ void hexdump(const char *pfx, const void *data_, int len);
 
 void trace_enable_stdout(void);
 
+void trace_set_outputs(int to_stdout, int to_stderr);
+
 void trace_set_callback(void (*cb)(int level, const char *msg));
 
 

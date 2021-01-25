@@ -48,6 +48,7 @@
 
 static int dosyslog;
 static int dostdout;
+static int dostderr;
 static void (*tracecb)(int level, const char *msg);
 
 /**
@@ -62,8 +63,6 @@ tracev(int level, const char *fmt, va_list ap)
     vsyslog(level & 7, fmt, aq);
     va_end(aq);
   }
-
-  const int dostderr = isatty(2);
 
   if(!(dostderr || dostdout || tracecb))
     return;
@@ -222,10 +221,25 @@ hexdump(const char *pfx, const void *data_, int len)
  *
  */
 void
+trace_set_outputs(int to_stdout, int to_stderr)
+{
+  dostdout = to_stdout;
+  dostderr = to_stderr;
+}
+
+void
 trace_enable_stdout(void)
 {
   dostdout = 1;
 }
+
+
+static void  __attribute__((constructor))
+trace_init(void)
+{
+  dostderr = isatty(2);
+}
+
 
 
 /**
