@@ -153,8 +153,9 @@ websocket_dispatch_close(ws_client_t *wsc, const char *str)
 
   asyncio_timer_disarm(&wsc->wsc_ka_timer);
 
-  trace(LOG_DEBUG, "%s:%d closed: %s", wsc->wsc_hostname,
-        wsc->wsc_port, str);
+  if(wsc->wsc_debug)
+    trace(LOG_DEBUG, "%s:%d closed: %s", wsc->wsc_hostname,
+          wsc->wsc_port, str);
 
   wsc->wsc_state = WSC_STATE_CLOSED;
 
@@ -227,8 +228,9 @@ http_headers_complete(http_parser *p)
   ws_client_t *wsc = p->data;
 
   if(p->status_code == 101) {
-    trace(LOG_DEBUG, "%s:%d websocket connection established",
-          wsc->wsc_hostname, wsc->wsc_port);
+    if(wsc->wsc_debug)
+      trace(LOG_DEBUG, "%s:%d websocket connection established",
+            wsc->wsc_hostname, wsc->wsc_port);
 
     pthread_mutex_lock(&wsc->wsc_send_mutex);
     asyncio_sendq(wsc->wsc_af, &wsc->wsc_holdq, 0, 0);
