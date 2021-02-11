@@ -57,6 +57,10 @@
 #include "libsvc.h"
 #include "strvec.h"
 
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 LIST_HEAD(asyncio_timer_list, asyncio_timer);
 LIST_HEAD(asyncio_worker_list, asyncio_worker);
 
