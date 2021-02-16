@@ -304,6 +304,13 @@ typedef struct {
 
 
 static void
+wsc_async_trace(void *opaque, const char *msg)
+{
+  ws_client_t *wsc = opaque;
+  trace(LOG_DEBUG, "%s:%d %s", wsc->wsc_hostname, wsc->wsc_port, msg);
+}
+
+static void
 wsc_dial_done(void *arg)
 {
   dial_result_t *dr = arg;
@@ -331,7 +338,8 @@ wsc_dial_done(void *arg)
                                ASYNCIO_FLAG_SSL_VERIFY_CERT |
                                ASYNCIO_FLAG_NO_DELAY,
                                sslctx, wsc->wsc_hostname,
-                               "wsclient", NULL);
+                               "wsclient",
+                               wsc->wsc_debug ? wsc_async_trace : NULL);
 
   wsc_send_request(wsc);
 
