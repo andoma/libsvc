@@ -753,17 +753,26 @@ asyncio_ssl_verify(asyncio_fd_t *af)
 {
   X509 *peer = SSL_get_peer_certificate(af->af_ssl);
   if(peer == NULL) {
+    if(af->af_trace)
+      af->af_trace(af->af_opaque, "No peer certificate");
     return EDOM;
   }
 
   const int err = SSL_get_verify_result(af->af_ssl);
   if(err != X509_V_OK) {
+    if(af->af_trace)
+      af->af_trace(af->af_opaque, "Certificate does not verify");
     X509_free(peer);
     return EDOM;
   }
 
-  if(verify_hostname(af->af_hostname, peer, NULL, 0)) {
+  char errbuf[512];
+  if(verify_hostname(af->af_hostname, peer, errbuf, sizeof(errbuf))) {
     X509_free(peer);
+    if(af->af_trace) {
+      scoped_char *err = fmt("Mismatching hostname: %s", errbuf);
+      af->af_trace(af->af_opaque, err);
+    }
     return EDOM;
   }
   X509_free(peer);
@@ -822,6 +831,9 @@ asyncio_ssl_handshake(asyncio_fd_t *af)
       mod_poll_flags(af, EPOLLOUT, 0);
 
     af->af_ssl_established = 1;
+
+    if(af->af_trace)
+      af->af_trace(af->af_opaque, "TLS established");
 
     if(af->af_hostname != NULL &&
        af->af_flags & ASYNCIO_FLAG_SSL_VERIFY_CERT)
