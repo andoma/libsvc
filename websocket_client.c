@@ -518,7 +518,7 @@ ws_client_create(wsc_fn_t *fn, void *opaque, ...)
 
   int tag;
   int err = 0;
-
+  int flags;
   ws_client_t *wsc = calloc(1, sizeof(ws_client_t));
   wsc->wsc_fn = fn;
   wsc->wsc_opaque = opaque;
@@ -536,6 +536,11 @@ ws_client_create(wsc_fn_t *fn, void *opaque, ...)
       break;
     case WSC_TAG_URL:
       err = parse_url(wsc, va_arg(ap, const char *));
+      break;
+    case WSC_TAG_FLAGS:
+      flags = va_arg(ap, int);
+      if(flags & WSC_DEBUG)
+        wsc->wsc_debug = 1;
       break;
     default:
       fprintf(stderr, "%s can't handle tag %d\n", __FUNCTION__, tag);

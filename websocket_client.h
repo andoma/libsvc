@@ -3,10 +3,7 @@
 
 typedef struct ws_client ws_client_t;
 
-
-
-
-
+#define WSC_DEBUG 0x1
 
 enum {
   WSC_TAG_END,
