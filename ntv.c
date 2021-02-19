@@ -953,6 +953,26 @@ ntv_cmp(const ntv_t *src, const ntv_t *dst)
 
 
 
+void
+ntv_delete_nulls(ntv_t *p)
+{
+  ntv_t *c, *next;
+  for(c = TAILQ_FIRST(&p->ntv_children); c != NULL; c = next) {
+    next = TAILQ_NEXT(c, ntv_link);
+
+    switch(c->ntv_type) {
+    case NTV_NULL:
+      ntv_destroy(c);
+      break;
+    case NTV_MAP:
+    case NTV_LIST:
+      ntv_delete_nulls(c);
+      break;
+    default:
+      break;
+    }
+  }
+}
 
 
 static void

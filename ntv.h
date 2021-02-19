@@ -133,6 +133,8 @@ const ntv_t *ntv_field_from_path(const ntv_t *n, const char **path);
 
 ntv_t *ntv_detach_field(ntv_t *n, const char *key);
 
+void ntv_delete_nulls(ntv_t *n); // Recursively delete all NULL fields
+
 // Namespaces
 
 ntv_ns_t *ntv_ns_create(const char *str);
