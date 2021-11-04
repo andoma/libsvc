@@ -800,12 +800,23 @@ tcp_init(const char *extra_ca)
 
 #if defined(__APPLE__)
 
+#if defined(__aarch64__)
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+  const char *path = "/opt/homebrew/etc/openssl@1.1/cert.pem";
+#else
+  const char *path = "/opt/homebrew/etc/openssl/cert.pem";
+#endif
+
+#else
+
 #if OPENSSL_VERSION_NUMBER >= 0x10100000
   const char *path = "/usr/local/etc/openssl@1.1/cert.pem";
 #else
   const char *path = "/usr/local/etc/openssl/cert.pem";
 #endif
 
+#endif
   if(!SSL_CTX_load_verify_locations(ssl_ctx, path, NULL)) {
     fprintf(stderr, "Unable to load certificates from %s\n", path);
     exit(1);
