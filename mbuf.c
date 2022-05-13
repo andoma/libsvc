@@ -485,6 +485,27 @@ mbuf_prependq(mbuf_t *mq, mbuf_t *src)
   }
 }
 
+/**
+ *
+ */
+int
+mbuf_write_FILE(mbuf_t *mq, FILE* fp)
+{
+  mbuf_data_t *md;
+  int len = 0;
+  TAILQ_FOREACH(md, &mq->mq_buffers, md_link) {
+    int w = fwrite(md->md_data + md->md_data_off, 1,
+	     md->md_data_len - md->md_data_off, fp);
+    if (w < 0) {
+      // if it's the first write return error.
+      if (len == 0)
+        return -1;
+      break;
+    }
+    len += w;
+  }
+  return len;
+}
 
 /**
  *

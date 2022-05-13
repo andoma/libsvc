@@ -127,6 +127,9 @@ int mbuf_find(mbuf_t *m, uint8_t v);
 
 void mbuf_appendq(mbuf_t *m, mbuf_t *src);
 
+// Write mbuf to file
+int mbuf_write_FILE(mbuf_t *mq, FILE* fp);
+
 void mbuf_prependq(mbuf_t *mq, mbuf_t *src);
 
 void mbuf_copyq(mbuf_t *mq, const mbuf_t *src);
