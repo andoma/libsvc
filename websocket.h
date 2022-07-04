@@ -37,7 +37,7 @@ typedef struct websocket_state {
 
 #define WEBSOCKET_MAX_HDR_LEN 14
 
-int websocket_build_hdr(uint8_t hdr[WEBSOCKET_MAX_HDR_LEN],
+int websocket_build_hdr(uint8_t hdr[static WEBSOCKET_MAX_HDR_LEN],
                         int opcode, size_t len, int compressed);
 
 void websocket_append_hdr(struct mbuf *q, int opcode, size_t len);

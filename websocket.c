@@ -41,7 +41,7 @@ websocket_free(websocket_state_t *state)
  *
  */
 int
-websocket_build_hdr(uint8_t *hdr, int opcode, size_t len, int compressed)
+websocket_build_hdr(uint8_t hdr[static WEBSOCKET_MAX_HDR_LEN], int opcode, size_t len, int compressed)
 {
   int hlen;
   hdr[0] = 0x80 | (opcode & 0xf) | (compressed ? 0x40 : 0);
