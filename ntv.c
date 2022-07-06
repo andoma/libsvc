@@ -677,7 +677,8 @@ ntv_list(ntv_t *f, ...)
 
 
 static void
-ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
+ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f,
+                   int recurse_in_map)
 {
   switch(f->ntv_type) {
   case NTV_NULL:
@@ -686,10 +687,23 @@ ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
   case NTV_BOOLEAN:
     ntv_set_boolean(dst, dstname, f->ntv_boolean);
     break;
-  case NTV_MAP:
   case NTV_LIST:
     ntv_set_ntv(dst, dstname, ntv_copy(f));
     break;
+  case NTV_MAP:
+    if(recurse_in_map) {
+      ntv_t *dstmap = ntv_field_name_find(dst, dstname, NTV_MAP);
+      if(dstmap != NULL) {
+        const ntv_t *f2;
+        TAILQ_FOREACH(f2, &f->ntv_children, ntv_link) {
+          ntv_set_from_field(dst, f2->ntv_name, f2, recurse_in_map);
+        }
+        break;
+      }
+    }
+    ntv_set_ntv(dst, dstname, ntv_copy(f));
+    break;
+
   case NTV_STRING:
     ntv_set_str(dst, dstname, f->ntv_string);
     break;
@@ -737,16 +751,24 @@ ntv_add_from_field(ntv_t *dst, const char *dstname, const ntv_t *f)
 
 
 void
-ntv_merge(ntv_t *dst, const ntv_t *src)
+ntv_merge_ex(ntv_t *dst, const ntv_t *src, int flags)
 {
   if(src == NULL)
     return;
 
   const ntv_t *f;
   TAILQ_FOREACH(f, &src->ntv_children, ntv_link) {
-    ntv_set_from_field(dst, f->ntv_name, f);
+    ntv_set_from_field(dst, f->ntv_name, f, !!(flags & NTV_MERGE_MAPS));
   }
 }
+
+
+void
+ntv_merge(ntv_t *dst, const ntv_t *src)
+{
+  return ntv_merge_ex(dst, src, 0);
+}
+
 
 void
 ntv_merge_add(ntv_t *dst, const ntv_t *src)
@@ -813,7 +835,7 @@ ntv_copy_field(ntv_t *dst, const char *dstfieldname,
     ntv_delete_field(dst, dstfieldname);
     return 0;
   } else {
-    ntv_set_from_field(dst, dstfieldname, src);
+    ntv_set_from_field(dst, dstfieldname, src, 0);
     return 1;
   }
 }

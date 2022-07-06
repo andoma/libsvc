@@ -127,6 +127,9 @@ ntv_t *ntv_copy(const ntv_t *src);
 void ntv_merge(ntv_t *dst, const ntv_t *src);
 void ntv_merge_add(ntv_t *dst, const ntv_t *src);
 
+#define NTV_MERGE_MAPS 0x1
+void ntv_merge_ex(ntv_t *dst, const ntv_t *src, int flags);
+
 int ntv_is_empty(const ntv_t *ntv);
 int ntv_num_children(const ntv_t *ntv);
 const ntv_t *ntv_field_from_path(const ntv_t *n, const char **path);
