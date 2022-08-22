@@ -696,7 +696,7 @@ ntv_set_from_field(ntv_t *dst, const char *dstname, const ntv_t *f,
       if(dstmap != NULL) {
         const ntv_t *f2;
         TAILQ_FOREACH(f2, &f->ntv_children, ntv_link) {
-          ntv_set_from_field(dst, f2->ntv_name, f2, recurse_in_map);
+          ntv_set_from_field(dstmap, f2->ntv_name, f2, recurse_in_map);
         }
         break;
       }
