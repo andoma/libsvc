@@ -405,7 +405,7 @@ send_traceline(struct timeval *tv, int pid, int pri,
   }
 }
 
-
+int libsvc_prefix_writetrace;
 
 static void
 writetrace(int pri, const char *procname, int pid, const char *msg)
@@ -440,12 +440,11 @@ writetrace(int pri, const char *procname, int pid, const char *msg)
 
   pthread_mutex_lock(&trace_mutex);
 
-  send_traceline(&tv, pid, pri, procname, msg);
+  send_traceline(
+    &tv, pid, pri, procname, libsvc_prefix_writetrace ? line : msg);
 
   pthread_mutex_unlock(&trace_mutex);
 }
-
-
 
 static void *
 remote_syslog_thread(void *aux)
