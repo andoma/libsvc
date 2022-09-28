@@ -576,6 +576,7 @@ mbuf_append_and_escape_url(mbuf_t *mq, const char *s)
     return;
 
   while(1) {
+    char buf[4];
     const char *esc;
     C = *c++;
 
@@ -589,7 +590,6 @@ mbuf_append_and_escape_url(mbuf_t *mq, const char *s)
       esc = NULL;
     } else {
       static const char hexchars[16] = "0123456789ABCDEF";
-      char buf[4];
       buf[0] = '%';
       buf[1] = hexchars[(C >> 4) & 0xf];
       buf[2] = hexchars[C & 0xf];;
