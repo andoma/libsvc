@@ -22,8 +22,7 @@ enum {
 #define WSC_USERNPASS(a, b)       WSC_TAG_USERNPASS, a, b
 #define WSC_URL(a)                WSC_TAG_URL, a
 #define WSC_HOSTPORTPATH(a, b, c) WSC_TAG_HOSTPORTPATH, a, (int)b, c
-#define WSC_SSL(a)                WSC_TA_SSL, a
-
+#define WSC_SSL(a)                WSC_TAG_SSL, a
 
 typedef void (wsc_fn_t)(void *opaque, int opcode,
                         const void *buf, size_t len);
