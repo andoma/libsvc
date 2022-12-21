@@ -54,6 +54,7 @@ struct ws_client {
 
   int wsc_ka_misses;
 
+  char *wsc_protocol;
 };
 
 
@@ -69,6 +70,7 @@ wsc_free(ws_client_t *wsc)
   task_group_destroy(wsc->wsc_task_group);
   websocket_free(&wsc->wsc_ws_parser);
   mbuf_clear(&wsc->wsc_holdq);
+  free(wsc->wsc_protocol);
   free(wsc);
 }
 
@@ -104,8 +106,12 @@ wsc_send_request(ws_client_t *wsc)
         "Sec-WebSocket-Version: 13\r\n"
         "Sec-WebSocket-Key: %s\r\n"
         "%s%s%s"
+        "%s%s%s"
         "\r\n",
         wsc->wsc_path, wsc->wsc_hostname, key,
+        wsc->wsc_protocol ? "Sec-WebSocket-Protocol: " : "",
+        wsc->wsc_protocol ?: "",
+        wsc->wsc_protocol ? "\r\n" : "",
         auth ? "Authorization: " : "",
         auth ?: "",
         auth ? "\r\n" : "");
@@ -559,6 +565,9 @@ ws_client_create(wsc_fn_t *fn, void *opaque, ...)
       break;
     case WSC_TAG_URL:
       err = parse_url(wsc, va_arg(ap, const char *));
+      break;
+    case WSC_TAG_PROTOCOL:
+      strset(&wsc->wsc_protocol, va_arg(ap, const char *));
       break;
     case WSC_TAG_FLAGS:
       flags = va_arg(ap, int);
