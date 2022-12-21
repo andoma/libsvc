@@ -331,19 +331,34 @@ wsc_dial_done(void *arg)
     return;
   }
 
-  asyncio_sslctx_t *sslctx = asyncio_sslctx_client();
 
-  wsc->wsc_af = asyncio_stream(fd, read_cb, err_cb, wsc,
-                               ASYNCIO_FLAG_THREAD_SAFE |
-                               ASYNCIO_FLAG_SSL_VERIFY_CERT |
-                               ASYNCIO_FLAG_NO_DELAY,
-                               sslctx, wsc->wsc_hostname,
-                               "wsclient",
-                               wsc->wsc_debug ? wsc_async_trace : NULL);
+
+
+  if(wsc->wsc_use_tls) {
+
+    asyncio_sslctx_t *sslctx = asyncio_sslctx_client();
+
+    wsc->wsc_af = asyncio_stream(fd, read_cb, err_cb, wsc,
+                                 ASYNCIO_FLAG_THREAD_SAFE |
+                                 ASYNCIO_FLAG_SSL_VERIFY_CERT |
+                                 ASYNCIO_FLAG_NO_DELAY,
+                                 sslctx, wsc->wsc_hostname,
+                                 "wsclient",
+                                 wsc->wsc_debug ? wsc_async_trace : NULL);
+
+    asyncio_sslctx_free(sslctx);
+
+  } else {
+
+    wsc->wsc_af = asyncio_stream(fd, read_cb, err_cb, wsc,
+                                 ASYNCIO_FLAG_THREAD_SAFE |
+                                 ASYNCIO_FLAG_NO_DELAY,
+                                 NULL, wsc->wsc_hostname,
+                                 "wsclient",
+                                 wsc->wsc_debug ? wsc_async_trace : NULL);
+  }
 
   wsc_send_request(wsc);
-
-  asyncio_sslctx_free(sslctx);
 
   asyncio_timer_arm_delta(&wsc->wsc_ka_timer, 10 * 1000 * 1000);
 }
