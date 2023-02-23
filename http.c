@@ -420,8 +420,8 @@ http_send_100_continue(http_request_t *hr)
 /**
  *
  */
-const char *
-http_mktime(time_t t, int delta)
+char *
+http_mktime_a(time_t t, int delta)
 {
   struct tm tm0, *tm;
 
@@ -429,10 +429,11 @@ http_mktime(time_t t, int delta)
 
   tm = gmtime_r(&t, &tm0);
 
-  return tsprintf("%s, %02d %s %d %02d:%02d:%02d GMT",
-                  httpdays[tm->tm_wday], tm->tm_year + 1900,
-                  httpmonths[tm->tm_mon], tm->tm_mday,
-                  tm->tm_hour, tm->tm_min, tm->tm_sec);
+  return fmt("%s, %02d %s %d %02d:%02d:%02d GMT",
+             httpdays[tm->tm_wday], tm->tm_mday,
+             httpmonths[tm->tm_mon],
+             tm->tm_year + 1900,
+             tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
 
 
@@ -484,11 +485,12 @@ http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
   if(hs != NULL && ntv_cmp(hr->hr_session, hr->hr_session_received)) {
     const char *cookie = generate_session_cookie(hr);
     if(cookie != NULL) {
+      char *expire = http_mktime_a(now, 365 * 86400);
       mbuf_qprintf(hdrs,
                    "Set-Cookie: %s.session=%s; Path=/; "
                    "expires=%s; HttpOnly%s\r\n",
                    PROGNAME, cookie,
-                   http_mktime(now, 365 * 86400),
+                   expire,
                    hs->hs_cookies_config ?: "");
     } else {
       mbuf_qprintf(hdrs,
@@ -533,7 +535,8 @@ http_send_header(http_request_t *hr, int rc, const char *statustxt,
   if(maxage == 0) {
     mbuf_qprintf(&hdrs, "Cache-Control: no-cache, no-store, must-revalidate\r\n");
   } else {
-    mbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", http_mktime(now, 0));
+    scoped_char *nowstr = http_mktime_a(now, 0);
+    mbuf_qprintf(&hdrs, "Last-Modified: %s\r\n", nowstr);
 
     if(maxage == INT32_MAX) {
       mbuf_qprintf(&hdrs, "Cache-Control: max-age=365000000, immutable\r\n");

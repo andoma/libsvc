@@ -250,7 +250,7 @@ int websocket_session_start(struct http_request *hr,
 #define WEBSOCKET_SERVER_PACKET_TIMESTAMP 0x1
 #define WEBSOCKET_SERVER_NO_BINARY_MSG_DISPATCH 0x2
 
-const char *http_mktime(time_t t, int delta);
+char *http_mktime_a(time_t t, int delta);
 
 double websocket_get_rtt(struct http_connection *hc);
 
