@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stddef.h>
+#include <sys/time.h>
+
 struct ntv;
 
 
@@ -21,8 +24,8 @@ char *aws_sig4_canonical_request_hash(const char *http_method,
 
 char *aws_sig4_gen_signature(const char *http_method,
                              const char *uri,
-                             const ntv_t *query_args,
-                             const ntv_t *headers,
+                             const struct ntv *query_args,
+                             const struct ntv *headers,
                              const char *payload_hash,
                              time_t timestamp,
                              aws_creds_t creds,
@@ -31,8 +34,8 @@ char *aws_sig4_gen_signature(const char *http_method,
 
 char *aws_sig4_gen_auth_header(const char *http_method,
                                const char *uri,
-                               const ntv_t *query_args,
-                               const ntv_t *headers,
+                               const struct ntv *query_args,
+                               const struct ntv *headers,
                                const char *payload_hash,
                                time_t timestamp,
                                aws_creds_t creds,
@@ -49,7 +52,7 @@ char *aws_s3_make_url(const char *method,
                       const char *bucket,
                       const char *path,
                       aws_creds_t creds,
-                      const ntv_t *extra_query_args);
+                      const struct ntv *extra_query_args);
 
 struct ntv *aws_invoke(const char *region,
                        const char *service,
@@ -57,10 +60,10 @@ struct ntv *aws_invoke(const char *region,
                        aws_creds_t creds,
                        struct ntv *req);
 
-const char *aws_invoked_transient_error(const ntv_t *response);
+const char *aws_invoked_transient_error(const struct ntv *response);
 
-const char *aws_invoked_error(const ntv_t *response);
+const char *aws_invoked_error(const struct ntv *response);
 
-const ntv_t *aws_invoked_result(const ntv_t *response);
+const struct ntv *aws_invoked_result(const struct ntv *response);
 
 void aws_test(void);
