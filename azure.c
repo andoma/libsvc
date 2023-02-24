@@ -49,13 +49,16 @@ azure_vm_get_machine_identity(void)
 
   scoped_http_result(hcr);
 
-  http_client_request(&hcr, url,
-                      HCR_TIMEOUT(2),
-                      HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
-                      HCR_ERRBUF(errbuf, sizeof(errbuf)),
-                      HCR_HEADER("Metadata", "true"),
-                      NULL);
-
+  if(http_client_request(&hcr, url,
+                         HCR_TIMEOUT(2),
+                         HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
+                         HCR_ERRBUF(errbuf, sizeof(errbuf)),
+                         HCR_HEADER("Metadata", "true"),
+                         NULL)) {
+    trace(LOG_ERR, "Failed to get azure instance metadata from %s -- %s",
+          url, errbuf);
+    return NULL;
+  }
 
   ntv_t *result = hcr.hcr_json_result;
   hcr.hcr_json_result = NULL;
@@ -71,12 +74,16 @@ azure_vm_get_machine_token(const char *aud)
 
   scoped_http_result(hcr);
 
-  http_client_request(&hcr, url,
-                      HCR_TIMEOUT(2),
-                      HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
-                      HCR_ERRBUF(errbuf, sizeof(errbuf)),
-                      HCR_HEADER("Metadata", "true"),
-                      NULL);
+  if(http_client_request(&hcr, url,
+                         HCR_TIMEOUT(2),
+                         HCR_FLAGS(HCR_DECODE_BODY_AS_JSON),
+                         HCR_ERRBUF(errbuf, sizeof(errbuf)),
+                         HCR_HEADER("Metadata", "true"),
+                         NULL)) {
+    trace(LOG_ERR, "Failed to get azure instance token for %s from %s -- %s",
+          aud, url, errbuf);
+    return NULL;
+  }
 
 
   ntv_t *result = hcr.hcr_json_result;
