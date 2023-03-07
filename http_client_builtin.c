@@ -507,7 +507,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
     case HCR_TAG_POSTJSON: {
       ntv_json_serialize(va_arg(ap, const ntv_t *), &request_buffer, 0);
-      strvec_push(&request_headers, "Content-Type: application-json");
+      strvec_push(&request_headers, "Content-Type: application/json");
       verb = "POST";
       break;
     }
