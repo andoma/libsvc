@@ -626,7 +626,7 @@ do_error(asyncio_fd_t *af, int error)
  *
  */
 static void
-do_write_pollout(asyncio_fd_t *af)
+do_write_pollout(asyncio_fd_t *af, void *opaque)
 {
   af_lock(af);
   int err = af->af_fd == -1 ? 0 : af->af_locked_write(af, 1);
@@ -640,7 +640,7 @@ do_write_pollout(asyncio_fd_t *af)
  *
  */
 static void
-do_read(asyncio_fd_t *af)
+do_read(asyncio_fd_t *af, void *opaque)
 {
   char tmp[1024];
   while(1) {
@@ -907,7 +907,7 @@ static int do_ssl_write_locked(asyncio_fd_t *af, int canwrite);
  *
  */
 static int
-do_ssl_read_locked(asyncio_fd_t *af)
+do_ssl_read_locked(asyncio_fd_t *af, void *opaque)
 {
   char buf[4096];
   af->af_ssl_read_status = 0;
@@ -963,7 +963,7 @@ do_ssl_read_locked(asyncio_fd_t *af)
  *
  */
 static void
-do_ssl_read(asyncio_fd_t *af)
+do_ssl_read(asyncio_fd_t *af, void *opaque)
 {
   af_lock(af);
 
@@ -983,7 +983,7 @@ do_ssl_read(asyncio_fd_t *af)
 
   af->af_ssl_read_status = 0;
 
-  int err = do_ssl_read_locked(af);
+  int err = do_ssl_read_locked(af, opaque);
 
   af_unlock(af);
   if(err)
@@ -999,7 +999,7 @@ do_ssl_write_locked(asyncio_fd_t *af, int canwrite)
   }
 
   if(af->af_ssl_read_status == SSL_ERROR_WANT_WRITE) {
-    do_ssl_read_locked(af);
+    do_ssl_read_locked(af, af->af_opaque);
     return 0;
   }
 
@@ -1055,7 +1055,7 @@ do_ssl_write_locked(asyncio_fd_t *af, int canwrite)
  *
  */
 static void
-do_accept(asyncio_fd_t *af)
+do_accept(asyncio_fd_t *af, void *opaque)
 {
   struct sockaddr_storage remote, local;
   socklen_t slen;
@@ -1178,11 +1178,11 @@ asyncio_loop(void *aux)
         continue;
 
       if(ev[i].events & EPOLLIN) {
-	af->af_pollin(af);
+	af->af_pollin(af, af->af_opaque);
       }
 
       if(ev[i].events & (EPOLLHUP | EPOLLERR) && af->af_pollerr != NULL) {
-	af->af_pollerr(af);
+	af->af_pollerr(af, af->af_opaque);
 	continue;
       }
 
@@ -1197,7 +1197,7 @@ asyncio_loop(void *aux)
       }
 
       if(ev[i].events & EPOLLOUT) {
-	af->af_pollout(af);
+	af->af_pollout(af, af->af_opaque);
       }
 
     }
@@ -1235,7 +1235,7 @@ asyncio_loop(void *aux)
     for(i = 0; i < r; i++) {
       asyncio_fd_t *af = events[i].udata;
       if(events[i].filter == EVFILT_READ) {
-        af->af_pollin(af);
+        af->af_pollin(af, af->af_opaque);
 
         if(events[i].flags & EV_EOF) {
           do_error(af, ECONNRESET);
@@ -1608,12 +1608,12 @@ asyncio_dgram(int fd,
 
 
 static void
-asyncio_connect_pollout(struct asyncio_fd *af)
+asyncio_connect_pollout(struct asyncio_fd *af, void *opaque)
 {
   int err;
   socklen_t sockerrlen = sizeof(err);
   getsockopt(af->af_fd, SOL_SOCKET, SO_ERROR, (void *)&err, &sockerrlen);
-  af->af_error(af->af_opaque, err);
+  af->af_error(opaque, err);
 }
 
 /**
@@ -1738,7 +1738,7 @@ asyncio_process_pending(asyncio_fd_t *af)
  *
  */
 static void
-asyncio_handle_pipe(asyncio_fd_t *af)
+asyncio_handle_pipe(asyncio_fd_t *af, void *opaque)
 {
   char x;
   if(read(asyncio_pipe[0], &x, 1) != 1)

@@ -73,7 +73,7 @@ typedef void (asyncio_error_cb_t)(void *opaque, int error);
 
 typedef void (asyncio_read_cb_t)(void *opaque, struct mbuf *hq);
 
-typedef void (asyncio_poll_cb_t)(struct asyncio_fd *);
+typedef void (asyncio_poll_cb_t)(struct asyncio_fd *, void *opaque);
 
 typedef void (asyncio_socket_trace_cb_t)(void *opaque, const char *str);
 
