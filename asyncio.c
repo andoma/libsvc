@@ -1712,7 +1712,9 @@ asyncio_stream(int fd,
   af->af_bytes_avail = read;
   af->af_error = err;
   af->af_opaque = opaque;
+  af_lock(af);
   mod_poll_flags(af, poll_flags, 0);
+  af_unlock(af);
   return af;
 }
 
