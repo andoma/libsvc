@@ -41,6 +41,7 @@ typedef enum {
   NTV_DONT_FREE = 0x2,
   NTV_REFCOUNTED = 0x4,
   NTV_NOCASE = 0x8,
+  NTV_ERR = 0x10,
 } ntv_flags;
 
 typedef enum {
