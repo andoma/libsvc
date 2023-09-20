@@ -235,6 +235,8 @@ typedef struct http_streamed_file {
 
   int hsf_min_speed;
 
+  const char *hsf_http_proxy;
+
 } http_streamed_file_t;
 
 
@@ -253,6 +255,7 @@ http_read_file_thread(void *aux)
                         HCR_ERRBUF(errbuf, sizeof(errbuf)),
                         HCR_AUTHCB(hsf->hsf_auth_cb, hsf->hsf_opaque),
                         HCR_MIN_SPEED(hsf->hsf_min_speed),
+                        HCR_HTTP_PROXY(hsf->hsf_http_proxy),
                         NULL);
 
 
@@ -293,6 +296,9 @@ http_read_file_va(const char *url, ...)
       break;
     case HCR_TAG_MIN_SPEED:
       hsf->hsf_min_speed = va_arg(ap, int);
+      break;
+    case HCR_TAG_HTTP_PROXY:
+      hsf->hsf_http_proxy = va_arg(ap, const char*);
       break;
     default:
       abort();
