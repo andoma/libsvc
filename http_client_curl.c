@@ -340,6 +340,13 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       break;
     }
 
+    case HCR_TAG_HTTP_PROXY:
+      const char *http_proxy = va_arg(ap, const char*);
+      if(http_proxy) {
+        curl_easy_setopt(curl, CURLOPT_PROXY, http_proxy);
+      }
+      break;
+
 #if CURL_AT_LEAST_VERSION(7,56,0)
     case HCR_TAG_MULTIPARTFILE: {
       const char *fieldname = va_arg(ap, const char *);

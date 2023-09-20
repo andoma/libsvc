@@ -52,6 +52,7 @@ enum {
   HCR_TAG_POSTFILE,
   HCR_TAG_MULTIPARTFILE,
   HCR_TAG_MIN_SPEED,
+  HCR_TAG_HTTP_PROXY,
 };
 
 
@@ -79,6 +80,7 @@ enum {
 #define HCR_OUTPUTFILE(a) HCR_TAG_OUTPUTFILE, a
 #define HCR_MULTIPARTFILE(a,b,c) HCR_TAG_MULTIPARTFILE, a, b, c
 #define HCR_MIN_SPEED(a) HCR_TAG_MIN_SPEED, a
+#define HCR_HTTP_PROXY(a) HCR_TAG_HTTP_PROXY, a
 
 int http_client_request(http_client_response_t *hcr, const char *url, ...)
   __attribute__((__sentinel__(0)));
