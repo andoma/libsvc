@@ -55,6 +55,7 @@
 #include "websocket.h"
 #include "mbuf.h"
 #include "bytestream.h"
+#include "strvec.h"
 
 LIST_HEAD(http_connection_list, http_connection);
 
@@ -86,7 +87,11 @@ typedef struct http_server {
 
 typedef struct ws_server_path {
   LIST_ENTRY(ws_server_path) wsp_link;
+
   char *wsp_path;
+  regex_t wsp_reg;
+  int wsp_depth;
+
   websocket_connected_t *wsp_connected;
   websocket_receive_t *wsp_receive;
   websocket_disconnected_t *wsp_disconnected;
@@ -151,6 +156,9 @@ typedef struct http_connection {
   atomic_t hc_ws_rtt;
 
   int hc_ws_mode;
+
+  strvec_t hc_ws_matches;
+
 } http_connection_t;
 
 
@@ -1005,16 +1013,17 @@ void
 http_route_add(const char *path, http_callback2_t *callback, int flags)
 {
   http_route_t *hr = malloc(sizeof(http_route_t));
-  int i;
 
-  int len = strlen(path);
+  const size_t len = strlen(path);
 
   hr->hr_flags = flags;
   hr->hr_depth = 0;
 
-  for(i = 0; i < len; i++)
-    if(path[i] == '/')
+  for(size_t i = 0; i < len; i++) {
+    if(path[i] == '/') {
       hr->hr_depth++;
+    }
+  }
 
   char *p = malloc_add(len, 2);
   p[0] = '^';
@@ -1128,7 +1137,8 @@ add_current_header(http_connection_t *hc)
 static int
 http_message_begin(http_parser *p)
 {
-  //  http_connection_t *hc = p->data;
+  http_connection_t *hc = p->data;
+  strvec_reset(&hc->hc_ws_matches);
   return 0;
 }
 
@@ -1380,6 +1390,7 @@ http_connection_destroy(http_connection_t *hc)
     free(hc->hc_z_in);
   }
 
+  strvec_reset(&hc->hc_ws_matches);
   free(hc);
 }
 
@@ -2099,16 +2110,27 @@ static int
 websocket_upgrade(http_connection_t *hc)
 {
   const ws_server_path_t *wsp;
-  LIST_FOREACH(wsp, &websocket_paths, wsp_link) {
-    const char *remain = mystrbegins(hc->hc_path, wsp->wsp_path);
-    if(remain != NULL) {
-      hc->hc_remain = strdup(remain);
-      hc->hc_ws_path = wsp;
-      return 0;
 
+  regmatch_t match[MAX_ROUTE_MATCHES];
+  int argc;
+  LIST_FOREACH(wsp, &websocket_paths, wsp_link) {
+    if(!regexec(&wsp->wsp_reg, hc->hc_path, MAX_ROUTE_MATCHES, match, 0)) {
+      break;
     }
   }
-  return 404;
+
+  if(wsp == NULL)
+    return 404;
+
+  for(argc = 0; argc < MAX_ROUTE_MATCHES; argc++) {
+    if(match[argc].rm_so == -1)
+      break;
+    int len = match[argc].rm_eo - match[argc].rm_so;
+    strvec_pushl(&hc->hc_ws_matches, hc->hc_path + match[argc].rm_so, len);
+  }
+
+  hc->hc_ws_path = wsp;
+  return 0;
 }
 
 
@@ -2126,7 +2148,8 @@ websocket_response(http_request_t *hr)
   if(k == NULL)
     return 400;
 
-  int r = wsp->wsp_connected(hr);
+  int r = wsp->wsp_connected(hr, hc->hc_ws_matches.count,
+                             hc->hc_ws_matches.v);
 
   if(!r) {
     int64_t now = asyncio_get_monotime();
@@ -2262,6 +2285,13 @@ websocket_session_start(http_request_t *hr,
 }
 
 
+static int
+wsp_cmp(const ws_server_path_t *a, const ws_server_path_t *b)
+{
+  return b->wsp_depth - a->wsp_depth;
+}
+
+
 /**
  *
  */
@@ -2272,11 +2302,31 @@ websocket_route_add(const char *path,
                     websocket_disconnected_t *disconnect)
 {
   ws_server_path_t *wsp = calloc(1, sizeof(ws_server_path_t));
+  const size_t len = strlen(path);
+  size_t i;
+
+  for(i = 0; i < len; i++)
+    if(path[i] == '/')
+      wsp->wsp_depth++;
+
+  char *p = malloc_add(len, 2);
+  p[0] = '^';
+  strcpy(p+1, path);
+  int rval = regcomp(&wsp->wsp_reg, p, REG_ICASE | REG_EXTENDED);
+  free(p);
+  if(rval) {
+    char errbuf[256];
+    regerror(rval, &wsp->wsp_reg, errbuf, sizeof(errbuf));
+    trace(LOG_ALERT, "Failed to compile regex for WS route %s -- %s",
+          path, errbuf);
+    exit(1);
+  }
+
   wsp->wsp_path         = strdup(path);
   wsp->wsp_connected    = connected;
   wsp->wsp_receive      = receive;
   wsp->wsp_disconnected = disconnect;
-  LIST_INSERT_HEAD(&websocket_paths, wsp, wsp_link);
+  LIST_INSERT_SORTED(&websocket_paths, wsp, wsp_link, wsp_cmp);
 }
 
 

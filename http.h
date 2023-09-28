@@ -211,7 +211,8 @@ void http_server_init_session_cookie(const char *password, uint8_t generation);
 
 
 
-typedef int (websocket_connected_t)(struct http_request *hr);
+typedef int (websocket_connected_t)(struct http_request *hr,
+                                    int argc, char **argv);
 
 typedef void (websocket_receive_t)(void *opaque, int opcode,
                                    const uint8_t *data, size_t len,
@@ -220,7 +221,7 @@ typedef void (websocket_receive_t)(void *opaque, int opcode,
 typedef void (websocket_disconnected_t)(void *opaque, int error,
                                         const char *errmsg);
 
-void websocket_route_add(const char *path,
+void websocket_route_add(const char *route,
                          websocket_connected_t *connected,
                          websocket_receive_t *receive,
                          websocket_disconnected_t *error);
