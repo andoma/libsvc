@@ -235,7 +235,7 @@ void websocket_sendq(struct http_connection *hc,
                      int queue_index);
 
 void websocket_send_json(struct http_connection *hc, const struct ntv *msg,
-                         int queue_index);
+                         int queue_index, int flags);
 
 void websocket_send_close(struct http_connection *hc, int code,
                           const char *reason);

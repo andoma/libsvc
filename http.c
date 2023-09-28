@@ -2537,12 +2537,12 @@ websocket_sendq(struct http_connection *hc, int opcode, mbuf_t *mq,
  */
 void
 websocket_send_json(http_connection_t *hc, const struct ntv *msg,
-                    int queue_index)
+                    int queue_index, int flags)
 {
   mbuf_t hq;
   mbuf_init(&hq);
 
-  ntv_json_serialize(msg, &hq, 0);
+  ntv_json_serialize(msg, &hq, flags);
   websocket_sendq(hc, 1, &hq, queue_index);
 }
 
