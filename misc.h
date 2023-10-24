@@ -26,6 +26,7 @@
 #include <alloca.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <sys/time.h>
 
 #define URL_ESCAPE_PATH   1
@@ -57,6 +58,8 @@ int writefile(const char *path, const void *buf, int size, int checksame);
 char *readfile(const char *path, time_t *ts);
 
 int mkdir_p(const char *path, int mode);
+
+int mkdir_chown_p(const char *path, uid_t uid, uid_t gid, int mode);
 
 int rm_rf(const char *path, int remove_self);
 

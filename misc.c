@@ -509,6 +509,34 @@ mkdir_p(const char *path, int mode)
 /**
  *
  */
+int
+mkdir_chown_p(const char *path, uid_t uid, uid_t gid, int mode)
+{
+  if(*path == 0) {
+    errno = EINVAL;
+    return -1;
+  }
+  char *s = mystrdupa(path);
+
+  for(char *p = s + 1; *p; p++) {
+    if(*p == '/') {
+      *p = 0;
+      if(mkdir(s, mode) == -1 && errno != EEXIST)
+        return -1;
+      if(lchown(s, uid, gid) == -1)
+        return -1;
+      *p = '/';
+    }
+  }
+  if(mkdir(s, mode) == -1 && errno != EEXIST)
+    return -1;
+  return lchown(s, uid, gid);
+}
+
+
+/**
+ *
+ */
 void
 mutex_unlock_ptr(pthread_mutex_t **p)
 {
