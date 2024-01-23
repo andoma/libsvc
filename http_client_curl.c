@@ -183,6 +183,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   hcr->hcr_headers = ntv_create_map();
 
+  int have_accept_header = 0;
+
   while((tag = va_arg(ap, int)) != 0) {
     switch(tag) {
     case HCR_TAG_ERRBUF:
@@ -215,8 +217,12 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     case HCR_TAG_HEADER: {
       const char *a = va_arg(ap, const char *);
       const char *b = va_arg(ap, const char *);
-      if(a != NULL && b != NULL)
+      if(a != NULL && b != NULL) {
+        if(!strcmp(a, "Accept")) {
+          have_accept_header = 1;
+        }
         slist = append_header(slist, a, b);
+      }
       break;
     }
 
@@ -390,8 +396,9 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, hdrfunc);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, hcr);
 
-  if(flags & HCR_DECODE_BODY_AS_JSON)
+  if(flags & HCR_DECODE_BODY_AS_JSON && !have_accept_header) {
     slist = append_header(slist, "Accept", "application/json");
+  }
 
   if(flags & HCR_VERBOSE)
     curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
