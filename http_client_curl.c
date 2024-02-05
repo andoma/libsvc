@@ -159,7 +159,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   int disable_auth = 0;
   FILE *sendf = NULL;
   scoped_char *www_authenticate_header = NULL;
-
+  const char *http_proxy;
   http_client_auth_cb_t *auth_cb = NULL;
   void *auth_opaque = NULL;
   FILE *outfile = NULL;
@@ -347,7 +347,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
     }
 
     case HCR_TAG_HTTP_PROXY:
-      const char *http_proxy = va_arg(ap, const char*);
+      http_proxy = va_arg(ap, const char*);
       if(http_proxy) {
         curl_easy_setopt(curl, CURLOPT_PROXY, http_proxy);
       }
