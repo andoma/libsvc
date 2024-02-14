@@ -125,13 +125,14 @@ websocket_parse(mbuf_t *q,
 
     if(opcode & 0x8) {
       // Ctrl frame
-      uint8_t *p = malloc(len);
+      uint8_t *p = malloc(len + 1);
       if(p == NULL)
         return 1;
 
       mbuf_read(q, p, len);
       if(m != NULL) for(int i = 0; i < len; i++) p[i] ^= m[i&3];
 
+      p[len] = 0; // Trailing zero for convenience
       int err = cb(opaque, opcode, &p, len, 0);
       free(p);
       if(!err)
