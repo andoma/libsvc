@@ -594,3 +594,9 @@ ws_client_create(wsc_fn_t *fn, void *opaque, ...)
   return wsc;
 }
 
+
+const char *
+ws_client_get_hostname(ws_client_t *wsc)
+{
+  return wsc->wsc_hostname;
+}
