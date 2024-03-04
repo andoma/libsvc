@@ -850,13 +850,21 @@ http_dispatch_request(http_request_t *hr)
     }
 
     assert(hr->hr_post_message == NULL);
-    if(!strcmp(argv[0], "application/json") &&
-       http_arg_get(&hr->hr_request_headers, "content-encoding") == NULL) {
+
+    if(http_arg_get(&hr->hr_request_headers, "content-encoding") == NULL) {
       char errbuf[256];
-      hr->hr_post_message = ntv_json_deserialize(hr->hr_body,
-                                                 errbuf, sizeof(errbuf));
-      if(hr->hr_post_message == NULL) {
-        return http_err(hr, HTTP_STATUS_BAD_REQUEST, errbuf);
+      if(!strcmp(argv[0], "application/json")) {
+        hr->hr_post_message = ntv_json_deserialize(hr->hr_body,
+                                                   errbuf, sizeof(errbuf));
+        if(hr->hr_post_message == NULL) {
+          return http_err(hr, HTTP_STATUS_BAD_REQUEST, errbuf);
+        }
+      } else if(!strcmp(argv[0], "application/cbor")) {
+        hr->hr_post_message = ntv_cbor_deserialize(hr->hr_body, hr->hr_body_size,
+                                                   errbuf, sizeof(errbuf));
+        if(hr->hr_post_message == NULL) {
+          return http_err(hr, HTTP_STATUS_BAD_REQUEST, errbuf);
+        }
       }
     }
   }
