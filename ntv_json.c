@@ -32,6 +32,10 @@
 #include "json.h"
 
 
+static void
+ntv_json_write_value(const ntv_t *f, mbuf_t *m, int indent, int flags,
+                     int precision);
+
 /**
  *
  */
@@ -40,10 +44,9 @@ ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int flags,
                int precision)
 {
   ntv_t *f;
-  char buf[100];
   const bool isarray = msg->ntv_type == NTV_LIST;
-
   const int escape_slash = !(flags & NTV_JSON_F_MINIMAL_ESCAPE);
+
 
   mbuf_append(m, isarray ? "[" : "{", 1);
   indent++;
@@ -60,48 +63,7 @@ ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int flags,
       mbuf_append(m, ": ", flags & NTV_JSON_F_PRETTY ? 2 : 1);
     }
 
-    switch(f->ntv_type) {
-    case NTV_MAP:
-      ntv_json_write(f, m, indent, flags, precision);
-      break;
-
-    case NTV_LIST:
-      ntv_json_write(f, m, indent, flags, precision);
-      break;
-
-    case NTV_STRING:
-      mbuf_append_and_escape_jsonstr(m, f->ntv_string, escape_slash);
-      break;
-
-    case NTV_BINARY:
-      mbuf_append_and_escape_jsonstr(m, "binary", 0);
-      break;
-
-    case NTV_INT:
-      snprintf(buf, sizeof(buf), "%" PRId64, f->ntv_s64);
-      mbuf_append(m, buf, strlen(buf));
-      break;
-
-    case NTV_DOUBLE:
-      my_double2str(buf, sizeof(buf), f->ntv_double, precision,
-                    DBL_TYPE_FLOAT);
-      mbuf_append(m, buf, strlen(buf));
-      break;
-
-    case NTV_NULL:
-      mbuf_append(m, "null", 4);
-      break;
-
-    case NTV_BOOLEAN:
-      if(f->ntv_boolean)
-        mbuf_append(m, "true", 4);
-      else
-        mbuf_append(m, "false", 5);
-      break;
-
-    default:
-      abort();
-    }
+    ntv_json_write_value(f, m, indent, flags, precision);
 
     if(TAILQ_NEXT(f, ntv_link))
       mbuf_append(m, ",", 1);
@@ -115,13 +77,63 @@ ntv_json_write(const ntv_t *msg, mbuf_t *m, int indent, int flags,
   mbuf_append(m, isarray ? "]" : "}", 1);
 }
 
+
+static void
+ntv_json_write_value(const ntv_t *f, mbuf_t *m, int indent, int flags,
+                     int precision)
+{
+  char buf[100];
+  const int escape_slash = !(flags & NTV_JSON_F_MINIMAL_ESCAPE);
+
+  switch(f->ntv_type) {
+  case NTV_MAP:
+    ntv_json_write(f, m, indent, flags, precision);
+    break;
+
+  case NTV_LIST:
+    ntv_json_write(f, m, indent, flags, precision);
+    break;
+
+  case NTV_STRING:
+    mbuf_append_and_escape_jsonstr(m, f->ntv_string, escape_slash);
+    break;
+
+  case NTV_BINARY:
+    mbuf_append_and_escape_jsonstr(m, "binary", 0);
+    break;
+
+  case NTV_INT:
+    snprintf(buf, sizeof(buf), "%" PRId64, f->ntv_s64);
+    mbuf_append(m, buf, strlen(buf));
+    break;
+
+  case NTV_DOUBLE:
+    my_double2str(buf, sizeof(buf), f->ntv_double, precision,
+                  DBL_TYPE_FLOAT);
+    mbuf_append(m, buf, strlen(buf));
+    break;
+
+  case NTV_NULL:
+    mbuf_append(m, "null", 4);
+    break;
+
+  case NTV_BOOLEAN:
+    if(f->ntv_boolean)
+      mbuf_append(m, "true", 4);
+    else
+      mbuf_append(m, "false", 5);
+    break;
+
+  }
+}
+
 /**
  *
  */
 void
 ntv_json_serialize_ex(const ntv_t *msg, mbuf_t *m, int flags, int precision)
 {
-  ntv_json_write(msg, m, 0, flags, precision);
+  ntv_json_write_value(msg, m, 0, flags, precision);
   if(flags & (NTV_JSON_F_PRETTY | NTV_JSON_F_TRAILING_LF))
     mbuf_append(m, "\n", 1);
 }
