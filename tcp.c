@@ -802,7 +802,9 @@ tcp_init(const char *extra_ca)
 
 #if defined(__aarch64__)
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+  const char *path = "/opt/homebrew/etc/ca-certificates/cert.pem";
+#elif OPENSSL_VERSION_NUMBER >= 0x10100000
   const char *path = "/opt/homebrew/etc/openssl@1.1/cert.pem";
 #else
   const char *path = "/opt/homebrew/etc/openssl/cert.pem";

@@ -694,7 +694,7 @@ htsmsg_xml_parse_cd(xmlparser_t *xp, ntv_t *msg, ntv_t *field,
 {
   struct cdata_content_queue ccq;
   cdata_content_t *cc;
-  int c = 0, l, y = 0;
+  int c = 0, l;
   char *body;
   const char *x;
   TAILQ_INIT(&ccq);
@@ -722,7 +722,6 @@ htsmsg_xml_parse_cd(xmlparser_t *xp, ntv_t *msg, ntv_t *field,
     switch(cc->cc_encoding) {
     case XML_ENCODING_UTF8:
       c += cc->cc_end - cc->cc_start;
-      y++;
       break;
 
     case XML_ENCODING_8859_1:
@@ -731,7 +730,6 @@ htsmsg_xml_parse_cd(xmlparser_t *xp, ntv_t *msg, ntv_t *field,
 	l += 1 + ((uint8_t)*x >= 0x80);
 
       c += l;
-      y += 1 + (l != cc->cc_end - cc->cc_start);
       break;
     }
   }

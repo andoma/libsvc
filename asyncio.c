@@ -1093,7 +1093,6 @@ tw_step(void)
   asyncio_timer_t *at, *next;
   int64_t now = asyncio_get_monotime();
   int target_slot = (now >> TW_TIME_SHIFT) & TW_SLOT_MASK;
-  int cbs = 0;
   struct asyncio_timer_list tmplist;
   LIST_INIT(&tmplist);
 
@@ -1112,7 +1111,6 @@ tw_step(void)
       LIST_REMOVE(at, at_link);
       at->at_expire = 0;
       at->at_fn(at->at_opaque, now);
-      cbs++;
     }
   }
 
@@ -1197,7 +1195,7 @@ asyncio_loop(void *aux)
       }
 
       if(ev[i].events & EPOLLOUT) {
-	af->af_pollout(af, af->af_opaque);
+        af->af_pollout(af, af->af_opaque);
       }
 
     }
@@ -1246,7 +1244,7 @@ asyncio_loop(void *aux)
         if(events[i].flags & EV_EOF) {
           do_error(af, ECONNRESET);
         } else {
-          af->af_pollout(af);
+          af->af_pollout(af, af->af_opaque);
         }
       }
     }
@@ -2123,7 +2121,9 @@ asyncio_sslctx_client(void)
 
 #if defined(__aarch64__)
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+  const char *path = "/opt/homebrew/etc/ca-certificates/cert.pem";
+#elif OPENSSL_VERSION_NUMBER >= 0x10100000
   const char *path = "/opt/homebrew/etc/openssl@1.1/cert.pem";
 #else
   const char *path = "/opt/homebrew/etc/openssl/cert.pem";
