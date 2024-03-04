@@ -9,6 +9,7 @@ libsvc_SRCS += \
 	json.c \
 	dbl.c \
 	dial.c \
+	dns.c \
 	utf8.c \
 	tcp.c \
 	trace.c \
