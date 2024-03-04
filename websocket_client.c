@@ -451,6 +451,47 @@ ws_client_send(ws_client_t *wsc, int opcode,
   return 0;
 }
 
+int
+ws_client_sendq(ws_client_t *wsc, int opcode, mbuf_t *mq)
+{
+  uint8_t hdr[WEBSOCKET_MAX_HDR_LEN];
+  size_t len = mq->mq_size;
+  int hlen = websocket_build_hdr(hdr, opcode, len, 0);
+  assert(hlen <= 10);
+  hdr[1] |= 0x80; // Masking
+
+  union {
+    uint8_t u8[4];
+    uint32_t u32;
+  } mask;
+
+  mask.u32 = prng_get(&wsc->wsc_maskgenerator);
+  memcpy(hdr + hlen, mask.u8, 4);
+  hlen += 4;
+
+  size_t off = 0;
+
+  mbuf_data_t *md;
+  TAILQ_FOREACH(md, &mq->mq_buffers, md_link) {
+    uint8_t *s = md->md_data + md->md_data_off;
+    size_t len = md->md_data_len - md->md_data_off;
+    for(size_t i = 0; i < len; i++) {
+      s[i] = s[i] ^ mask.u8[off & 3];
+      off++;
+    }
+  }
+
+  pthread_mutex_lock(&wsc->wsc_send_mutex);
+  if(wsc->wsc_state == WSC_STATE_WEBSOCKET) {
+    asyncio_sendq_with_hdr(wsc->wsc_af, hdr, hlen, mq, 0, 0);
+  } else {
+    mbuf_append(&wsc->wsc_holdq, hdr, hlen);
+    mbuf_appendq(&wsc->wsc_holdq, mq);
+  }
+  pthread_mutex_unlock(&wsc->wsc_send_mutex);
+  return 0;
+}
+
 
 void
 ws_client_send_close(ws_client_t *wsc, int code, const char *msg)

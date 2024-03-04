@@ -36,6 +36,8 @@ ws_client_t *ws_client_create(wsc_fn_t *fn, void *opaque, ...)
 int ws_client_send(ws_client_t *wsc, int opcode,
                    const void *data, size_t len);
 
+int ws_client_sendq(ws_client_t *wsc, int opcode, mbuf_t *mq);
+
 void ws_client_send_close(ws_client_t *wsc, int code, const char *msg);
 
 void ws_client_start(ws_client_t *wsc);
