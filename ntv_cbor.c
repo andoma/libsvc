@@ -244,13 +244,13 @@ cbor_decode_u64(const uint8_t *data, const uint8_t *dataend,
   }
   switch(bytes) {
   case 1:
-    *out = (int8_t)data[0];
+    *out = (uint8_t)data[0];
     break;
   case 2:
-    *out = (int16_t)rd16_be(data);
+    *out = (uint16_t)rd16_be(data);
     break;
   case 4:
-    *out = (int32_t)rd32_be(data);
+    *out = (uint32_t)rd32_be(data);
     break;
   case 8:
     *out = rd64_be(data);
