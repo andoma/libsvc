@@ -730,7 +730,8 @@ ws_client_get_protocol(ws_client_t *wsc)
   pthread_mutex_lock(&wsc->wsc_send_mutex);
   while(wsc->wsc_state == WSC_STATE_HTTP)
     pthread_cond_wait(&wsc->wsc_state_cond, &wsc->wsc_send_mutex);
-  char *r = strdup(wsc->wsc_received_protocol);
+  char *r =
+    wsc->wsc_received_protocol ? strdup(wsc->wsc_received_protocol) : NULL;
   pthread_mutex_unlock(&wsc->wsc_send_mutex);
   return r;
 }
