@@ -14,6 +14,7 @@
 #include "task.h"
 #include "websocket.h"
 #include "trace.h"
+#include "ntv.h"
 
 struct ws_client {
 
@@ -45,6 +46,7 @@ struct ws_client {
   task_group_t *wsc_task_group;
 
   pthread_mutex_t wsc_send_mutex;
+  pthread_cond_t wsc_state_cond;
 
   struct mbuf wsc_holdq;
 
@@ -54,7 +56,14 @@ struct ws_client {
 
   int wsc_ka_misses;
 
-  char *wsc_protocol;
+  char *wsc_offered_protocol;
+
+  char *wsc_received_protocol;
+
+  char *wsc_header_name;
+  char *wsc_header_val;
+
+  ntv_t *wsc_headers;
 };
 
 
@@ -70,7 +79,11 @@ wsc_free(ws_client_t *wsc)
   task_group_destroy(wsc->wsc_task_group);
   websocket_free(&wsc->wsc_ws_parser);
   mbuf_clear(&wsc->wsc_holdq);
-  free(wsc->wsc_protocol);
+  free(wsc->wsc_offered_protocol);
+  free(wsc->wsc_received_protocol);
+  free(wsc->wsc_header_name);
+  free(wsc->wsc_header_val);
+  ntv_release(wsc->wsc_headers);
   free(wsc);
 }
 
@@ -109,9 +122,9 @@ wsc_send_request(ws_client_t *wsc)
         "%s%s%s"
         "\r\n",
         wsc->wsc_path, wsc->wsc_hostname, key,
-        wsc->wsc_protocol ? "Sec-WebSocket-Protocol: " : "",
-        wsc->wsc_protocol ?: "",
-        wsc->wsc_protocol ? "\r\n" : "",
+        wsc->wsc_offered_protocol ? "Sec-WebSocket-Protocol: " : "",
+        wsc->wsc_offered_protocol ?: "",
+        wsc->wsc_offered_protocol ? "\r\n" : "",
         auth ? "Authorization: " : "",
         auth ?: "",
         auth ? "\r\n" : "");
@@ -163,7 +176,10 @@ websocket_dispatch_close(ws_client_t *wsc, const char *str)
     trace(LOG_DEBUG, "%s:%d closed: %s", wsc->wsc_hostname,
           wsc->wsc_port, str);
 
+  pthread_mutex_lock(&wsc->wsc_send_mutex);
   wsc->wsc_state = WSC_STATE_CLOSED;
+  pthread_cond_signal(&wsc->wsc_state_cond);
+  pthread_mutex_unlock(&wsc->wsc_send_mutex);
 
   msg_t *msg = malloc(sizeof(msg_t));
   msg->data = (void *)strdup(str);
@@ -229,9 +245,68 @@ websocket_packet_input(void *arg, int opcode,
 
 
 static int
+append(char **dst, const char *src, size_t len)
+{
+  size_t curlen = *dst ? strlen(*dst) : 0;
+  char *x = realloc(*dst, curlen + len + 1);
+  if(x == NULL)
+    return -1;
+  memcpy(x + curlen, src, len);
+  x[curlen + len] = 0;
+  *dst = x;
+  return 0;
+}
+
+static void
+lc_str(char *x)
+{
+  for(; *x; x++) {
+    if(*x >= 'A' && *x <= 'Z')
+      *x = *x + 32;
+  }
+}
+
+static void
+copy_header(ws_client_t *wsc, http_parser *p)
+{
+  if(wsc->wsc_header_name != NULL && wsc->wsc_header_val != NULL) {
+    lc_str(wsc->wsc_header_name);
+    ntv_set_str(wsc->wsc_headers, wsc->wsc_header_name, wsc->wsc_header_val);
+  }
+
+  strset(&wsc->wsc_header_name, NULL);
+  strset(&wsc->wsc_header_val, NULL);
+}
+
+static int
+on_header_field(http_parser *p, const char *at, size_t length)
+{
+  ws_client_t *wsc = p->data;
+  copy_header(wsc, p);
+  return append(&wsc->wsc_header_name, at, length);
+}
+
+static int
+on_header_value(http_parser *p, const char *at, size_t length)
+{
+  ws_client_t *wsc = p->data;
+  return append(&wsc->wsc_header_val, at, length);
+}
+
+
+
+static int
 http_headers_complete(http_parser *p)
 {
   ws_client_t *wsc = p->data;
+  copy_header(wsc, p);
+
+
+  const char *protocol = ntv_get_str(wsc->wsc_headers, "sec-websocket-protocol");
+  if(protocol != NULL) {
+    wsc->wsc_received_protocol = strdup(protocol);
+    lc_str(wsc->wsc_received_protocol);
+  }
 
   if(p->status_code == 101) {
     if(wsc->wsc_debug)
@@ -241,6 +316,7 @@ http_headers_complete(http_parser *p)
     pthread_mutex_lock(&wsc->wsc_send_mutex);
     asyncio_sendq(wsc->wsc_af, &wsc->wsc_holdq, 0, 0);
     wsc->wsc_state = WSC_STATE_WEBSOCKET;
+    pthread_cond_signal(&wsc->wsc_state_cond);
     pthread_mutex_unlock(&wsc->wsc_send_mutex);
     return 2;
   } else {
@@ -251,6 +327,8 @@ http_headers_complete(http_parser *p)
 }
 
 static const http_parser_settings parser_settings = {
+  .on_header_field = on_header_field,
+  .on_header_value = on_header_value,
   .on_headers_complete = http_headers_complete,
 };
 
@@ -594,6 +672,7 @@ ws_client_create(wsc_fn_t *fn, void *opaque, ...)
   wsc->wsc_opaque = opaque;
   wsc->wsc_task_group = task_group_create();
   wsc->wsc_timeout = 5000;
+  wsc->wsc_headers = ntv_create_map();
   asyncio_timer_init(&wsc->wsc_ka_timer, wsc_timer, wsc);
 
   while((tag = va_arg(ap, int)) != 0) {
@@ -608,7 +687,7 @@ ws_client_create(wsc_fn_t *fn, void *opaque, ...)
       err = parse_url(wsc, va_arg(ap, const char *));
       break;
     case WSC_TAG_PROTOCOL:
-      strset(&wsc->wsc_protocol, va_arg(ap, const char *));
+      strset(&wsc->wsc_offered_protocol, va_arg(ap, const char *));
       break;
     case WSC_TAG_FLAGS:
       flags = va_arg(ap, int);
@@ -632,6 +711,9 @@ ws_client_create(wsc_fn_t *fn, void *opaque, ...)
   wsc->wsc_http_parser.data = wsc;
   atomic_set(&wsc->wsc_refcount, 1);
   va_end(ap);
+
+  pthread_mutex_init(&wsc->wsc_send_mutex, NULL);
+  pthread_cond_init(&wsc->wsc_state_cond, NULL);
   return wsc;
 }
 
@@ -640,4 +722,15 @@ const char *
 ws_client_get_hostname(ws_client_t *wsc)
 {
   return wsc->wsc_hostname;
+}
+
+char *
+ws_client_get_protocol(ws_client_t *wsc)
+{
+  pthread_mutex_lock(&wsc->wsc_send_mutex);
+  while(wsc->wsc_state == WSC_STATE_HTTP)
+    pthread_cond_wait(&wsc->wsc_state_cond, &wsc->wsc_send_mutex);
+  char *r = strdup(wsc->wsc_received_protocol);
+  pthread_mutex_unlock(&wsc->wsc_send_mutex);
+  return r;
 }

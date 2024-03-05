@@ -45,3 +45,5 @@ void ws_client_start(ws_client_t *wsc);
 void ws_client_destroy(ws_client_t *wsc);
 
 const char *ws_client_get_hostname(ws_client_t *wsc);
+
+char *ws_client_get_protocol(ws_client_t *wsc);
