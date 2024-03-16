@@ -161,6 +161,9 @@ websocket_dispatch(ws_client_t *wsc, msg_t *msg, int opcode)
   msg->wsc = wsc;
   atomic_inc(&wsc->wsc_refcount);
   task_run_in_group(msg_dispatch, msg, wsc->wsc_task_group);
+  if(opcode == WS_OPCODE_CLOSE) {
+    asyncio_shutdown(wsc->wsc_af);
+  }
 }
 
 
