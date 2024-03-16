@@ -323,7 +323,9 @@ http_headers_complete(http_parser *p)
     pthread_mutex_unlock(&wsc->wsc_send_mutex);
     return 2;
   } else {
-    websocket_dispatch_close(wsc, http_status_str(p->status_code));
+    scoped_char *errmsg = fmt("HTTP upgrade failed: %s",
+                              http_status_str(p->status_code));
+    websocket_dispatch_close(wsc, errmsg);
     return 1;
   }
   return 0;
