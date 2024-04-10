@@ -613,6 +613,16 @@ ntv_null(void)
   return ntv_create(NTV_NULL);
 }
 
+ntv_t *
+ntv_bin(const void *data, size_t len)
+{
+  ntv_t *ntv = ntv_create(NTV_BINARY);
+  ntv->ntv_bin = malloc(len);
+  memcpy(ntv->ntv_bin, data, len);
+  ntv->ntv_binsize = len;
+  return ntv;
+}
+
 
 ntv_t *
 ntv_str(const char *str)

@@ -180,6 +180,7 @@ ntv_t *ntv_int(int64_t value);
 ntv_t *ntv_double(double value);
 ntv_t *ntv_boolean(int value);
 ntv_t *ntv_null(void);
+ntv_t *ntv_bin(const void *data, size_t len);
 ntv_t *ntv_str(const char *str);
 ntv_t *ntv_strf(const char *fmt, ...);
 ntv_t *ntv_map(const char *key, ...)   __attribute__((__sentinel__(0)));
