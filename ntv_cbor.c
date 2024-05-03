@@ -1,5 +1,8 @@
 /******************************************************************************
 * Copyright (C) 2008 - 2016 Andreas Smas
+* Copyright (c) 2017 Facebook Inc.
+* Copyright (c) 2017 Georgia Institute of Technology
+* Copyright 2019 Google LLC
 *
 * Permission is hereby granted, free of charge, to any person obtaining
 * a copy of this software and associated documentation files (the
@@ -393,6 +396,22 @@ cbor_read_u32(const uint8_t *data, const uint8_t *dataend,
 }
 
 
+/**
+ *
+ */
+static const uint8_t *
+cbor_read_u16(const uint8_t *data, const uint8_t *dataend,
+              uint16_t *out, errctx_t *ec)
+{
+  if(sizeof(uint16_t) > dataend - data) {
+    *out = 0;
+    return cbor_err(data, ec, "EOF, trying to read u16");
+  }
+  *out = rd16_be(data);
+  return data + sizeof(uint16_t);
+}
+
+
 
 /**
  *
@@ -418,6 +437,63 @@ cbor_read_float(const uint8_t *data, const uint8_t *dataend,
   union { float d; uint32_t u32; } u;
   data = cbor_read_u32(data, dataend, &u.u32, ec);
   *out = u.d;
+  return data;
+}
+
+static inline uint32_t fp32_to_bits(float f) {
+  union {
+    float as_value;
+    uint32_t as_bits;
+  } fp32;
+  fp32.as_value = f;
+  return fp32.as_bits;
+}
+
+
+static inline float fp32_from_bits(uint32_t w) {
+  union {
+    uint32_t as_bits;
+    float as_value;
+  } fp32;
+  fp32.as_bits = w;
+  return fp32.as_value;
+}
+
+static float from_half(uint16_t h)
+{
+  const uint32_t w = (uint32_t) h << 16;
+  const uint32_t sign = w & UINT32_C(0x80000000);
+  const uint32_t two_w = w + w;
+
+  const uint32_t exp_offset = UINT32_C(0xE0) << 23;
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) || defined(__GNUC__) && !defined(__STRICT_ANSI__)
+  const float exp_scale = 0x1.0p-112f;
+#else
+  const float exp_scale = fp32_from_bits(UINT32_C(0x7800000));
+#endif
+  const float normalized_value = fp32_from_bits((two_w >> 4) + exp_offset) * exp_scale;
+
+  const uint32_t magic_mask = UINT32_C(126) << 23;
+  const float magic_bias = 0.5f;
+  const float denormalized_value = fp32_from_bits((two_w >> 17) | magic_mask) - magic_bias;
+
+  const uint32_t denormalized_cutoff = UINT32_C(1) << 27;
+  const uint32_t result = sign |
+    (two_w < denormalized_cutoff ? fp32_to_bits(denormalized_value) : fp32_to_bits(normalized_value));
+  return fp32_from_bits(result);
+}
+
+
+/**
+ *
+ */
+static const uint8_t *
+cbor_read_half(const uint8_t *data, const uint8_t *dataend,
+               double *out, errctx_t *ec)
+{
+  uint16_t u16;
+  data = cbor_read_u16(data, dataend, &u16, ec);
+  *out = from_half(u16);
   return data;
 }
 
@@ -478,6 +554,11 @@ ntv_cbor_deserialize0(const uint8_t *data, const uint8_t *dataend,
 
   case 7 << 5 | 22:
     f = ntv_create(NTV_NULL);
+    break;
+
+  case 7 << 5 | 25:
+    f = ntv_create(NTV_DOUBLE);
+    data = cbor_read_half(data, dataend, &f->ntv_double, ec);
     break;
 
   case 7 << 5 | 26:
