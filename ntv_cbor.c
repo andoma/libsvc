@@ -340,8 +340,10 @@ decode_sub(const uint8_t *data, const uint8_t *dataend,
       return cbor_err(data, ec, "EOF when reading %s", havekeys ? "map":"list");
 
 
-    if(*data == 0xff)
+    if(*data == 0xff) {
+      data++;
       break;
+    }
 
     if(havekeys) {
       uint8_t code = *data++;
