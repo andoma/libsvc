@@ -151,7 +151,7 @@ parse_string_inner(const char *a, char *out, const char **endp,
           uc |= a[i] - 'a' + 10;
           break;
         case 'A' ... 'F':
-          uc |= a[i] - 'F' + 10;
+          uc |= a[i] - 'A' + 10;
           break;
         default:
           *failmsg = "Incorrect escape sequence";
