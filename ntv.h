@@ -244,6 +244,7 @@ struct mbuf;
 #define NTV_JSON_F_WIDE           0x2
 #define NTV_JSON_F_MINIMAL_ESCAPE 0x4
 #define NTV_JSON_F_TRAILING_LF    0x8
+#define NTV_JSON_F_ONLY_FINITE    0x10
 
 void ntv_json_serialize_ex(const ntv_t *msg, struct mbuf *m, int flags,
                            int precision);

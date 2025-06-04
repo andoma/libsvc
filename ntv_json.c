@@ -25,7 +25,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <sys/param.h>
-
+#include <math.h>
 #include "ntv.h"
 #include "mbuf.h"
 #include "dbl.h"
@@ -108,9 +108,13 @@ ntv_json_write_value(const ntv_t *f, mbuf_t *m, int indent, int flags,
     break;
 
   case NTV_DOUBLE:
-    my_double2str(buf, sizeof(buf), f->ntv_double, precision,
-                  DBL_TYPE_FLOAT);
-    mbuf_append(m, buf, strlen(buf));
+    if((flags & NTV_JSON_F_ONLY_FINITE) && !isfinite(f->ntv_double)) {
+      mbuf_append(m, "null", 4);
+    } else {
+      my_double2str(buf, sizeof(buf), f->ntv_double, precision,
+                    DBL_TYPE_FLOAT);
+      mbuf_append(m, buf, strlen(buf));
+    }
     break;
 
   case NTV_NULL:
