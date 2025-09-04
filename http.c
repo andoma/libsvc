@@ -1535,7 +1535,7 @@ http_connection_reenable(void *aux)
   http_connection_t *hc = aux;
 
   if(!atomic_get(&hc->hc_closed)) {
-    asyncio_timer_arm_delta(&hc->hc_timer, 10 * 1000000);
+    asyncio_timer_arm_delta(&hc->hc_timer, 60 * 1000000);
     // This will make the asyncio socket retry the read callback if there is
     // data pending
     hc->hc_read_disabled = 0;
