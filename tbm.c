@@ -26,10 +26,10 @@ tbm_withdraw(token_bucket_meter_t *tb, double amount, uint64_t now)
 
 
 void
-tbm_init(token_bucket_meter_t *tb, double rate, double burst)
+tbm_init(token_bucket_meter_t *tb, double rate, double burst, uint64_t now)
 {
-  tb->last_fill = 0;
-  tb->tokens = 0;
+  tb->last_fill = now;
+  tb->tokens = burst;
   tb->burst = burst;
   tb->rate = rate;
 }
