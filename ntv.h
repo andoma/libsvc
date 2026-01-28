@@ -281,24 +281,19 @@ ntv_t *ntv_xml_deserialize(const char *src, char *errmsg, size_t errlen);
 
 #ifdef __APPLE__
 
+// Note: _Generic performs lvalue conversion on the controlling expression,
+// which strips cv-qualifiers and decays arrays to pointers. So associations
+// for const-qualified types (const int, char *const, etc.) and array types
+// can never match and must not be listed.
 #define ntv_set(ntv, key, val)                                          \
   _Generic(val,                                                         \
            int64_t: ntv_set_int64,                                      \
-           const int64_t: ntv_set_int64,                                \
            int: ntv_set_int,                                            \
-           const int: ntv_set_int,                                      \
            unsigned int: ntv_set_int,                                   \
-           const unsigned int: ntv_set_int,                             \
            float: ntv_set_double,                                       \
-           const float: ntv_set_double,                                 \
            double: ntv_set_double,                                      \
-           const double: ntv_set_double,                                \
            char *: ntv_set_str,                                         \
            const char *: ntv_set_str,                                   \
-           char *const: ntv_set_str,                                    \
-           const char *const: ntv_set_str,                              \
-           char[sizeof( val )]: ntv_set_str,                            \
-           const char[sizeof( val )]: ntv_set_str,                      \
            ntv_t *: ntv_set_ntv                                         \
            )(ntv, key, val)
 
