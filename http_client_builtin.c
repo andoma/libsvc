@@ -23,6 +23,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "memstream.h"
 #include "ntv.h"
@@ -210,12 +211,22 @@ static const http_parser_settings parser_settings = {
 
 
 
+static int64_t
+monotime_usec(void)
+{
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec * (int64_t)1000000 + ts.tv_nsec / 1000;
+}
+
+
 static int
 http_do_request(const char *url,
                 char **error,
                 const char *verb,
                 const strvec_t *headers,
                 int timeout,
+                int min_speed,
                 http_client_response_t *hcr,
                 mbuf_t *request_buffer,
                 FILE *request_file,
@@ -264,13 +275,13 @@ http_do_request(const char *url,
   }
 
   int port = 0;
-  int stream_flags = 0;
+  int stream_flags = STREAM_CLOCK_MONOTONIC;
   if(!strcmp(schema, "http")) {
     port = pu.port ?: 80;
     ctxtrace(&ctx, "Connecting to %s:%d", hostname, port);
   } else if(!strcmp(schema, "https")) {
     port = pu.port ?: 443;
-    stream_flags = STREAM_CONNECT_F_SSL;
+    stream_flags |= STREAM_CONNECT_F_SSL;
     if(trace)
       stream_flags |= STREAM_DEBUG;
     ctxtrace(&ctx, "Connecting to %s:%d (TLS)", hostname, port);
@@ -345,9 +356,13 @@ http_do_request(const char *url,
   http_parser p;
   http_parser_init(&p, HTTP_RESPONSE);
 
+  int64_t speed_check_start = min_speed ? monotime_usec() : 0;
+  size_t speed_check_bytes = 0;
+
   p.data = &ctx;
   while(!ctx.done) {
-    ssize_t r = stream_read(s, buf, sizeof(buf), 0);
+    int64_t deadline = min_speed ? monotime_usec() + 15 * 1000000LL : 0;
+    ssize_t r = stream_read_timeout(s, buf, sizeof(buf), 0, deadline);
     if(r < 0) {
       stream_close(s);
       http_response_ctx_cleanup(&ctx);
@@ -365,6 +380,22 @@ http_do_request(const char *url,
         return -1;
       }
       break;
+    }
+    if(min_speed) {
+      speed_check_bytes += r;
+      int64_t now = monotime_usec();
+      int64_t elapsed = now - speed_check_start;
+      if(elapsed >= 15 * 1000000LL) {
+        int64_t bps = speed_check_bytes * 1000000LL / elapsed;
+        if(bps < min_speed) {
+          stream_close(s);
+          http_response_ctx_cleanup(&ctx);
+          *error = strdup("Speed below minimum");
+          return -1;
+        }
+        speed_check_start = now;
+        speed_check_bytes = 0;
+      }
     }
     http_parser_execute(&p, &parser_settings, buf, r);
     if(p.http_errno) {
@@ -403,6 +434,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   size_t errsize = 0;
   int flags = 0;
   int timeout = 0;
+  int min_speed = 0;
 
   scoped_char *www_authenticate_header = NULL;
   scoped_char *location = NULL;
@@ -420,6 +452,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   const char *verb = "GET";
   const char *verb_override = NULL;
   scoped_char *errstr = NULL;
+  const char *http_proxy;
 
   int auth_retry_code = 0;
   int disable_auth = 0;
@@ -560,6 +593,18 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       response_file = va_arg(ap, FILE *);
       break;
 
+    case HCR_TAG_MIN_SPEED:
+      min_speed = va_arg(ap, int);
+      break;
+
+    case HCR_TAG_HTTP_PROXY:
+      http_proxy = va_arg(ap, const char*);
+      if(http_proxy) {
+        fprintf(stderr, "HTTP Proxy support is not implemented\n");
+        abort();
+      }
+      break;
+
     default:
       abort();
     }
@@ -579,7 +624,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
   const int http_status_code =
     http_do_request(url, &errstr, verb_override ?: verb,
-                    &request_headers, timeout, hcr,
+                    &request_headers, timeout, min_speed, hcr,
                     &request_buffer,  request_file,
                     &response_buffer, response_file,
                     !!(flags & HCR_VERBOSE));
