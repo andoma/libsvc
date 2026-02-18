@@ -42,9 +42,7 @@
 #include "db.h"
 #endif
 
-#ifdef WITH_ASYNCIO
 #include "asyncio.h"
-#endif
 
 #ifdef WITH_CURL
 #include <curl/curl.h>
@@ -100,9 +98,7 @@ libsvc_init(void)
   db_init();
 #endif
 
-#ifdef WITH_ASYNCIO
   asyncio_init();
-#endif
 
 #ifdef WITH_CURL
   curl_global_init(CURL_GLOBAL_ALL);
