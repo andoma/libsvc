@@ -491,9 +491,9 @@ http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
   extern const char *libsvc_app_version;
   mbuf_qprintf(hdrs, "Server: %s\r\n", libsvc_app_version ?: PROGNAME);
 
+#ifdef WITH_OPENSSL
   const http_server_t *hs =
     hr->hr_connection ? hr->hr_connection->hc_server : NULL;
-#ifdef WITH_OPENSSL
   if(hs != NULL && ntv_cmp(hr->hr_session, hr->hr_session_received)) {
     scoped_char *cookie = generate_session_cookie(hr);
     if(cookie != NULL) {
