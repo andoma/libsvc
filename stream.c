@@ -6,6 +6,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <stdio.h>
 
 #include "bearssl.h"
 
@@ -438,6 +439,18 @@ stream_read_timeout(stream_t *s, void *data, size_t len, int flags,
 
     size_t fed = 0;
     while(fed < (size_t)rlen) {
+      // Drain any available app data before feeding more records,
+      // since the engine may not accept record data while app data
+      // is pending
+      buf = br_ssl_engine_recvapp_buf(&s->s_sc.eng, &avail);
+      if(buf != NULL && avail > 0) {
+        size_t want = len - total;
+        size_t copy = want < avail ? want : avail;
+        memcpy(dst + total, buf, copy);
+        br_ssl_engine_recvapp_ack(&s->s_sc.eng, copy);
+        total += copy;
+      }
+
       buf = br_ssl_engine_recvrec_buf(&s->s_sc.eng, &avail);
       if(buf == NULL || avail == 0)
         break;
@@ -448,7 +461,7 @@ stream_read_timeout(stream_t *s, void *data, size_t len, int flags,
       fed += chunk;
     }
 
-    // Check if engine decrypted any application data
+    // Drain any remaining app data after feeding
     buf = br_ssl_engine_recvapp_buf(&s->s_sc.eng, &avail);
     if(buf != NULL && avail > 0) {
       size_t want = len - total;

@@ -348,11 +348,23 @@ http_do_request(const char *url,
   p.data = &ctx;
   while(!ctx.done) {
     ssize_t r = stream_read(s, buf, sizeof(buf), 0);
-    if(r <= 0) {
+    if(r < 0) {
       stream_close(s);
       http_response_ctx_cleanup(&ctx);
       *error = strdup("Read error");
       return -1;
+    }
+    if(r == 0) {
+      // EOF: tell parser the connection closed so it can complete
+      // responses that use connection close to signal end of body
+      http_parser_execute(&p, &parser_settings, buf, 0);
+      if(!ctx.done) {
+        stream_close(s);
+        http_response_ctx_cleanup(&ctx);
+        *error = strdup("Connection closed");
+        return -1;
+      }
+      break;
     }
     http_parser_execute(&p, &parser_settings, buf, r);
     if(p.http_errno) {
