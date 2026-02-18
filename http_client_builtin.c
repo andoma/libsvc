@@ -31,7 +31,7 @@
 #include "misc.h"
 #include "strvec.h"
 #include "http_parser.h"
-#include "dial.h"
+#include "stream.h"
 #include "trace.h"
 #include "mbuf.h"
 
@@ -264,23 +264,24 @@ http_do_request(const char *url,
   }
 
   int port = 0;
-  tcp_stream_t *ts = NULL;
+  int stream_flags = 0;
   if(!strcmp(schema, "http")) {
     port = pu.port ?: 80;
     ctxtrace(&ctx, "Connecting to %s:%d", hostname, port);
-    ts = dial(hostname, port, timeout, NULL, errbuf, sizeof(errbuf));
   } else if(!strcmp(schema, "https")) {
-    tcp_ssl_info_t tsi = {};
     port = pu.port ?: 443;
-    tsi.debug = trace;
+    stream_flags = STREAM_CONNECT_F_SSL;
+    if(trace)
+      stream_flags |= STREAM_DEBUG;
     ctxtrace(&ctx, "Connecting to %s:%d (TLS)", hostname, port);
-    ts = dial(hostname, port, timeout, &tsi, errbuf, sizeof(errbuf));
   } else {
     *error = strdup("Unsupported URL schema");
     return -1;
   }
 
-  if(ts == NULL) {
+  stream_t *s = stream_connect(hostname, port, timeout, errbuf,
+                               sizeof(errbuf), stream_flags);
+  if(s == NULL) {
     *error = fmt("Unable to connect to %s:%d -- %s", hostname, port, errbuf);
     return -1;
   }
@@ -310,7 +311,7 @@ http_do_request(const char *url,
   strvec_push(&req, "");
 
   scoped_char *str = strvec_join(&req, "\r\n");
-  tcp_write(ts, str, strlen(str));
+  stream_write(s, str, strlen(str));
 
   // Transfer request body
   if(request_file != NULL) {
@@ -320,20 +321,25 @@ http_do_request(const char *url,
       size_t bytes = fread(buf, 1, sizeof(buf), request_file);
       if(bytes == 0) {
         *error = strdup("Read failed");
-        tcp_close(ts);
+        stream_close(s);
         return -1;
       }
       total += bytes;
       snprintf(chunk_header, sizeof(chunk_header), "%zx\r\n", bytes);
-      tcp_write(ts, chunk_header, strlen(chunk_header));
-      tcp_write(ts, buf, bytes);
+      stream_write(s, chunk_header, strlen(chunk_header));
+      stream_write(s, buf, bytes);
     }
-    tcp_write(ts, "0\r\n\r\n", 5);
+    stream_write(s, "0\r\n\r\n", 5);
     ctxtrace(&ctx, "Sent body %zd bytes", total);
 
   } else if(strcmp(verb, "GET")) {
     ctxtrace(&ctx, "Sending body %zd bytes", request_buffer->mq_size);
-    tcp_write_queue(ts, request_buffer);
+    const void *mbdata;
+    size_t mblen;
+    while((mblen = mbuf_peek_no_copy(request_buffer, &mbdata)) != 0) {
+      stream_write(s, mbdata, mblen);
+      mbuf_drop(request_buffer, mblen);
+    }
   }
 
   http_parser p;
@@ -341,16 +347,16 @@ http_do_request(const char *url,
 
   p.data = &ctx;
   while(!ctx.done) {
-    int r = tcp_read(ts, buf, sizeof(buf));
-    if(r < 0) {
-      tcp_close(ts);
+    ssize_t r = stream_read(s, buf, sizeof(buf), 0);
+    if(r <= 0) {
+      stream_close(s);
       http_response_ctx_cleanup(&ctx);
       *error = strdup("Read error");
       return -1;
     }
     http_parser_execute(&p, &parser_settings, buf, r);
     if(p.http_errno) {
-      tcp_close(ts);
+      stream_close(s);
       http_response_ctx_cleanup(&ctx);
       ctxtrace(&ctx, "%s", http_errno_description(p.http_errno));
       *error = strdup(http_errno_description(p.http_errno));
@@ -363,7 +369,7 @@ http_do_request(const char *url,
   *error = ctx.status_str;
   ctx.status_str = NULL;
 
-  tcp_close(ts);
+  stream_close(s);
 
   http_response_ctx_cleanup(&ctx);
   return p.status_code;
