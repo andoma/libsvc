@@ -556,8 +556,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   va_end(ap);
 
   if(auth_cb && !disable_auth) {
-    const char *auth = auth_cb(auth_opaque, auth_retry_code,
-                               www_authenticate_header);
+    scoped_char *auth = auth_cb(auth_opaque, auth_retry_code,
+                                www_authenticate_header);
     if(auth)
       strvec_pushf(&request_headers, "Authorization: %s", auth);
   }

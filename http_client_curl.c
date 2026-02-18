@@ -410,8 +410,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, NULL);
 
   if(auth_cb) {
-    const char *auth = auth_cb(auth_opaque, auth_retry_code,
-                               www_authenticate_header);
+    scoped_char *auth = auth_cb(auth_opaque, auth_retry_code,
+                                www_authenticate_header);
     if(auth)
       slist = append_header(slist, "Authorization", auth);
   }

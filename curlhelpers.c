@@ -29,7 +29,6 @@
 
 #include "curlhelpers.h"
 #include "redblack.h"
-#include "talloc.h"
 #include "misc.h"
 #include "memstream.h"
 #include "sock.h"
@@ -194,12 +193,15 @@ libsvc_http_json_get(const char *url, const char *auth,
 
   slist = curl_slist_append(slist, "Accept: application/json");
 
-  if(auth != NULL)
-    slist = curl_slist_append(slist, tsprintf("Authorization: %s", auth));
+  if(auth != NULL) {
+    scoped_char *authhdr = fmt("Authorization: %s", auth);
+    slist = curl_slist_append(slist, authhdr);
+  }
 
-  if(ce->ce_etag != NULL)
-    slist = curl_slist_append(slist, tsprintf("If-None-Match: %s",
-                                              ce->ce_etag));
+  if(ce->ce_etag != NULL) {
+    scoped_char *etaghdr = fmt("If-None-Match: %s", ce->ce_etag);
+    slist = curl_slist_append(slist, etaghdr);
+  }
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
 
   ce->ce_expire = 0;
