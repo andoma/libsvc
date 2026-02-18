@@ -200,26 +200,3 @@ dialfd(const char *hostname, int port, int timeout,
 }
 
 
-/**
- *
- */
-tcp_stream_t *
-dial(const char *hostname, int port, int timeout, const tcp_ssl_info_t *tsi,
-     char *errbuf, size_t errlen)
-{
-  int fd = dialfd(hostname, port, timeout, errbuf, errlen,
-                  tsi != NULL ? tsi->debug : 0);
-  if(fd == -1)
-    return NULL;
-
-  if(tsi != NULL) {
-#if defined(WITH_OPENSSL)
-    return tcp_stream_create_ssl_from_fd(fd, hostname, tsi,
-                                         errbuf, errlen);
-#endif
-    snprintf(errbuf, errlen, "Not build with SSL");
-    close(fd);
-    return NULL;
-  }
-  return tcp_stream_create_from_fd(fd);
-}

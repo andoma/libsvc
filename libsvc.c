@@ -27,7 +27,6 @@
 #include <sys/resource.h>
 
 #include "libsvc.h"
-#include "tcp.h"
 #include "misc.h"
 #include "init.h"
 #include "trace.h"
@@ -105,14 +104,8 @@ libsvc_init(void)
   asyncio_init();
 #endif
 
-  tcp_init(NULL);
-
 #ifdef WITH_CURL
   curl_global_init(CURL_GLOBAL_ALL);
-#endif
-
-#ifdef WITH_TCP_SERVER
-  tcp_server_init();
 #endif
 
   VEC_SORT(&inithelpers, ihcmp);

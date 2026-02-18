@@ -45,7 +45,6 @@
 #include "strtab.h"
 #include "misc.h"
 #include "trace.h"
-#include "tcp.h"
 #include "http.h"
 #include "cfg.h"
 #include "filebundle.h"
