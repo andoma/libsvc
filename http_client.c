@@ -54,9 +54,10 @@ http_client_ntv_to_args(const ntv_t *ntv)
   scoped_strvec(args);
   NTV_FOREACH(f, ntv) {
     const char *str;
+    char *escaped = NULL;
     switch(f->ntv_type) {
     case NTV_STRING:
-      str = url_escape_tmp(f->ntv_string, URL_ESCAPE_PARAM);
+      str = escaped = url_escape_alloc(f->ntv_string, URL_ESCAPE_PARAM);
       break;
     case NTV_DOUBLE:
       my_double2str(buf, sizeof(buf), f->ntv_double, -1, DBL_TYPE_GENERIC);
@@ -70,6 +71,7 @@ http_client_ntv_to_args(const ntv_t *ntv)
       continue;
     }
     strvec_push_alloced(&args, fmt("%s=%s", f->ntv_name, str));
+    free(escaped);
   }
   return strvec_join(&args, "&");
 }

@@ -34,8 +34,6 @@
 
 int url_escape(char *dst, const int size, const char *src, int how);
 
-char *url_escape_tmp(const char *src, int how);
-
 char *url_escape_alloc(const char *src, int how);
 
 #define BASE64_STANDARD 0
@@ -134,8 +132,6 @@ char *lp_get(char **lp);
 #endif
 
 size_t html_enteties_escape(const char *src, char *dst);
-
-const char *html_enteties_escape_tmp(const char *src);
 
 char * str_replace_tokens(char *str, const char *tokenprefix,
 			  const char *tokenpostfix,

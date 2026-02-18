@@ -16,7 +16,6 @@ libsvc_SRCS += \
 	irc.c \
 	cfg.c \
 	cmd.c \
-	talloc.c \
 	memstream.c \
 	sock.c \
 	ntv.c \
@@ -54,7 +53,6 @@ libsvc_INCS += \
 	irc.h \
 	cfg.h \
 	cmd.h \
-	talloc.h \
 	memstream.h \
 	sock.h \
 	intvec.h \

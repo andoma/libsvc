@@ -51,7 +51,6 @@
 #include "queue.h"
 #include "asyncio.h"
 #include "trace.h"
-#include "talloc.h"
 #include "sock.h"
 #include "misc.h"
 #include "libsvc.h"
@@ -1145,8 +1144,6 @@ asyncio_loop(void *aux)
   int r, i;
 
   while(1) {
-    talloc_cleanup();
-
     int timeout = tw_step();
 
     process_deferred();

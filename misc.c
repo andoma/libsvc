@@ -41,7 +41,6 @@
 #include "misc.h"
 #include "utf8.h"
 #include "threading.h"
-#include "talloc.h"
 
 #ifdef __linux__
 #include <sys/syscall.h>
@@ -673,18 +672,6 @@ time_to_RFC_1123(time_t t)
  *
  */
 char *
-url_escape_tmp(const char *src, int how)
-{
-  int len = url_escape(NULL, 0, src, how);
-  char *r = talloc_malloc(len);
-  url_escape(r, len, src, how);
-  return r;
-}
-
-/**
- *
- */
-char *
 url_escape_alloc(const char *src, int how)
 {
   int len = url_escape(NULL, 0, src, how);
@@ -840,15 +827,6 @@ html_enteties_escape(const char *src, char *dst)
   return olen;
 }
 
-
-const char *
-html_enteties_escape_tmp(const char *src)
-{
-  size_t len = html_enteties_escape(src, NULL);
-  char *r = talloc_malloc(len);
-  html_enteties_escape(src, r);
-  return r;
-}
 
 char *
 str_replace_tokens(char *str, const char *tokenprefix,

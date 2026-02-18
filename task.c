@@ -28,7 +28,6 @@
 #include <errno.h>
 #include "task.h"
 #include "atomic.h"
-#include "talloc.h"
 
 #define MAX_TASK_THREADS 64
 #define MAX_IDLE_TASK_THREADS 4
@@ -128,7 +127,6 @@ task_thread(void *aux)
       pthread_mutex_unlock(&task_mutex);
       t->t_fn(t->t_opaque);
       free(t);
-      talloc_cleanup();
       pthread_mutex_lock(&task_mutex);
       // Released lock, must recheck for task groups
       tg = TAILQ_FIRST(&task_groups);

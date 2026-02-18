@@ -1,5 +1,5 @@
 /******************************************************************************
-* Copyright (C) 2008 - 2014 Andreas Öman
+* Copyright (C) 2008 - 2014 Andreas ï¿½man
 *
 * Permission is hereby granted, free of charge, to any person obtaining
 * a copy of this software and associated documentation files (the
@@ -48,7 +48,6 @@
 #include "tcp.h"
 #include "http.h"
 #include "cfg.h"
-#include "talloc.h"
 #include "filebundle.h"
 #include "ntv.h"
 #include "asyncio.h"
@@ -491,7 +490,7 @@ http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
   const http_server_t *hs =
     hr->hr_connection ? hr->hr_connection->hc_server : NULL;
   if(hs != NULL && ntv_cmp(hr->hr_session, hr->hr_session_received)) {
-    const char *cookie = generate_session_cookie(hr);
+    scoped_char *cookie = generate_session_cookie(hr);
     if(cookie != NULL) {
       char *expire = http_mktime_a(now, 365 * 86400);
       mbuf_qprintf(hdrs,
@@ -2056,7 +2055,7 @@ generate_session_cookie(http_request_t *hr)
     return NULL;
   }
 
-  return tstrdup(cookie);
+  return strdup(cookie);
 }
 
 

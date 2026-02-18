@@ -42,7 +42,6 @@
 
 #include "tcp.h"
 #include "trace.h"
-#include "talloc.h"
 #include "sock.h"
 
 /**
@@ -122,7 +121,6 @@ tcp_trampoline(void *aux)
       pthread_mutex_unlock(&tcp_thread_mutex);
       tsl->start(tcp_stream_create_from_fd(tsl->fd),
                  tsl->opaque, &tsl->peer, &tsl->self);
-      talloc_cleanup();
       pthread_mutex_lock(&tcp_thread_mutex);
     } else {
       close(tsl->fd);
@@ -201,7 +199,6 @@ tcp_server_start(tcp_server_launch_t *tsl)
   tcp_thread_t *tt;
 
   while(1) {
-    talloc_cleanup();
 
     tt = LIST_FIRST(&tcp_idle_threads);
     if(tt != NULL) {
@@ -252,7 +249,6 @@ tcp_server_loop(void *aux)
 
   while(1) {
 
-    talloc_cleanup();
 
     fds[num_fds].fd = tcp_server_pipe[0];
     fds[num_fds].events = POLLIN;
