@@ -1,5 +1,5 @@
 /******************************************************************************
-* Copyright (C) 2008 - 2014 Andreas Öman
+* Copyright (C) 2008 - 2014 Andreas ï¿½man
 *
 * Permission is hereby granted, free of charge, to any person obtaining
 * a copy of this software and associated documentation files (the
@@ -206,7 +206,9 @@ int http_access_verify(http_request_t *hc);
 
 void http_serve_static(const char *path, const char *filebundle);
 
+#ifdef WITH_OPENSSL
 void http_server_init_session_cookie(const char *password, uint8_t generation);
+#endif
 
 
 

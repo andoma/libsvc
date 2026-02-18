@@ -37,8 +37,11 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 
+#ifdef WITH_OPENSSL
 #include <openssl/evp.h>
-#include <openssl/sha.h>
+#endif
+
+#include "crypto/hash.h"
 
 #include <zlib.h>
 
@@ -189,9 +192,11 @@ static LIST_HEAD(, http_route) http_routes;
 
 static void http_parse_query_args(http_request_t *hc, char *args);
 
+#ifdef WITH_OPENSSL
 static char *generate_session_cookie(http_request_t *hr);
 
 static void get_session_cookie(http_request_t *hr, const char *str);
+#endif
 
 static int websocket_upgrade(http_connection_t *hc);
 
@@ -488,6 +493,7 @@ http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
 
   const http_server_t *hs =
     hr->hr_connection ? hr->hr_connection->hc_server : NULL;
+#ifdef WITH_OPENSSL
   if(hs != NULL && ntv_cmp(hr->hr_session, hr->hr_session_received)) {
     scoped_char *cookie = generate_session_cookie(hr);
     if(cookie != NULL) {
@@ -506,6 +512,7 @@ http_send_common_headers(http_request_t *hr, mbuf_t *hdrs, time_t now)
                    hs->hs_cookies_config ?: "");
     }
   }
+#endif
 }
 
 
@@ -781,6 +788,7 @@ http_dispatch_request(http_request_t *hr)
 
   http_connection_t *hc = hr->hr_connection;
 
+#ifdef WITH_OPENSSL
   if((v = http_arg_get(&hr->hr_request_headers, "Cookie")) != NULL) {
     v = mystrdupa(v);
     char *x = strstr(v, PROGNAME".session=");
@@ -792,6 +800,7 @@ http_dispatch_request(http_request_t *hr)
       get_session_cookie(hr, x);
     }
   }
+#endif
 
   if(hr->hr_session_received == NULL)
     hr->hr_session_received = ntv_create_map();
@@ -1965,6 +1974,8 @@ http_serve_static(const char *path, const char *filebundle)
 
 
 
+#ifdef WITH_OPENSSL
+
 #define COOKIE_NONCE_LEN 13
 #define COOKIE_TAG_LEN 16
 
@@ -2109,6 +2120,8 @@ get_session_cookie(http_request_t *hr, const char *str)
   hr->hr_session_received = ntv_binary_deserialize(plaintext + 2, outlen - 2);
 }
 
+#endif // WITH_OPENSSL
+
 
 #define WSGUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -2178,7 +2191,6 @@ websocket_session_start(http_request_t *hr,
                         int ka_interval)
 {
   http_connection_t *hc = hr->hr_connection;
-  SHA_CTX shactx;
   char sig[64];
   uint8_t d[20];
   const char *selected_extension = NULL;
@@ -2240,10 +2252,10 @@ websocket_session_start(http_request_t *hr,
   hc->hc_ws_opaque = opaque;
   const char *k = http_arg_get(&hr->hr_request_headers, "Sec-WebSocket-Key");
 
-  SHA1_Init(&shactx);
-  SHA1_Update(&shactx, (const void *)k, strlen(k));
-  SHA1_Update(&shactx, (const void *)WSGUID, strlen(WSGUID));
-  SHA1_Final(d, &shactx);
+  char sha1_buf[strlen(k) + strlen(WSGUID) + 1];
+  memcpy(sha1_buf, k, strlen(k));
+  memcpy(sha1_buf + strlen(k), WSGUID, strlen(WSGUID));
+  sha1(sha1_buf, strlen(k) + strlen(WSGUID), d);
 
   base64_encode(sig, sizeof(sig), d, 20);
 
