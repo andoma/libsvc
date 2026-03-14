@@ -37,6 +37,17 @@
 } while (/*CONSTCOND*/0)
 #endif
 
+#define LIST_MOVE(newhead, oldhead, field) do { \
+    if(LIST_FIRST(oldhead)) {						\
+      LIST_FIRST(oldhead)->field.le_prev = &(newhead)->lh_first;	\
+      (newhead)->lh_first = (oldhead)->lh_first;			\
+      LIST_INIT(oldhead);						\
+    } else {								\
+      LIST_INIT(newhead);						\
+    }									\
+} while (/*CONSTCOND*/0)
+
+
 /*
  * Complete missing TAILQ-ops
  */
