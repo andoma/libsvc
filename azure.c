@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #include <stddef.h>
 
@@ -38,6 +39,53 @@ azure_sas_token(const char *resource, const char *sakey,
              canonical_resource, sig, (long)ttl,
              keyname ? "&skn=" : "",
              keyname ?: "");
+}
+
+
+char *
+azure_cli_get_token(const char *resource)
+{
+  const char *home = getenv("HOME");
+  if(home == NULL)
+    return NULL;
+
+  scoped_char *path = fmt("%s/.azure/msal_token_cache.json", home);
+  scoped_char *json = readfile(path, NULL);
+  if(json == NULL)
+    return NULL;
+
+  char errbuf[256];
+  scoped_ntv_t *cache = ntv_json_deserialize(json, errbuf, sizeof(errbuf));
+  if(cache == NULL)
+    return NULL;
+
+  const ntv_t *access_tokens = ntv_get_map(cache, "AccessToken");
+  if(access_tokens == NULL)
+    return NULL;
+
+  time_t now = time(NULL);
+
+  NTV_FOREACH(entry, access_tokens) {
+    if(entry->ntv_type != NTV_MAP)
+      continue;
+
+    const char *secret      = ntv_get_str(entry, "secret");
+    const char *target      = ntv_get_str(entry, "target");
+    const char *expires_str = ntv_get_str(entry, "expires_on");
+
+    if(secret == NULL || target == NULL || expires_str == NULL)
+      continue;
+
+    if((time_t)atoll(expires_str) < now + 60)
+      continue;
+
+    if(strstr(target, resource) == NULL)
+      continue;
+
+    return fmt("Bearer %s", secret);
+  }
+
+  return NULL;
 }
 
 
