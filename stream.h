@@ -28,3 +28,7 @@ ssize_t stream_read_timeout(stream_t *s, void *data, size_t len, int flags,
 void stream_close(stream_t *s);
 
 void stream_shutdown(stream_t *s, int stop_reader);
+
+stream_t *stream_retain(stream_t *s);
+
+void stream_release(stream_t *s);

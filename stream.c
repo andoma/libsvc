@@ -13,6 +13,7 @@
 #include "stream.h"
 #include "dial.h"
 #include "trace.h"
+#include "atomic.h"
 
 #include "ta_certs.h"
 
@@ -84,6 +85,7 @@ struct stream {
   int s_fd;
   int s_ssl;
   int s_flags;
+  atomic_t s_refcount;
 
   br_ssl_client_context s_sc;
   br_x509_minimal_context s_xc;
@@ -91,6 +93,7 @@ struct stream {
   pthread_mutex_t s_ssl_mutex;
 
   x509_noanchor_context s_xwc;
+
 };
 
 
@@ -255,12 +258,13 @@ stream_connect(const char *hostname, int port, int timeout_ms,
   stream_t *s = calloc(1, sizeof(stream_t));
   s->s_fd = fd;
   s->s_flags = flags;
+  atomic_set(&s->s_refcount, 1);
+  pthread_mutex_init(&s->s_ssl_mutex, NULL);
 
   if(!(flags & STREAM_CONNECT_F_SSL))
     return s;
 
   s->s_ssl = 1;
-  pthread_mutex_init(&s->s_ssl_mutex, NULL);
 
   if(flags & STREAM_DEBUG)
     trace(LOG_DEBUG, "stream: Initializing TLS for %s:%d", hostname, port);
@@ -488,6 +492,25 @@ stream_read(stream_t *s, void *data, size_t len, int flags)
 
 
 void
+stream_release(stream_t *s)
+{
+  if(atomic_dec(&s->s_refcount))
+    return;
+
+  close(s->s_fd);
+  free(s->s_iobuf);
+  pthread_mutex_destroy(&s->s_ssl_mutex);
+  free(s);
+}
+
+stream_t *
+stream_retain(stream_t *s)
+{
+  atomic_inc(&s->s_refcount);
+  return s;
+}
+
+void
 stream_close(stream_t *s)
 {
   if(s->s_ssl) {
@@ -506,17 +529,16 @@ stream_close(stream_t *s)
       closelen = len;
       br_ssl_engine_sendrec_ack(&s->s_sc.eng, len);
     }
+
     pthread_mutex_unlock(&s->s_ssl_mutex);
 
     if(closelen > 0)
       write_all(s->s_fd, closebuf, closelen);
 
-    pthread_mutex_destroy(&s->s_ssl_mutex);
-    free(s->s_iobuf);
   }
 
-  close(s->s_fd);
-  free(s);
+  shutdown(s->s_fd, SHUT_RDWR);
+  stream_release(s);
 }
 
 
