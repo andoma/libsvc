@@ -169,7 +169,6 @@ ntv_t *ntv_get_mutable_list(ntv_t *n, const char *key);
 int     ntv_idx_int(const ntv_t *ntv, int idx, int default_value);
 int64_t ntv_idx_int64(const ntv_t *ntv, int idx, int64_t default_value);
 double  ntv_idx_double(const ntv_t *ntv, int idx, double default_value);
-const char *ntv_idx_str(const ntv_t *ntv, int idx);
 
 const ntv_t *ntv_idx_map(const ntv_t *ntv, int idx);
 const ntv_t *ntv_idx_list(const ntv_t *ntv, int idx);

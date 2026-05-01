@@ -184,10 +184,12 @@ typedef struct http_route {
   regex_t hr_reg;
   int hr_depth;
   http_callback2_t *hr_callback;
+  void *hr_opaque;
 } http_route_t;
 
 
 static LIST_HEAD(, http_route) http_routes;
+static pthread_mutex_t http_routes_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 static void http_parse_query_args(http_request_t *hc, char *args);
@@ -286,17 +288,30 @@ http_resolve_route(http_request_t *req, int cont)
   regmatch_t match[MAX_ROUTE_MATCHES];
   char *argv[MAX_ROUTE_MATCHES];
   int argc;
+  http_callback2_t *callback;
+  void *opaque;
+  int flags;
 
+  pthread_mutex_lock(&http_routes_mutex);
   LIST_FOREACH(hr, &http_routes, hr_link) {
     if(!regexec(&hr->hr_reg, req->hr_path, MAX_ROUTE_MATCHES, match, 0)) {
       break;
     }
   }
-  if(hr == NULL)
+  if(hr == NULL) {
+    pthread_mutex_unlock(&http_routes_mutex);
     return 404;
+  }
 
-  if(cont && !(hr->hr_flags & HTTP_ROUTE_HANDLE_100_CONTINUE))
+  if(cont && !(hr->hr_flags & HTTP_ROUTE_HANDLE_100_CONTINUE)) {
+    pthread_mutex_unlock(&http_routes_mutex);
     return 100;
+  }
+
+  callback = hr->hr_callback;
+  opaque   = hr->hr_opaque;
+  flags    = hr->hr_flags;
+  pthread_mutex_unlock(&http_routes_mutex);
 
   for(argc = 0; argc < MAX_ROUTE_MATCHES; argc++) {
     if(match[argc].rm_so == -1)
@@ -306,11 +321,12 @@ http_resolve_route(http_request_t *req, int cont)
     s[len] = 0;
     memcpy(s, req->hr_path + match[argc].rm_so, len);
   }
+  argv[argc] = opaque;
 
-  req->hr_route_flags = hr->hr_flags;
+  req->hr_route_flags = flags;
 
-  return hr->hr_callback(req, argc, argv,
-                         cont ? HTTP_ROUTE_HANDLE_100_CONTINUE : 0);
+  return callback(req, argc, argv,
+                  cont ? HTTP_ROUTE_HANDLE_100_CONTINUE : 0);
 }
 
 
@@ -1025,7 +1041,8 @@ static int route_cmp(const http_route_t *a, const http_route_t *b)
  * Add a regexp'ed route
  */
 void
-http_route_add(const char *path, http_callback2_t *callback, int flags)
+http_route_add2(const char *path, http_callback2_t *callback, int flags,
+                void *opaque)
 {
   http_route_t *hr = malloc(sizeof(http_route_t));
 
@@ -1056,7 +1073,38 @@ http_route_add(const char *path, http_callback2_t *callback, int flags)
 
   hr->hr_path     = strdup(path);
   hr->hr_callback = callback;
+  hr->hr_opaque   = opaque;
+
+  pthread_mutex_lock(&http_routes_mutex);
   LIST_INSERT_SORTED(&http_routes, hr, hr_link, route_cmp);
+  pthread_mutex_unlock(&http_routes_mutex);
+}
+
+void
+http_route_add(const char *path, http_callback2_t *callback, int flags)
+{
+  http_route_add2(path, callback, flags, NULL);
+}
+
+void *
+http_route_remove(const char *path)
+{
+  pthread_mutex_lock(&http_routes_mutex);
+  http_route_t *hr;
+  LIST_FOREACH(hr, &http_routes, hr_link) {
+    if(!strcmp(hr->hr_path, path))
+      break;
+  }
+  void *opaque = NULL;
+  if(hr != NULL) {
+    LIST_REMOVE(hr, hr_link);
+    opaque = hr->hr_opaque;
+    regfree(&hr->hr_reg);
+    free(hr->hr_path);
+    free(hr);
+  }
+  pthread_mutex_unlock(&http_routes_mutex);
+  return opaque;
 }
 
 /**

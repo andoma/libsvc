@@ -162,6 +162,9 @@ typedef int (http_callback2_t)(http_request_t *hc, int argc, char **argv,
 #define HTTP_ROUTE_DISABLE_LOG         0x2
 
 void http_route_add(const char *path, http_callback2_t *callback, int flags);
+void http_route_add2(const char *path, http_callback2_t *callback, int flags,
+                     void *opaque);
+void *http_route_remove(const char *path);
 
 struct http_server *http_server_init(const char *config);
 
