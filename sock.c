@@ -22,7 +22,9 @@
 ******************************************************************************/
 
 #ifdef linux
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #endif
 
 #include <sys/types.h>

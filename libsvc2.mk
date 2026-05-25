@@ -2,7 +2,7 @@ LIBSVC2_SRC ?= libsvc2
 
 ALLDEPS += ${LIBSVC2_SRC}/libsvc2.mk
 
-CPPFLAGS += \
+override CPPFLAGS += \
 	-iquote${LIBSVC2_SRC} \
 	-iquote${LIBSVC2_SRC}/BearSSL/inc \
 
