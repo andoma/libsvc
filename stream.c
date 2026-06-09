@@ -242,11 +242,21 @@ stream_t *
 stream_connect(const char *hostname, int port, int timeout_ms,
                char *errbuf, size_t errlen, int flags)
 {
+  return stream_connect_ex(hostname, port, timeout_ms, errbuf, errlen,
+                           flags, NULL, NULL);
+}
+
+stream_t *
+stream_connect_ex(const char *hostname, int port, int timeout_ms,
+                  char *errbuf, size_t errlen, int flags,
+                  void (*phase_cb)(void *opaque, int phase),
+                  void *phase_opaque)
+{
   if(flags & STREAM_DEBUG)
     trace(LOG_DEBUG, "stream: Connecting to %s:%d", hostname, port);
 
   int fd = dialfd(hostname, port, timeout_ms, errbuf, errlen,
-                  flags & STREAM_DEBUG);
+                  flags & STREAM_DEBUG, phase_cb, phase_opaque);
 
   if(flags & STREAM_DEBUG)
     trace(LOG_DEBUG, "stream: Connect %s:%d : %s",
@@ -281,6 +291,9 @@ stream_connect(const char *hostname, int port, int timeout_ms,
   }
 
   br_ssl_client_reset(&s->s_sc, hostname, 0);
+
+  if(phase_cb)
+    phase_cb(phase_opaque, CONN_PHASE_TLS);
 
   if(ssl_handshake(s, errbuf, errlen) < 0) {
     if(flags & STREAM_DEBUG)

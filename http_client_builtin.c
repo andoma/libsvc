@@ -69,6 +69,10 @@ typedef struct http_response_ctx {
   char *header_val;
   char *status_str;
   size_t received_body_bytes;
+
+  http_phase_cb_t *phase_cb;
+  void *phase_opaque;
+  int streaming_announced;
 } http_response_ctx_t;
 
 static void
@@ -167,6 +171,13 @@ on_headers_complete(http_parser *p)
 {
   http_response_ctx_t *ctx = p->data;
   copy_header(ctx, p);
+  // Body about to stream. Only announce for a final 2xx response so retries
+  // (redirect/401) don't flap the phase back and forth.
+  if(ctx->phase_cb && !ctx->streaming_announced &&
+     p->status_code >= 200 && p->status_code <= 299) {
+    ctx->streaming_announced = 1;
+    ctx->phase_cb(ctx->phase_opaque, HTTP_PHASE_STREAMING);
+  }
   return 0;
 }
 
@@ -220,6 +231,17 @@ monotime_usec(void)
 }
 
 
+// Trampoline so the stream layer's CONN_PHASE_* values reach the caller's
+// http_phase_cb. The numeric values are intentionally identical (see
+// http_client.h / dial.h), so this is a straight pass-through.
+static void
+http_stream_phase_cb(void *opaque, int phase)
+{
+  http_response_ctx_t *ctx = opaque;
+  if(ctx->phase_cb)
+    ctx->phase_cb(ctx->phase_opaque, (http_phase_t)phase);
+}
+
 static int
 http_do_request(const char *url,
                 char **error,
@@ -232,12 +254,18 @@ http_do_request(const char *url,
                 FILE *request_file,
                 mbuf_t *response_buffer,
                 FILE *response_file,
-                int trace)
+                int trace,
+                http_phase_cb_t *phase_cb,
+                void *phase_opaque,
+                http_abort_cb_t *abort_cb,
+                void *abort_opaque)
 {
   http_response_ctx_t ctx = { .hcr = hcr,
                               .response_file = response_file,
                               .response_buffer = response_buffer,
-                              .trace = trace};
+                              .trace = trace,
+                              .phase_cb = phase_cb,
+                              .phase_opaque = phase_opaque};
 
   extern const char *libsvc_app_version;
 
@@ -290,8 +318,10 @@ http_do_request(const char *url,
     return -1;
   }
 
-  stream_t *s = stream_connect(hostname, port, timeout, errbuf,
-                               sizeof(errbuf), stream_flags);
+  stream_t *s = stream_connect_ex(hostname, port, timeout, errbuf,
+                                  sizeof(errbuf), stream_flags,
+                                  phase_cb ? http_stream_phase_cb : NULL,
+                                  &ctx);
   if(s == NULL) {
     *error = fmt("Unable to connect to %s:%d -- %s", hostname, port, errbuf);
     return -1;
@@ -359,8 +389,18 @@ http_do_request(const char *url,
   int64_t speed_check_start = min_speed ? monotime_usec() : 0;
   size_t speed_check_bytes = 0;
 
+  // Request sent; awaiting response headers.
+  if(phase_cb)
+    phase_cb(phase_opaque, HTTP_PHASE_REQUEST);
+
   p.data = &ctx;
   while(!ctx.done) {
+    if(abort_cb && abort_cb(abort_opaque)) {
+      stream_close(s);
+      http_response_ctx_cleanup(&ctx);
+      *error = strdup("Aborted");
+      return -1;
+    }
     int64_t deadline = min_speed ? monotime_usec() + 15 * 1000000LL : 0;
     ssize_t r = stream_read_timeout(s, buf, sizeof(buf), 0, deadline);
     if(r < 0) {
@@ -435,6 +475,11 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   int flags = 0;
   int timeout = 0;
   int min_speed = 0;
+
+  http_phase_cb_t *phase_cb = NULL;
+  void *phase_opaque = NULL;
+  http_abort_cb_t *abort_cb = NULL;
+  void *abort_opaque = NULL;
 
   scoped_char *www_authenticate_header = NULL;
   scoped_char *location = NULL;
@@ -597,6 +642,16 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       min_speed = va_arg(ap, int);
       break;
 
+    case HCR_TAG_PHASE_CB:
+      phase_cb = va_arg(ap, http_phase_cb_t *);
+      phase_opaque = va_arg(ap, void *);
+      break;
+
+    case HCR_TAG_ABORT_CB:
+      abort_cb = va_arg(ap, http_abort_cb_t *);
+      abort_opaque = va_arg(ap, void *);
+      break;
+
     case HCR_TAG_HTTP_PROXY:
       http_proxy = va_arg(ap, const char*);
       if(http_proxy) {
@@ -627,7 +682,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
                     &request_headers, timeout, min_speed, hcr,
                     &request_buffer,  request_file,
                     &response_buffer, response_file,
-                    !!(flags & HCR_VERBOSE));
+                    !!(flags & HCR_VERBOSE),
+                    phase_cb, phase_opaque, abort_cb, abort_opaque);
 
   if(response_file != NULL)
     fflush(response_file);

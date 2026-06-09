@@ -14,6 +14,16 @@ stream_t *stream_connect(const char *hostname, int port,
                          char *errbuf, size_t errlen,
                          int flags);
 
+// Like stream_connect(), but reports connection-establishment progress
+// through phase_cb (may be NULL) using the CONN_PHASE_* values from dial.h:
+// RESOLVING, CONNECTING, then TLS just before the handshake.
+stream_t *stream_connect_ex(const char *hostname, int port,
+                            int timeout_ms,
+                            char *errbuf, size_t errlen,
+                            int flags,
+                            void (*phase_cb)(void *opaque, int phase),
+                            void *phase_opaque);
+
 // Return number of bytes written or -1 on error (which sets errno)
 ssize_t stream_write(stream_t *s, const void *data, size_t len);
 

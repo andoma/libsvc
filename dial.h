@@ -23,5 +23,15 @@
 
 #pragma once
 
+// Connection-establishment phases, reported through the optional callback
+// passed to dialfd() / stream_connect_ex(). The values are shared up the
+// stack (stream, http_client) so they can be forwarded without translation.
+#define CONN_PHASE_RESOLVING  0
+#define CONN_PHASE_CONNECTING 1
+#define CONN_PHASE_TLS        2   // fired by the stream layer, not dialfd
+
+// phase_cb may be NULL. It is invoked with CONN_PHASE_RESOLVING before the
+// DNS lookup and CONN_PHASE_CONNECTING before the TCP connect attempts.
 int dialfd(const char *hostname, int port, int timeout,
-           char *errbuf, size_t errlen, int debug);
+           char *errbuf, size_t errlen, int debug,
+           void (*phase_cb)(void *opaque, int phase), void *phase_opaque);

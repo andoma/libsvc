@@ -32,6 +32,24 @@ typedef struct http_client_response {
 typedef char *(http_client_auth_cb_t)(void *opaque, int http_status,
                                      const char *authenticate_header);
 
+// Connection/transfer phases reported through HCR_PHASE_CB. The first three
+// values match dial.h's CONN_PHASE_* so the stream-layer callback forwards
+// without translation. Only the builtin HTTP backend reports phases; the
+// curl backend ignores the callback.
+typedef enum {
+  HTTP_PHASE_RESOLVING  = 0, // DNS lookup
+  HTTP_PHASE_CONNECTING = 1, // TCP connect
+  HTTP_PHASE_TLS        = 2, // TLS handshake
+  HTTP_PHASE_REQUEST    = 3, // request sent, awaiting response headers
+  HTTP_PHASE_STREAMING  = 4, // response body flowing
+} http_phase_t;
+
+typedef void (http_phase_cb_t)(void *opaque, http_phase_t phase);
+
+// Polled periodically during connect/transfer. Return nonzero to abort the
+// request promptly.
+typedef int (http_abort_cb_t)(void *opaque);
+
 
 enum {
   HCR_TAG_END,
@@ -53,6 +71,8 @@ enum {
   HCR_TAG_MULTIPARTFILE,
   HCR_TAG_MIN_SPEED,
   HCR_TAG_HTTP_PROXY,
+  HCR_TAG_PHASE_CB,
+  HCR_TAG_ABORT_CB,
 };
 
 
@@ -81,6 +101,8 @@ enum {
 #define HCR_MULTIPARTFILE(a,b,c) HCR_TAG_MULTIPARTFILE, a, b, c
 #define HCR_MIN_SPEED(a) HCR_TAG_MIN_SPEED, a
 #define HCR_HTTP_PROXY(a) HCR_TAG_HTTP_PROXY, a
+#define HCR_PHASE_CB(cb, opaque) HCR_TAG_PHASE_CB, cb, opaque
+#define HCR_ABORT_CB(cb, opaque) HCR_TAG_ABORT_CB, cb, opaque
 
 int http_client_request(http_client_response_t *hcr, const char *url, ...)
   __attribute__((__sentinel__(0)));

@@ -164,13 +164,16 @@ dial_one(const struct sockaddr *sa, socklen_t slen, int timeout,
  */
 int
 dialfd(const char *hostname, int port, int timeout,
-       char *errbuf, size_t errlen, int debug)
+       char *errbuf, size_t errlen, int debug,
+       void (*phase_cb)(void *opaque, int phase), void *phase_opaque)
 {
   char service[10];
   snprintf(service, sizeof(service), "%u", port);
   struct addrinfo *res = NULL;
   if(debug)
     trace(LOG_DEBUG, "dialfd: Resolveing %s:%s", hostname, service);
+  if(phase_cb)
+    phase_cb(phase_opaque, CONN_PHASE_RESOLVING);
   const int gai_err = getaddrinfo(hostname, service, NULL, &res);
   if(gai_err) {
     snprintf(errbuf, errlen, "Unable to resolve %s -- %s", hostname,
@@ -179,6 +182,9 @@ dialfd(const char *hostname, int port, int timeout,
   }
   if(debug)
     trace(LOG_DEBUG, "dialfd: Resolved %s:%s", hostname, service);
+
+  if(phase_cb)
+    phase_cb(phase_opaque, CONN_PHASE_CONNECTING);
 
   const struct addrinfo *ai = res;
   int fd = -1;

@@ -353,6 +353,18 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
       }
       break;
 
+    case HCR_TAG_PHASE_CB:
+      // Phase reporting is only implemented for the builtin backend.
+      (void)va_arg(ap, http_phase_cb_t *);
+      (void)va_arg(ap, void *);
+      break;
+
+    case HCR_TAG_ABORT_CB:
+      // Abort callback is only wired up for the builtin backend.
+      (void)va_arg(ap, http_abort_cb_t *);
+      (void)va_arg(ap, void *);
+      break;
+
 #if CURL_AT_LEAST_VERSION(7,56,0)
     case HCR_TAG_MULTIPARTFILE: {
       const char *fieldname = va_arg(ap, const char *);
