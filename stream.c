@@ -17,6 +17,10 @@
 
 #include "ta_certs.h"
 
+// Upper bound on the whole TLS handshake. The socket is blocking after the
+// TCP connect, so without this a peer that stalls mid-handshake hangs forever.
+#define STREAM_TLS_HANDSHAKE_TIMEOUT_MS 10000
+
 // x509 "no anchor" validator — wraps br_x509_minimal, converts
 // BR_ERR_X509_NOT_TRUSTED to success (for STREAM_CONNECT_F_SSL_DONT_VERIFY)
 
@@ -140,8 +144,34 @@ compute_poll_timeout(int64_t deadline, int connect_flags)
 }
 
 
+// Wait until fd is ready for the given events or the deadline passes.
+// Returns 1 if ready, 0 on timeout, -1 on poll error.
 static int
-ssl_handshake(stream_t *s, char *errbuf, size_t errlen)
+wait_for_io(int fd, short events, int64_t deadline, int connect_flags)
+{
+  for(;;) {
+    int timeout_ms = compute_poll_timeout(deadline, connect_flags);
+    if(timeout_ms == 0)
+      return 0;
+    struct pollfd pfd = { .fd = fd, .events = events };
+    int pr = poll(&pfd, 1, timeout_ms);
+    if(pr > 0)
+      return 1;
+    if(pr == 0)
+      return 0;
+    if(errno == EINTR)
+      continue;
+    return -1;
+  }
+}
+
+
+// Drive the BearSSL handshake to completion, bounded by deadline (absolute
+// µs on the same clock as compute_poll_timeout). The socket is blocking, so
+// we poll before each read/write to enforce the deadline — without this a
+// peer that completes the TCP connect but stalls mid-handshake hangs forever.
+static int
+ssl_handshake(stream_t *s, char *errbuf, size_t errlen, int64_t deadline)
 {
   br_ssl_engine_context *eng = &s->s_sc.eng;
 
@@ -158,6 +188,15 @@ ssl_handshake(stream_t *s, char *errbuf, size_t errlen)
       unsigned char *buf;
       size_t len;
       buf = br_ssl_engine_sendrec_buf(eng, &len);
+      int w = wait_for_io(s->s_fd, POLLOUT, deadline, s->s_flags);
+      if(w <= 0) {
+        if(w == 0)
+          snprintf(errbuf, errlen, "TLS handshake timed out");
+        else
+          snprintf(errbuf, errlen, "TLS handshake poll failed: %s",
+                   strerror(errno));
+        return -1;
+      }
       ssize_t wlen = write_all(s->s_fd, buf, len);
       if(wlen < 0) {
         snprintf(errbuf, errlen, "TLS handshake write failed: %s",
@@ -175,6 +214,15 @@ ssl_handshake(stream_t *s, char *errbuf, size_t errlen)
       unsigned char *buf;
       size_t len;
       buf = br_ssl_engine_recvrec_buf(eng, &len);
+      int rdy = wait_for_io(s->s_fd, POLLIN, deadline, s->s_flags);
+      if(rdy <= 0) {
+        if(rdy == 0)
+          snprintf(errbuf, errlen, "TLS handshake timed out");
+        else
+          snprintf(errbuf, errlen, "TLS handshake poll failed: %s",
+                   strerror(errno));
+        return -1;
+      }
       ssize_t rlen = read(s->s_fd, buf, len);
       if(rlen <= 0) {
         if(rlen == 0)
@@ -295,7 +343,15 @@ stream_connect_ex(const char *hostname, int port, int timeout_ms,
   if(phase_cb)
     phase_cb(phase_opaque, CONN_PHASE_TLS);
 
-  if(ssl_handshake(s, errbuf, errlen) < 0) {
+  // Absolute deadline for the handshake, on the same clock compute_poll_timeout
+  // uses, so wait_for_io() can derive the remaining time per round trip.
+  struct timespec ts;
+  clock_gettime((flags & STREAM_CLOCK_MONOTONIC) ? CLOCK_MONOTONIC
+                                                 : CLOCK_REALTIME, &ts);
+  const int64_t deadline = ts.tv_sec * 1000000LL + ts.tv_nsec / 1000 +
+    STREAM_TLS_HANDSHAKE_TIMEOUT_MS * 1000LL;
+
+  if(ssl_handshake(s, errbuf, errlen, deadline) < 0) {
     if(flags & STREAM_DEBUG)
       trace(LOG_DEBUG, "stream: TLS handshake failed for %s:%d: %s",
             hostname, port, errbuf);
