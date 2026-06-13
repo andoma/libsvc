@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <time.h>
+
 #include "mbuf.h"
 #include "atomic.h"
 #include "http_parser.h"
