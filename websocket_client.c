@@ -309,6 +309,19 @@ flush_holdq(ws_client_t *wsc)
 }
 
 
+// Detach and close the stream owned by the reader thread.
+// Clears wsc_stream (under wsc_send_mutex) before releasing the stream so
+// ws_client_destroy can never grab a pointer that is about to be freed.
+static void
+wsc_close_stream(ws_client_t *wsc, stream_t *s)
+{
+  pthread_mutex_lock(&wsc->wsc_send_mutex);
+  wsc->wsc_stream = NULL;
+  pthread_mutex_unlock(&wsc->wsc_send_mutex);
+  stream_close(s);
+}
+
+
 static void *
 wsc_thread_fn(void *arg)
 {
@@ -332,11 +345,12 @@ wsc_thread_fn(void *arg)
     return NULL;
   }
 
+  pthread_mutex_lock(&wsc->wsc_send_mutex);
   wsc->wsc_stream = s;
+  pthread_mutex_unlock(&wsc->wsc_send_mutex);
 
   if(wsc->wsc_stopped) {
-    stream_close(s);
-    wsc->wsc_stream = NULL;
+    wsc_close_stream(wsc, s);
     wsc_release(wsc);
     return NULL;
   }
@@ -369,8 +383,7 @@ wsc_thread_fn(void *arg)
 
   if(stream_write(s, req, strlen(req)) < 0) {
     websocket_dispatch_close(wsc, "Failed to send HTTP upgrade request");
-    stream_close(s);
-    wsc->wsc_stream = NULL;
+    wsc_close_stream(wsc, s);
     wsc_release(wsc);
     return NULL;
   }
@@ -395,8 +408,7 @@ wsc_thread_fn(void *arg)
       else
         websocket_dispatch_close(wsc, n == 0 ? "Connection closed during HTTP upgrade" : strerror(errno));
       mbuf_clear(&readbuf);
-      stream_close(s);
-      wsc->wsc_stream = NULL;
+      wsc_close_stream(wsc, s);
       wsc_release(wsc);
       return NULL;
     }
@@ -408,8 +420,7 @@ wsc_thread_fn(void *arg)
       websocket_dispatch_close(wsc,
         http_errno_name(wsc->wsc_http_parser.http_errno));
       mbuf_clear(&readbuf);
-      stream_close(s);
-      wsc->wsc_stream = NULL;
+      wsc_close_stream(wsc, s);
       wsc_release(wsc);
       return NULL;
     }
@@ -423,8 +434,7 @@ wsc_thread_fn(void *arg)
                                   http_status_str(wsc->wsc_http_parser.status_code));
         websocket_dispatch_close(wsc, errmsg);
         mbuf_clear(&readbuf);
-        stream_close(s);
-        wsc->wsc_stream = NULL;
+        wsc_close_stream(wsc, s);
         wsc_release(wsc);
         return NULL;
       }
@@ -437,8 +447,7 @@ wsc_thread_fn(void *arg)
 
   if(wsc->wsc_stopped || !http_ok) {
     mbuf_clear(&readbuf);
-    stream_close(s);
-    wsc->wsc_stream = NULL;
+    wsc_close_stream(wsc, s);
     wsc_release(wsc);
     return NULL;
   }
@@ -456,8 +465,7 @@ wsc_thread_fn(void *arg)
                        &wsc->wsc_ws_parser)) {
       websocket_dispatch_close(wsc, "Websocket protocol error");
       mbuf_clear(&readbuf);
-      stream_close(s);
-      wsc->wsc_stream = NULL;
+      wsc_close_stream(wsc, s);
       wsc_release(wsc);
       return NULL;
     }
@@ -515,8 +523,7 @@ wsc_thread_fn(void *arg)
   }
 
   mbuf_clear(&readbuf);
-  stream_close(s);
-  wsc->wsc_stream = NULL;
+  wsc_close_stream(wsc, s);
   wsc_release(wsc);
   return NULL;
 }
@@ -526,8 +533,21 @@ void
 ws_client_destroy(ws_client_t *wsc)
 {
   wsc->wsc_stopped = 1;
-  if(wsc->wsc_stream != NULL)
-    stream_shutdown(wsc->wsc_stream, 1);
+
+  // Retain the stream under the lock so the reader thread cannot free it
+  // out from under stream_shutdown(). The matching stream_release() below
+  // drops our reference once the shutdown has unblocked the reader.
+  pthread_mutex_lock(&wsc->wsc_send_mutex);
+  stream_t *s = wsc->wsc_stream;
+  if(s != NULL)
+    stream_retain(s);
+  pthread_mutex_unlock(&wsc->wsc_send_mutex);
+
+  if(s != NULL) {
+    stream_shutdown(s, 1);
+    stream_release(s);
+  }
+
   pthread_join(wsc->wsc_thread, NULL);
   wsc_release(wsc);
 }
