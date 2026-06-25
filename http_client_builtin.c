@@ -258,7 +258,8 @@ http_do_request(const char *url,
                 http_phase_cb_t *phase_cb,
                 void *phase_opaque,
                 http_abort_cb_t *abort_cb,
-                void *abort_opaque)
+                void *abort_opaque,
+                const char *http_proxy)
 {
   http_response_ctx_t ctx = { .hcr = hcr,
                               .response_file = response_file,
@@ -306,29 +307,85 @@ http_do_request(const char *url,
   int stream_flags = STREAM_CLOCK_MONOTONIC;
   if(!strcmp(schema, "http")) {
     port = pu.port ?: 80;
-    ctxtrace(&ctx, "Connecting to %s:%d", hostname, port);
   } else if(!strcmp(schema, "https")) {
     port = pu.port ?: 443;
     stream_flags |= STREAM_CONNECT_F_SSL;
-    if(trace)
-      stream_flags |= STREAM_DEBUG;
-    ctxtrace(&ctx, "Connecting to %s:%d (TLS)", hostname, port);
   } else {
     *error = strdup("Unsupported URL schema");
     return -1;
   }
+  if(trace)
+    stream_flags |= STREAM_DEBUG;
 
-  stream_t *s = stream_connect_ex(hostname, port, timeout, errbuf,
+  // Where we actually open the TCP/TLS connection and what we put on the
+  // request line. Without a proxy: connect to the origin and send the
+  // origin-form target (just the path). With a forward proxy: connect to the
+  // proxy and send the absolute-form target (the full URL), while the Host
+  // header still names the origin.
+  const char *connect_host = hostname;
+  int connect_port = port;
+  const char *request_target = path;
+  scoped_char *proxy_host = NULL;
+
+  if(http_proxy != NULL) {
+    // We only support plaintext origins through a forward proxy. Tunnelling
+    // an https origin would require a CONNECT exchange followed by a TLS
+    // upgrade over the established socket, which the stream layer can't do
+    // today. The OCI image puller rewrites registry URLs to http precisely so
+    // the proxy speaks plaintext to the registry.
+    if(strcmp(schema, "http")) {
+      *error = fmt("HTTP proxy supports only http:// origins, not %s://",
+                   schema);
+      return -1;
+    }
+
+    // Accept either "host[:port]" or "scheme://host[:port]". Default to a
+    // plaintext http proxy when no scheme is given.
+    struct http_parser_url ppu;
+    http_parser_url_init(&ppu);
+    scoped_char *proxy_url = strstr(http_proxy, "://") ?
+      strdup(http_proxy) : fmt("http://%s", http_proxy);
+    if(http_parser_parse_url(proxy_url, strlen(proxy_url), 0, &ppu)) {
+      *error = fmt("Malformed proxy URL: %s", http_proxy);
+      return -1;
+    }
+    scoped_char *proxy_schema = get_url_comp(proxy_url, &ppu, UF_SCHEMA);
+    proxy_host = get_url_comp(proxy_url, &ppu, UF_HOST);
+    if(proxy_host == NULL) {
+      *error = fmt("Malformed proxy URL (no host): %s", http_proxy);
+      return -1;
+    }
+
+    stream_flags = STREAM_CLOCK_MONOTONIC;
+    if(trace)
+      stream_flags |= STREAM_DEBUG;
+    if(proxy_schema != NULL && !strcmp(proxy_schema, "https")) {
+      connect_port = ppu.port ?: 443;
+      stream_flags |= STREAM_CONNECT_F_SSL;
+    } else {
+      connect_port = ppu.port ?: 80;
+    }
+    connect_host = proxy_host;
+    request_target = url;
+    ctxtrace(&ctx, "Connecting via proxy %s:%d to %s:%d",
+             connect_host, connect_port, hostname, port);
+  } else {
+    ctxtrace(&ctx, "Connecting to %s:%d%s", connect_host, connect_port,
+             (stream_flags & STREAM_CONNECT_F_SSL) ? " (TLS)" : "");
+  }
+
+  stream_t *s = stream_connect_ex(connect_host, connect_port, timeout, errbuf,
                                   sizeof(errbuf), stream_flags,
                                   phase_cb ? http_stream_phase_cb : NULL,
                                   &ctx);
   if(s == NULL) {
-    *error = fmt("Unable to connect to %s:%d -- %s", hostname, port, errbuf);
+    *error = fmt("Unable to connect to %s:%d -- %s",
+                 connect_host, connect_port, errbuf);
     return -1;
   }
 
   scoped_strvec(req);
-  strvec_pushf(&req, "%s %s HTTP/1.1", verb, path);
+  strvec_pushf(&req, "%s %s HTTP/1.1", verb, request_target);
   strvec_pushf(&req, "Host: %s", hostname);
   strvec_pushf(&req, "User-Agent: %s", libsvc_app_version ?: PROGNAME);
 
@@ -497,7 +554,7 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
   const char *verb = "GET";
   const char *verb_override = NULL;
   scoped_char *errstr = NULL;
-  const char *http_proxy;
+  const char *http_proxy = NULL;
 
   int auth_retry_code = 0;
   int disable_auth = 0;
@@ -654,10 +711,6 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
 
     case HCR_TAG_HTTP_PROXY:
       http_proxy = va_arg(ap, const char*);
-      if(http_proxy) {
-        fprintf(stderr, "HTTP Proxy support is not implemented\n");
-        abort();
-      }
       break;
 
     default:
@@ -683,7 +736,8 @@ http_client_request(http_client_response_t *hcr, const char *url, ...)
                     &request_buffer,  request_file,
                     &response_buffer, response_file,
                     !!(flags & HCR_VERBOSE),
-                    phase_cb, phase_opaque, abort_cb, abort_opaque);
+                    phase_cb, phase_opaque, abort_cb, abort_opaque,
+                    http_proxy);
 
   if(response_file != NULL)
     fflush(response_file);
