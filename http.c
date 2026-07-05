@@ -2519,6 +2519,7 @@ ws_enq_data(http_connection_t *hc, int opcode, void *data, int arg, int flags,
 
     atomic_set(&hc->hc_ws_direct, 0);
     opcode = WSD_OPCODE_DISCONNECT;
+    flags = 0;
   }
 
   ws_server_data_t *wsd = malloc(sizeof(ws_server_data_t));
