@@ -2444,6 +2444,8 @@ ws_dispatch_data(ws_server_data_t *wsd)
       size_t avail = z->avail_out;
       int r = inflate(z, Z_SYNC_FLUSH);
       if(r) {
+        free(buf);
+        free(wsd->wsd_data);
         return;
       }
 
@@ -2457,6 +2459,7 @@ ws_dispatch_data(ws_server_data_t *wsd)
 
       if(bufsize > 16 * 1024 * 1024) {
         free(buf);
+        free(wsd->wsd_data);
         return;
       }
 
