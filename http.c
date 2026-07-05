@@ -793,10 +793,12 @@ http_dispatch_request(http_request_t *hr)
 
       if(!strcasecmp(argv[0], "basic")) {
         n = base64_decode(authbuf, argv[1], sizeof(authbuf) - 1);
-        authbuf[n] = 0;
-        if((n = str_tokenize((char *)authbuf, argv, 2, ':')) == 2) {
-          hr->hr_username = strdup(argv[0]);
-          hr->hr_password = strdup(argv[1]);
+        if(n >= 0) {
+          authbuf[n] = 0;
+          if((n = str_tokenize((char *)authbuf, argv, 2, ':')) == 2) {
+            hr->hr_username = strdup(argv[0]);
+            hr->hr_password = strdup(argv[1]);
+          }
         }
       }
     }
