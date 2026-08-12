@@ -236,13 +236,16 @@ json_parse_map(const char *s, const char **endp, const json_deserializer_t *jd,
 
       name = json_parse_string(s, &s2, failp, failmsg);
       if(name == NOT_THIS_TYPE) {
+	jd->jd_destroy_obj(opaque, r);
 	*failmsg = "Expected string";
 	*failp = s;
 	return NULL;
       }
 
-      if(name == NULL)
+      if(name == NULL) {
+	jd->jd_destroy_obj(opaque, r);
 	return NULL;
+      }
 
       s = s2;
 
