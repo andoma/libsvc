@@ -30,7 +30,13 @@ ${LIB}: ${OBJS}  Makefile sources.mk
 	${CC} -MD -MP ${CFLAGS} -c -o $@ $<
 
 clean:
-	rm -f ${LIB} *~ *.o *.d
+	rm -f ${LIB} *~ *.o *.d tests/mbuf_gzip_test
+
+check: tests/mbuf_gzip_test
+	./tests/mbuf_gzip_test
+
+tests/mbuf_gzip_test: tests/mbuf_gzip_test.c mbuf.c mbuf.h
+	${CC} ${CFLAGS} -I. -o $@ tests/mbuf_gzip_test.c mbuf.c -lz
 
 install:
 	mkdir -p $(DESTDIR)$(prefix)/lib
@@ -45,4 +51,3 @@ install:
 	done
 
 -include $(DEPS)
-
