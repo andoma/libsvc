@@ -541,6 +541,10 @@ ws_client_destroy(ws_client_t *wsc)
   stream_t *s = wsc->wsc_stream;
   if(s != NULL)
     stream_retain(s);
+  // Read under the lock ws_client_start() holds while it creates the
+  // thread: we may be the thread's own close callback, called before
+  // pthread_create() has stored the id (musl stores it after the clone).
+  const pthread_t tid = wsc->wsc_thread;
   pthread_mutex_unlock(&wsc->wsc_send_mutex);
 
   if(s != NULL) {
@@ -548,7 +552,7 @@ ws_client_destroy(ws_client_t *wsc)
     stream_release(s);
   }
 
-  pthread_join(wsc->wsc_thread, NULL);
+  pthread_join(tid, NULL);
   wsc_release(wsc);
 }
 
@@ -557,7 +561,12 @@ void
 ws_client_start(ws_client_t *wsc)
 {
   atomic_inc(&wsc->wsc_refcount);
+  // A connect that fails at once dispatches the close, and the callback
+  // may destroy us, before pthread_create() returns; ws_client_destroy()
+  // reads wsc_thread under this lock.
+  pthread_mutex_lock(&wsc->wsc_send_mutex);
   pthread_create(&wsc->wsc_thread, NULL, wsc_thread_fn, wsc);
+  pthread_mutex_unlock(&wsc->wsc_send_mutex);
 }
 
 
