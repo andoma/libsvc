@@ -56,6 +56,11 @@ struct ws_client {
 
   int wsc_ka_misses;
 
+  // Close handshake (RFC 6455 5.5.1): we sent a close frame (under
+  // wsc_send_mutex), and the peer sent one (reader thread only)
+  int wsc_close_sent;
+  int wsc_close_received;
+
   char *wsc_offered_protocol;
 
   char *wsc_received_protocol;
@@ -205,6 +210,21 @@ websocket_packet_input(void *arg, int opcode,
   }
 
   assert(wsc->wsc_state == WSC_STATE_WEBSOCKET);
+
+  if(opcode == WS_OPCODE_CLOSE) {
+    // The peer is closing: answer with a close of our own, echoing its
+    // status code, unless we sent one already. The read loop then ends
+    // the connection. Without the answer the peer waits for one until it
+    // gives up and drops the connection, and only then would we notice.
+    pthread_mutex_lock(&wsc->wsc_send_mutex);
+    if(!wsc->wsc_close_sent) {
+      wsc->wsc_close_sent = 1;
+      websocket_send_ctrl(wsc, WS_OPCODE_CLOSE, *data, len >= 2 ? 2 : 0);
+    }
+    pthread_mutex_unlock(&wsc->wsc_send_mutex);
+    wsc->wsc_close_received = 1;
+    // Still delivered, for the status code and reason in it
+  }
 
   msg_t *msg = malloc(sizeof(msg_t));
   msg->data = *data;
@@ -475,6 +495,11 @@ wsc_thread_fn(void *arg)
   wsc->wsc_ka_misses = 0;
 
   while(!wsc->wsc_stopped) {
+    if(wsc->wsc_close_received) {
+      websocket_dispatch_close(wsc, "Connection closed by peer");
+      break;
+    }
+
     uint8_t buf[4096];
 
     struct timespec ts;
@@ -650,7 +675,14 @@ ws_client_send_close(ws_client_t *wsc, int code, const char *msg)
   buf[0] = code >> 8;
   buf[1] = code;
   memcpy(buf + 2, msg, msglen);
-  ws_client_send(wsc, WS_OPCODE_CLOSE, buf, 2 + msglen);
+  // At most one close: we may have closed already, or answered the
+  // peer's close in websocket_packet_input()
+  pthread_mutex_lock(&wsc->wsc_send_mutex);
+  const int sent = wsc->wsc_close_sent;
+  wsc->wsc_close_sent = 1;
+  pthread_mutex_unlock(&wsc->wsc_send_mutex);
+  if(!sent)
+    ws_client_send(wsc, WS_OPCODE_CLOSE, buf, 2 + msglen);
 }
 
 
